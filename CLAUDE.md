@@ -38,24 +38,30 @@ dndgame/
 - Saves to `characters/<name>.json`
 
 ### `Character Builder/character_builder_app.py`
-Complete rewrite — fully GUI-driven Tkinter app, NO text input except Personality section. Launched via `python character_builder_app.py` or the .bat file.
+Complete GUI-driven Tkinter app. Launched via `python character_builder_app.py` or the .bat file.
 
-**Architecture:** Single `CharacterBuilderApp` class, no threads, `self.char` dict held directly. Module-level helpers `_btn()`, `_listbox()`, `_pick_from_list()`, `_pick_suggestion()`.
+**Architecture:** Single `CharacterBuilderApp` class, no threads, `self.char` dict held directly. Module-level helpers `_btn()`, `_listbox()`, `_pick_from_list()`, `_pick_suggestion()`, `_weapon_proficient()`.
 
-**Main window:** Left panel (9 clickable section buttons showing ✔/· status), right panel (live character preview in Consolas font), bottom bar (Save/Load/Delete/New/Quit).
+**Main window:** Left panel (clickable section buttons showing ✔/· status), right panel (live character preview in Consolas font), bottom bar (Save/Load/Delete/New/Quit).
 
-**9 section dialogs (all modal Toplevels with grab_set):**
-1. **Basic Info** — name entry, Race/Class/Subclass/Background/Alignment pickers (all with searchable list dialogs), Level/XP spinboxes. Subclass list filters to selected class. Class change clears subclass.
-2. **Ability Scores** — Standard Array (OptionMenu dropdowns) / Point Buy (8–15 spinboxes, 27-point budget) / Manual (1–30 spinboxes). Racial bonuses auto-applied. Class primary stats marked ★, saving throw proficiencies marked ◇. Live totals and modifiers update as you pick.
-3. **Combat Stats** — HP with auto-calc checkbox (class hit die + CON × level), armor picker (auto-calculates AC from ARMOR_TABLE), race speed auto-filled, hit dice type/total/used spinboxes.
-4. **Proficiencies** — Tabbed (ttk.Notebook): Saving Throws (class auto-checked/disabled), Skills (multi-select listbox, background skills auto-selected), Languages (race langs auto-selected), Armor & Weapons (class profs auto-checked), Tools.
-5. **Attacks** — Left: weapon browser with category radio filter (All/Simple Melee/Simple Ranged/Martial Melee/Martial Ranged), detail label, proficiency+finesse checkboxes, Add Weapon button (auto-calcs attack bonus and damage). Right: current attacks list with remove buttons, custom attack entry row.
-6. **Spellcasting** — Class-aware (shows message for non-casters). Spell slot tracker (shows count, used spinbox per level). Tabbed: Cantrips + one tab per spell level with available spells. Slots auto-calculated from FULL_CASTER_SLOTS / HALF_CASTER_SLOTS / WARLOCK_SLOTS by level.
-7. **Equipment** — Tabbed: Equipment Packs (checkboxes with item previews, Add button), Equipment List (custom item entry + quantity, remove buttons), Currency (cp/sp/ep/gp/pp spinboxes, starting gold button).
-8. **Features & Traits** — Tabbed read-only: Racial Traits, Class Features (levels 1–N), Background Feature. Plus Custom Features tab with add/remove.
-9. **Personality** — Text widgets (only section with text input). Suggestions button per field pulls from `get_personality_suggestions(background)`. Fields: Personality Traits, Ideals, Bonds, Flaws, Backstory.
+**Guard:** Clicking any section other than Basic Info before setting race and class redirects to Basic Info with a prompt. Race and class must be set first as they drive all other sections.
 
-**Bottom bar actions:** Save (calls `save_character`), Load (picker dialog, auto-marks sections done), Delete (removes JSON file), New (clears `self.char`), Quit (confirmation dialog).
+**Auto-derived stats (not editable sections):**
+- **Combat Stats** — removed as a clickable section. HP, AC, speed, initiative, hit die, and passive perception are computed automatically on every refresh from class/race/ability scores/equipped armor and written directly to `self.char`. AC handles Barbarian and Monk unarmored defense formulas.
+- **Attacks** — removed as a clickable section. Auto-generated from weapons in the Equipment list (cross-referenced against `WEAPONS` dict). Proficiency applied via `_weapon_proficient()`. Monk Unarmed Strike auto-added (Martial Arts die scales by level). Attacks update live when Equipment is saved.
+
+**7 clickable section dialogs (all modal Toplevels with grab_set):**
+1. **Basic Info** — name entry, Race/Class/Subclass/Background/Alignment pickers. Race picker includes a "Details" button showing lore, size, speed, ability bonuses, languages, key advantages, and all racial traits. Subclass list filters to selected class.
+2. **Ability Scores** — Standard Array (dropdowns that filter to unselected values only), Point Buy, or Manual. Racial bonuses auto-applied from `RACIAL_BONUSES["fixed"]`. Half-Elf and Human (Variant) show flexible bonus pickers. Live totals and modifiers update as you pick.
+3. **Proficiencies** — Tabbed: Saving Throws, Skills, Languages, Armor & Weapons, Tools.
+4. **Spellcasting** — only visible when selected class can cast spells (checked via `CLASS_SPELLCASTING`). Spell slot tracker, cantrips tab, one tab per spell level.
+5. **Equipment** — Tabbed: Weapons (filtered to class proficiencies, adds to equipment list), Equipment Packs, Equipment List, Currency. Worn Armor picker at top (drives AC calculation).
+6. **Features & Traits** — Tabbed read-only: Racial Traits, Class Features, Background Feature, Custom Features.
+7. **Personality** — Text widgets for traits/ideals/bonds/flaws/backstory with background-based suggestions.
+
+**Bottom bar actions:** Save, Load, Delete, New, Quit.
+
+**Character sheet preview** shows: name/race/class/level, all 6 abilities with modifiers, full combat block (HP, AC, initiative, speed, proficiency bonus, hit die, passive perception, worn armor), attacks with proficiency notes, spellcasting, equipment, and personality traits.
 
 ### `Character Builder/dnd_data.py`
 Comprehensive D&D 5e data module. Key exports:
@@ -64,7 +70,8 @@ Comprehensive D&D 5e data module. Key exports:
 - `SUBCLASSES` — dict: class → list of subclass names
 - `BACKGROUNDS` — list of 37 background names
 - `ALIGNMENTS` — 9 alignments
-- `RACIAL_BONUSES` — dict: race → {ability: bonus}
+- `RACIAL_BONUSES` — dict: race → `{"fixed": {ability: bonus}, "flexible": {count, amount, exclude} or None}`
+- `RACE_DESCRIPTIONS` — dict: race → lore paragraph string (accurate D&D 5e descriptions for all 29 races)
 - `STANDARD_ARRAY` — [15,14,13,12,10,8]
 - `POINT_BUY_COSTS` — dict: score → point cost (8–15)
 - `POINT_BUY_BUDGET` — 27
@@ -111,8 +118,11 @@ D&D Beyond character import via their API. Uses threading for the network call (
 - **Dialogs:** Modal `Toplevel` with `grab_set()` + `wait_window()`. Helper `_dlg()` creates and centers them. `_ok_cancel()` adds Save/Cancel bar.
 - **No threads** in the character builder (pure GUI callbacks).
 - **No comments** unless the WHY is non-obvious.
-- **Python 3.14**, Windows 11, launched with `python` (not `pythonw` — we moved away from the console-hiding approach).
+- **Python 3.14**, Windows 11, launched with `python` (not `pythonw`).
 - **Import path:** `sys.path.insert(0, str(Path(__file__).parent.parent))` in Character Builder files to reach `character.py`.
+- **`_pick_from_list()`** accepts an optional `detail_fn(parent, item)` callback; when provided a "Details" button appears next to "Select" in the picker dialog.
+- **`_weapon_proficient(cls, name, cat)`** — module-level function for checking weapon proficiency against `CLASS_WEAPON_PROFS`. Handles "Simple weapons"/"Martial weapons" group strings and specific named weapons (normalises plurals).
+- **Auto-calc methods:** `_calc_combat_stats()` and `_calc_attacks()` are called at the start of every `_refresh_preview()` and write results directly back to `self.char` so saves always have current values.
 
 ## What to Build Next
 In order of dependency:
