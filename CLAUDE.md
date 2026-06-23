@@ -65,13 +65,13 @@ Complete GUI-driven Tkinter app. Launched via `python character_builder_app.py` 
 
 ### `Character Builder/dnd_data.py`
 Comprehensive D&D 5e data module. Key exports:
-- `RACES` — list of 29 race names
+- `RACES` — list of 28 race names
 - `CLASSES` — list of 13 class names
 - `SUBCLASSES` — dict: class → list of subclass names
 - `BACKGROUNDS` — list of 37 background names
 - `ALIGNMENTS` — 9 alignments
 - `RACIAL_BONUSES` — dict: race → `{"fixed": {ability: bonus}, "flexible": {count, amount, exclude} or None}`
-- `RACE_DESCRIPTIONS` — dict: race → lore paragraph string (accurate D&D 5e descriptions for all 29 races)
+- `RACE_DESCRIPTIONS` — dict: race → lore paragraph string (accurate D&D 5e descriptions for all 28 races)
 - `STANDARD_ARRAY` — [15,14,13,12,10,8]
 - `POINT_BUY_COSTS` — dict: score → point cost (8–15)
 - `POINT_BUY_BUDGET` — 27
