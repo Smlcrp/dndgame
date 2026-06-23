@@ -19,7 +19,7 @@ from dnd_data import (
     RACE_LANGUAGES, RACE_EXTRA_LANGUAGES, CLASS_SPELLCASTING,
     FULL_CASTER_SLOTS, HALF_CASTER_SLOTS, WARLOCK_SLOTS, CANTRIPS_KNOWN,
     WEAPONS, WEAPON_CATEGORIES, CLASS_STARTING_GOLD, EQUIPMENT_PACKS,
-    BACKGROUND_FEATURES, RACIAL_TRAITS, CLASS_FEATURES,
+    BACKGROUND_FEATURES, RACIAL_TRAITS, RACE_DESCRIPTIONS, CLASS_FEATURES,
     get_personality_suggestions, ARTISAN_TOOLS, GAMING_SETS,
     MUSICAL_INSTRUMENTS,
 )
@@ -40,6 +40,16 @@ FONT_TITLE = ("Segoe UI", 14, "bold")
 FONT_HDR   = ("Segoe UI", 11, "bold")
 FONT_BODY  = ("Segoe UI", 10)
 FONT_SM    = ("Segoe UI", 9)
+
+
+def _weapon_proficient(cls, name, cat):
+    profs = CLASS_WEAPON_PROFS.get(cls, [])
+    if "Simple weapons" in profs and cat in ("Simple Melee", "Simple Ranged"):
+        return True
+    if "Martial weapons" in profs and cat in ("Martial Melee", "Martial Ranged"):
+        return True
+    wn = name.lower()
+    return any(p.lower().rstrip("s") == wn or p.lower() == wn for p in profs)
 
 
 def _btn(parent, text, cmd, bg=BTN_BG, fg=FG, font=FONT_BODY, **kw):
@@ -66,7 +76,7 @@ def _listbox(parent, items, height=10, width=28, multi=False):
     return frame, lb
 
 
-def _pick_from_list(parent, title, options, var, callback=None):
+def _pick_from_list(parent, title, options, var, callback=None, detail_fn=None):
     d = tk.Toplevel(parent)
     d.title(title)
     d.configure(bg=BG)
@@ -110,7 +120,17 @@ def _pick_from_list(parent, title, options, var, callback=None):
 
     lb.bind("<Double-Button-1>", confirm)
     lb.bind("<Return>", confirm)
-    _btn(d, "Select", confirm, bg=ACCENT, fg="#1a1a2e").pack(pady=6)
+
+    btn_row = tk.Frame(d, bg=BG)
+    btn_row.pack(pady=6)
+    _btn(btn_row, "Select", confirm, bg=ACCENT, fg="#1a1a2e").pack(side="left", padx=4)
+    if detail_fn:
+        def show_detail():
+            sel = lb.curselection()
+            item = lb.get(sel[0]) if sel else var.get()
+            detail_fn(d, item)
+        _btn(btn_row, "Details", show_detail, bg=BTN_BG).pack(side="left", padx=4)
+
     d.wait_window()
 
 
@@ -147,8 +167,8 @@ def _pick_suggestion(parent, label, suggestions, text_widget):
 
 class CharacterBuilderApp:
     SECTIONS = [
-        "Basic Info", "Ability Scores", "Combat Stats", "Proficiencies",
-        "Attacks", "Spellcasting", "Equipment", "Features & Traits", "Personality",
+        "Basic Info", "Ability Scores", "Proficiencies",
+        "Spellcasting", "Equipment", "Features & Traits", "Personality",
     ]
 
     def __init__(self, root):
@@ -208,12 +228,20 @@ class CharacterBuilderApp:
         self._refresh_preview()
 
     def _open_section(self, name):
+        if name != "Basic Info":
+            c = self.char
+            if not c.get("race") or not c.get("class"):
+                messagebox.showinfo(
+                    "Basic Info Required",
+                    "Please Enter Basic Info",
+                    parent=self.root,
+                )
+                self._dlg_basic_info()
+                return
         {
             "Basic Info":        self._dlg_basic_info,
             "Ability Scores":    self._dlg_ability_scores,
-            "Combat Stats":      self._dlg_combat,
             "Proficiencies":     self._dlg_proficiencies,
-            "Attacks":           self._dlg_attacks,
             "Spellcasting":      self._dlg_spellcasting,
             "Equipment":         self._dlg_equipment,
             "Features & Traits": self._dlg_features,
@@ -225,12 +253,116 @@ class CharacterBuilderApp:
         col  = GREEN if done else FG
         self._sec_btns[section].config(text=f"{icon}  {section}", fg=col)
 
+    def _calc_combat_stats(self):
+        c       = self.char
+        cls     = c["class"]
+        race    = c["race"]
+        lvl     = c["level"] or 1
+        ab      = c["abilities"]
+        con_mod = modifier(ab.get("constitution", 10))
+        dex_mod = modifier(ab.get("dexterity", 10))
+        wis_mod = modifier(ab.get("wisdom", 10))
+        hit_die = CLASS_HIT_DICE.get(cls, "d8")
+        hd_max  = int(hit_die[1:])
+        hd_avg  = HIT_DIE_AVERAGES.get(hit_die, 5)
+        c["hp"]["max"]     = max(1, hd_max + con_mod) + (lvl - 1) * max(1, hd_avg + con_mod)
+        c["hp"]["current"] = c["hp"]["max"]
+        armor_name = c.get("_armor_name", "")
+        if not armor_name or armor_name == "Unarmored":
+            if cls == "Barbarian":
+                c["armor_class"] = 10 + dex_mod + con_mod
+            elif cls == "Monk":
+                c["armor_class"] = 10 + dex_mod + wis_mod
+            else:
+                c["armor_class"] = 10 + dex_mod
+        else:
+            ar = ARMOR_TABLE.get(armor_name)
+            if ar:
+                base = ar["ac_base"]
+                md   = ar.get("max_dex")
+                if md is None:  c["armor_class"] = base + dex_mod
+                elif md == 0:   c["armor_class"] = base
+                else:           c["armor_class"] = base + min(dex_mod, md)
+            else:
+                c["armor_class"] = 10 + dex_mod
+        c["speed"]             = RACE_SPEED.get(race, 30)
+        c["hit_dice"]["type"]  = hit_die
+        c["hit_dice"]["total"] = lvl
+
+    def _calc_attacks(self):
+        c       = self.char
+        cls     = c["class"]
+        lvl     = c["level"] or 1
+        ab      = c["abilities"]
+        pb      = proficiency_bonus(lvl)
+        str_mod = modifier(ab.get("strength", 10))
+        dex_mod = modifier(ab.get("dexterity", 10))
+
+        attacks = []
+        seen    = set()
+        for item in c.get("equipment", []):
+            name = item["name"]
+            if name in seen:
+                continue
+            w = WEAPONS.get(name)
+            if not w:
+                continue
+            seen.add(name)
+            cat   = w.get("cat", "")
+            props = w.get("props", [])
+            if "finesse" in props:
+                atk_mod = max(str_mod, dex_mod)
+            elif "Ranged" in cat:
+                atk_mod = dex_mod
+            else:
+                atk_mod = str_mod
+            prof  = _weapon_proficient(cls, name, cat)
+            bonus = atk_mod + (pb if prof else 0)
+            dmg_b = w.get("damage", "1d4")
+            dmg   = f"{dmg_b}+{atk_mod}" if atk_mod >= 0 else f"{dmg_b}{atk_mod}"
+            attacks.append({
+                "name": name, "attack_bonus": bonus,
+                "damage": dmg, "damage_type": w.get("type", "—"),
+                "notes": "" if prof else "(not proficient)",
+            })
+
+        if cls == "Monk":
+            ma_die = "d4"
+            for threshold, d in [(1,"d4"),(5,"d6"),(11,"d8"),(17,"d10")]:
+                if lvl >= threshold:
+                    ma_die = d
+            atk_mod = max(str_mod, dex_mod)
+            bonus   = atk_mod + pb
+            dmg     = f"1{ma_die}+{atk_mod}" if atk_mod >= 0 else f"1{ma_die}{atk_mod}"
+            attacks.append({
+                "name": "Unarmed Strike", "attack_bonus": bonus,
+                "damage": dmg, "damage_type": "bludgeoning",
+                "notes": "Martial Arts",
+            })
+
+        c["attacks"] = attacks
+
+    def _refresh_section_visibility(self):
+        can_cast = bool(CLASS_SPELLCASTING.get(self.char.get("class")))
+        btn = self._sec_btns["Spellcasting"]
+        if can_cast:
+            btn.pack(fill="x", padx=4, pady=1,
+                     after=self._sec_btns["Proficiencies"])
+        else:
+            btn.pack_forget()
+
     def _refresh_preview(self):
+        self._calc_combat_stats()
+        self._calc_attacks()
+        self._refresh_section_visibility()
         c  = self.char
         ab = c["abilities"]
         def fmt(k): return f"{k[:3].upper()} {ab.get(k,10):>2} ({modifier(ab.get(k,10)):+d})"
-        lvl = c["level"] or 1
-        pb  = proficiency_bonus(lvl)
+        lvl  = c["level"] or 1
+        pb   = proficiency_bonus(lvl)
+        perc_prof      = "Perception" in c.get("skill_proficiencies", [])
+        passive_perc   = 10 + modifier(ab.get("wisdom", 10)) + (pb if perc_prof else 0)
+        armor_display  = c.get("_armor_name") or "Unarmored"
         lines = [
             "=" * 48,
             f"  {c['name'] or '(unnamed)'}",
@@ -244,8 +376,10 @@ class CharacterBuilderApp:
             f"  {fmt('constitution'):<22} {fmt('intelligence')}",
             f"  {fmt('wisdom'):<22} {fmt('charisma')}",
             "-" * 48,
-            f"  HP {c['hp']['max']} ({c['hp']['current']} cur)  |  AC {c['armor_class']}  |  Spd {c['speed']} ft  |  Prof +{pb}",
-            f"  Hit Die: {c['hit_dice'].get('type','—')}",
+            "  COMBAT",
+            f"  HP {c['hp']['max']}  |  AC {c['armor_class']}  |  Init {modifier(ab.get('dexterity',10)):+d}  |  Spd {c['speed']} ft",
+            f"  Prof +{pb}  |  Hit Die {c['hit_dice'].get('type','—')} ×{c['hit_dice'].get('total',1)}  |  Passive Perc {passive_perc}",
+            f"  Armor: {armor_display}",
             "-" * 48,
         ]
         saves  = c.get("saving_throw_proficiencies", [])
@@ -258,8 +392,9 @@ class CharacterBuilderApp:
         if attacks:
             lines.append("-" * 48)
             lines.append("  ATTACKS")
-            for a in attacks[:6]:
-                lines.append(f"  {a['name']}  {a['attack_bonus']:+d}  {a['damage']} {a['damage_type']}")
+            for a in attacks[:8]:
+                note = f"  {a['notes']}" if a.get("notes") else ""
+                lines.append(f"  {a['name']}  {a['attack_bonus']:+d}  {a['damage']} {a['damage_type']}{note}")
         sc = c.get("spellcasting", {})
         if sc.get("enabled"):
             lines.append("-" * 48)
@@ -320,6 +455,78 @@ class CharacterBuilderApp:
         nb.pack(fill="both", expand=True, padx=8, pady=4)
         return nb
 
+    # ── RACE DETAILS ──────────────────────────────────────────────────────────
+
+    def _show_race_details(self, parent, race):
+        if not race:
+            messagebox.showinfo("No Race Selected", "Select a race first.", parent=parent)
+            return
+
+        _SMALL_RACES = {"Gnome (Forest)", "Gnome (Rock)",
+                        "Halfling (Lightfoot)", "Halfling (Stout)", "Goblin"}
+        size        = "Small" if race in _SMALL_RACES else "Medium"
+        speed       = RACE_SPEED.get(race, 30)
+        racial_data = RACIAL_BONUSES.get(race, {})
+        langs       = RACE_LANGUAGES.get(race, ["Common"])
+        extra_langs = RACE_EXTRA_LANGUAGES.get(race, 0)
+        traits      = RACIAL_TRAITS.get(race, [])
+
+        d = self._dlg(f"{race} — Details", 600, 580)
+        tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
+        tk.Label(d, text=f"  {race.upper()}", font=FONT_HDR,
+                 bg=PANEL, fg=ACCENT, pady=8).pack(fill="x")
+
+        txt = tk.Text(d, bg=INPUT_BG, fg=FG, font=("Consolas", 9),
+                      relief="flat", bd=0, wrap="word", padx=14, pady=10)
+        sb  = tk.Scrollbar(d, command=txt.yview, bg=BG, troughcolor=INPUT_BG)
+        txt.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(fill="both", expand=True, padx=6, pady=4)
+
+        def section(title):
+            txt.insert("end", f"\n{'─'*44}\n {title}\n{'─'*44}\n")
+
+        desc = RACE_DESCRIPTIONS.get(race, "")
+        if desc:
+            txt.insert("end", desc + "\n")
+
+        txt.insert("end", f"\nSize: {size}   |   Speed: {speed} ft\n")
+
+        fixed    = racial_data.get("fixed", {})
+        flex     = racial_data.get("flexible")
+        if fixed or flex:
+            section("ABILITY SCORE BONUSES")
+            for ab, val in fixed.items():
+                sign = f"+{val}" if val > 0 else str(val)
+                txt.insert("end", f"  {ABILITY_LABELS.get(ab, ab)}: {sign}\n")
+            if flex:
+                exclude_names = ", ".join(ABILITY_LABELS[e] for e in flex.get("exclude", []))
+                excl = f" (not {exclude_names})" if exclude_names else ""
+                txt.insert("end",
+                           f"  +{flex['amount']} to {flex['count']} ability of your choice{excl}\n")
+
+        section("LANGUAGES")
+        lang_str = ", ".join(langs)
+        if extra_langs:
+            lang_str += f"  +{extra_langs} extra of your choice"
+        txt.insert("end", f"  {lang_str}\n")
+
+        advantages = [(n, desc) for n, desc in traits
+                      if any(kw in desc.lower() for kw in
+                             ("advantage", "resistance", "immune", "reroll"))]
+        if advantages:
+            section("KEY ADVANTAGES")
+            for name, desc in advantages:
+                txt.insert("end", f"  ★ {name}\n    {desc}\n\n")
+
+        section("ALL RACIAL TRAITS")
+        for name, desc in traits:
+            txt.insert("end", f"  ▸ {name}\n    {desc}\n\n")
+
+        txt.config(state="disabled")
+        _btn(d, "Close", d.destroy, bg=BTN_BG).pack(pady=6)
+        d.wait_window()
+
     # ── 1. BASIC INFO ─────────────────────────────────────────────────────────
 
     def _dlg_basic_info(self):
@@ -355,7 +562,14 @@ class CharacterBuilderApp:
                  _pick_from_list(d, f"Select {lbl}", o, v),
                  bg=BTN_BG).pack(side="left", padx=6)
 
-        picker_row("Race",       RACES,          race_var)
+        rf = lrow("Race")
+        tk.Label(rf, textvariable=race_var, bg=ACCENT, fg="#1a1a2e",
+                 font=("Segoe UI", 10, "bold"), padx=8, pady=2).pack(side="left")
+        _btn(rf, "Change",
+             lambda: _pick_from_list(d, "Select Race", RACES, race_var,
+                                     detail_fn=self._show_race_details),
+             bg=BTN_BG).pack(side="left", padx=6)
+
         picker_row("Class",      CLASSES,        class_var)
 
         sf = lrow("Subclass")
@@ -412,19 +626,26 @@ class CharacterBuilderApp:
         d = self._dlg("Ability Scores", 780, 520)
         self._dlg_hdr(d, "⚄  ABILITY SCORES")
 
-        race    = self.char["race"]
-        cls     = self.char["class"]
-        racial  = RACIAL_BONUSES.get(race, {})
-        primary = CLASS_PRIMARY_STATS.get(cls, [])
-        saves   = CLASS_SAVING_THROWS.get(cls, [])
+        race        = self.char["race"]
+        cls         = self.char["class"]
+        racial_data = RACIAL_BONUSES.get(race, {})
+        racial      = racial_data.get("fixed", {})
+        racial_flex = racial_data.get("flexible")   # None or {count, amount, exclude}
+        primary     = CLASS_PRIMARY_STATS.get(cls, [])
+        saves       = CLASS_SAVING_THROWS.get(cls, [])
+
+        existing_flex = self.char.get("_flex_racial_picks", [])
+        flex_pick_vars = []   # populated below after grid
 
         mode_var  = tk.StringVar(value="standard")
         base_vars = {}
         sa_vars   = {}
         for ab in ABILITIES:
-            bonus = racial.get(ab, 0)
+            fixed_b = racial.get(ab, 0)
+            flex_b  = (existing_flex.count(ab) * racial_flex["amount"]
+                       if racial_flex else 0)
             current = self.char["abilities"].get(ab, 10)
-            base_vars[ab] = tk.IntVar(value=max(1, current - bonus))
+            base_vars[ab] = tk.IntVar(value=max(1, current - fixed_b - flex_b))
             sa_vars[ab]   = tk.StringVar(value="—")
 
         top = tk.Frame(d, bg=BG)
@@ -451,6 +672,7 @@ class CharacterBuilderApp:
         for i, ab in enumerate(ABILITIES):
             r = i + 1
             bonus = racial.get(ab, 0)
+            flex_note = " +flex" if racial_flex and ab not in racial_flex.get("exclude", []) else ""
             if ab in primary:  role, rcol = "* Primary", ACCENT
             elif ab in saves:  role, rcol = "o Save",    BLUE
             else:              role, rcol = "",           DIM
@@ -473,9 +695,10 @@ class CharacterBuilderApp:
             sp.grid(row=r, column=1, padx=2, pady=2)
             pb_spins[ab] = sp
 
-            rb = f"+{bonus}" if bonus > 0 else (str(bonus) if bonus < 0 else "—")
+            rb = (f"+{bonus}" if bonus > 0 else (str(bonus) if bonus < 0 else "")) + flex_note
+            rb = rb or "—"
             tk.Label(grid, text=rb, font=FONT_BODY, bg=BG,
-                     fg=GREEN if bonus > 0 else (RED if bonus < 0 else DIM),
+                     fg=GREEN if (bonus > 0 or flex_note) else (RED if bonus < 0 else DIM),
                      width=8).grid(row=r, column=2, padx=2)
 
             tl = tk.Label(grid, text="—", font=("Segoe UI",10,"bold"), bg=BG, fg=FG, width=6)
@@ -511,6 +734,15 @@ class CharacterBuilderApp:
                     try: rem.remove(int(x))
                     except ValueError: pass
                 status_lbl.config(text=f"Remaining pool: {rem}", fg=ACCENT)
+                for ab in ABILITIES:
+                    taken = {sa_vars[a].get() for a in ABILITIES
+                             if a != ab and sa_vars[a].get() not in ("", "—")}
+                    available = ["—"] + [str(v) for v in STANDARD_ARRAY if str(v) not in taken]
+                    menu = sa_menus[ab]["menu"]
+                    menu.delete(0, "end")
+                    for opt in available:
+                        menu.add_command(label=opt,
+                                         command=lambda v=opt, var=sa_vars[ab]: var.set(v))
             elif mode == "pointbuy":
                 cost = sum(POINT_BUY_COSTS.get(base_vars[a].get(), 0) for a in ABILITIES)
                 rem  = POINT_BUY_BUDGET - cost
@@ -521,7 +753,10 @@ class CharacterBuilderApp:
             for ab in ABILITIES:
                 base  = base_vars[ab].get()
                 total = base + racial.get(ab, 0)
-                m     = modifier(total)
+                if racial_flex:
+                    total += sum(racial_flex["amount"]
+                                 for pv in flex_pick_vars if pv.get() == ab)
+                m = modifier(total)
                 total_lbls[ab].config(text=str(total))
                 mod_lbls[ab].config(text=f"{m:+d}",
                                     fg=GREEN if m > 0 else (RED if m < 0 else DIM))
@@ -530,18 +765,53 @@ class CharacterBuilderApp:
         for ab in ABILITIES:
             base_vars[ab].trace_add("write", refresh)
             sa_vars[ab].trace_add("write", refresh)
+
+        if racial_flex:
+            count   = racial_flex["count"]
+            amount  = racial_flex["amount"]
+            exclude = set(racial_flex.get("exclude", []))
+            avail   = [ab for ab in ABILITIES if ab not in exclude]
+            ff = tk.Frame(d, bg=BG, padx=16)
+            ff.pack(fill="x", pady=4)
+            excl_note = (f" — not {', '.join(ABILITY_LABELS[e] for e in exclude)}"
+                         if exclude else "")
+            tk.Label(ff,
+                     text=f"Choose {count} abilit{'y' if count==1 else 'ies'} "
+                          f"for +{amount} each{excl_note}:",
+                     font=FONT_SM, bg=BG, fg=ACCENT).pack(anchor="w", pady=2)
+            fr = tk.Frame(ff, bg=BG)
+            fr.pack(fill="x")
+            for i in range(count):
+                cur = existing_flex[i] if i < len(existing_flex) else "—"
+                pv  = tk.StringVar(value=cur)
+                tk.Label(fr, text=f"  Choice {i+1}:", font=FONT_SM,
+                         bg=BG, fg=DIM).pack(side="left")
+                om = tk.OptionMenu(fr, pv, *["—"] + avail)
+                om.config(bg=INPUT_BG, fg=FG, font=FONT_BODY, relief="flat",
+                          activebackground=ACCENT, activeforeground="#1a1a2e",
+                          highlightthickness=0, bd=0)
+                om["menu"].config(bg=INPUT_BG, fg=FG, font=FONT_BODY)
+                om.pack(side="left", padx=4)
+                pv.trace_add("write", refresh)
+                flex_pick_vars.append(pv)
+
         refresh()
 
         def on_save():
             mode = mode_var.get()
+            flex_picks = [pv.get() for pv in flex_pick_vars]
+            self.char["_flex_racial_picks"] = [p for p in flex_picks if p != "—"]
             for ab in ABILITIES:
-                bonus = racial.get(ab, 0)
+                fixed_b = racial.get(ab, 0)
+                flex_b  = (sum(racial_flex["amount"] for pv in flex_pick_vars
+                               if pv.get() == ab)
+                           if racial_flex else 0)
                 if mode == "standard":
                     v = sa_vars[ab].get()
                     base = int(v) if v not in ("","—") else 10
                 else:
                     base = base_vars[ab].get()
-                self.char["abilities"][ab] = base + bonus
+                self.char["abilities"][ab] = base + fixed_b + flex_b
             self._mark_done("Ability Scores", True)
             self._refresh_preview()
             d.destroy()
@@ -549,131 +819,7 @@ class CharacterBuilderApp:
         self._ok_cancel(d, on_save)
         d.wait_window()
 
-    # ── 3. COMBAT STATS ───────────────────────────────────────────────────────
-
-    def _dlg_combat(self):
-        d = self._dlg("Combat Stats", 680, 480)
-        self._dlg_hdr(d, "⚔  COMBAT STATS")
-
-        c       = self.char
-        cls     = c["class"]
-        race    = c["race"]
-        lvl     = c["level"] or 1
-        con_mod = modifier(c["abilities"].get("constitution", 10))
-        dex_mod = modifier(c["abilities"].get("dexterity", 10))
-        hit_die = CLASS_HIT_DICE.get(cls, "d8")
-        hd_avg  = HIT_DIE_AVERAGES.get(hit_die, 5)
-        auto_hp = hd_avg + con_mod + (lvl - 1) * (hd_avg + con_mod)
-        auto_spd= RACE_SPEED.get(race, 30)
-
-        body = tk.Frame(d, bg=BG, padx=20, pady=10)
-        body.pack(fill="both", expand=True)
-
-        def lrow(label):
-            f = tk.Frame(body, bg=BG)
-            f.pack(fill="x", pady=5)
-            tk.Label(f, text=label, font=FONT_SM, bg=BG, fg=DIM,
-                     width=16, anchor="w").pack(side="left")
-            return f
-
-        hp_var       = tk.IntVar(value=c["hp"]["max"] or max(1, auto_hp))
-        cur_var      = tk.IntVar(value=c["hp"]["current"] or max(1, auto_hp))
-        tmp_var      = tk.IntVar(value=c["hp"]["temp"])
-        ac_var       = tk.IntVar(value=c["armor_class"] or 10)
-        spd_var      = tk.IntVar(value=c["speed"] or auto_spd)
-        hd_type_var  = tk.StringVar(value=c["hit_dice"].get("type") or hit_die)
-        hd_total_var = tk.IntVar(value=c["hit_dice"].get("total") or lvl)
-        hd_used_var  = tk.IntVar(value=c["hit_dice"].get("used", 0))
-        armor_name_var = tk.StringVar(value=c.get("_armor_name", ""))
-
-        hf = lrow("Max HP")
-        auto_hp_var = tk.BooleanVar(value=False)
-        hp_spin = tk.Spinbox(hf, from_=1, to=999, textvariable=hp_var, width=6,
-                             bg=INPUT_BG, fg=FG, font=FONT_BODY,
-                             buttonbackground=BTN_BG, relief="flat")
-        hp_spin.pack(side="left")
-        def toggle_auto(*_):
-            if auto_hp_var.get():
-                hp_var.set(max(1, auto_hp))
-                hp_spin.config(state="disabled")
-            else:
-                hp_spin.config(state="normal")
-        tk.Checkbutton(hf, text=f"Auto ({auto_hp} from {cls} {hit_die}+CON x{lvl})",
-                       variable=auto_hp_var, command=toggle_auto,
-                       bg=BG, fg=DIM, selectcolor=INPUT_BG, activebackground=BG,
-                       font=FONT_SM).pack(side="left", padx=8)
-
-        for lbl, var in [("Current HP", cur_var), ("Temp HP", tmp_var)]:
-            f = lrow(lbl)
-            tk.Spinbox(f, from_=0, to=999, textvariable=var, width=6,
-                       bg=INPUT_BG, fg=FG, font=FONT_BODY,
-                       buttonbackground=BTN_BG, relief="flat").pack(side="left")
-
-        af = lrow("Armor / AC")
-        armor_lbl = tk.Label(af, textvariable=armor_name_var, font=FONT_SM,
-                             bg=BTN_BG, fg=FG, padx=6, pady=2)
-        armor_lbl.pack(side="left")
-
-        def update_ac(*_):
-            name = armor_name_var.get()
-            if not name or "Unarmored" in name or name == "":
-                ac_var.set(10 + dex_mod)
-                return
-            ar = ARMOR_TABLE.get(name)
-            if not ar:
-                return
-            base = ar["ac_base"]
-            md   = ar.get("max_dex")
-            if md is None:   ac_var.set(base + dex_mod)
-            elif md == 0:    ac_var.set(base)
-            else:            ac_var.set(base + min(dex_mod, md))
-
-        armor_name_var.trace_add("write", update_ac)
-        armor_names = list(ARMOR_TABLE.keys()) + ["Unarmored (10+DEX)"]
-        _btn(af, "Pick Armor", lambda: _pick_from_list(d, "Select Armor", armor_names, armor_name_var),
-             bg=BTN_BG).pack(side="left", padx=6)
-        tk.Label(af, text="or override:", font=FONT_SM, bg=BG, fg=DIM).pack(side="left")
-        tk.Spinbox(af, from_=1, to=30, textvariable=ac_var, width=5,
-                   bg=INPUT_BG, fg=FG, font=FONT_BODY,
-                   buttonbackground=BTN_BG, relief="flat").pack(side="left", padx=4)
-
-        spf = lrow("Speed (ft)")
-        tk.Spinbox(spf, from_=0, to=120, textvariable=spd_var, width=6,
-                   bg=INPUT_BG, fg=FG, font=FONT_BODY,
-                   buttonbackground=BTN_BG, relief="flat").pack(side="left")
-        tk.Label(spf, text=f"  ({race or 'race'}: {auto_spd} ft default)",
-                 font=FONT_SM, bg=BG, fg=DIM).pack(side="left")
-
-        hdf = lrow("Hit Dice")
-        tk.Label(hdf, textvariable=hd_type_var, bg=BTN_BG, fg=ACCENT,
-                 font=("Segoe UI",10,"bold"), padx=6).pack(side="left")
-        _btn(hdf, "Change",
-             lambda: _pick_from_list(d, "Hit Die", ["d4","d6","d8","d10","d12"], hd_type_var),
-             bg=BTN_BG).pack(side="left", padx=4)
-        for lbl2, var2 in [("Total:", hd_total_var), ("Used:", hd_used_var)]:
-            tk.Label(hdf, text=lbl2, font=FONT_SM, bg=BG, fg=DIM).pack(side="left", padx=(6,2))
-            tk.Spinbox(hdf, from_=0, to=20, textvariable=var2, width=4,
-                       bg=INPUT_BG, fg=FG, font=FONT_BODY,
-                       buttonbackground=BTN_BG, relief="flat").pack(side="left")
-
-        def on_save():
-            c["hp"]["max"]         = hp_var.get()
-            c["hp"]["current"]     = cur_var.get()
-            c["hp"]["temp"]        = tmp_var.get()
-            c["armor_class"]       = ac_var.get()
-            c["speed"]             = spd_var.get()
-            c["hit_dice"]["type"]  = hd_type_var.get()
-            c["hit_dice"]["total"] = hd_total_var.get()
-            c["hit_dice"]["used"]  = hd_used_var.get()
-            c["_armor_name"]       = armor_name_var.get()
-            self._mark_done("Combat Stats", c["hp"]["max"] > 0)
-            self._refresh_preview()
-            d.destroy()
-
-        self._ok_cancel(d, on_save)
-        d.wait_window()
-
-    # ── 4. PROFICIENCIES ──────────────────────────────────────────────────────
+    # ── 3. PROFICIENCIES ──────────────────────────────────────────────────────
 
     def _dlg_proficiencies(self):
         d = self._dlg("Proficiencies", 840, 620)
@@ -811,150 +957,7 @@ class CharacterBuilderApp:
         self._ok_cancel(d, on_save)
         d.wait_window()
 
-    # ── 5. ATTACKS ────────────────────────────────────────────────────────────
-
-    def _dlg_attacks(self):
-        d = self._dlg("Attacks", 840, 560)
-        self._dlg_hdr(d, "⚔  ATTACKS & WEAPONS")
-
-        c       = self.char
-        lvl     = c["level"] or 1
-        pb      = proficiency_bonus(lvl)
-        str_mod = modifier(c["abilities"].get("strength", 10))
-        dex_mod = modifier(c["abilities"].get("dexterity", 10))
-        attacks = [dict(a) for a in c.get("attacks", [])]
-
-        panes = tk.Frame(d, bg=BG)
-        panes.pack(fill="both", expand=True, padx=8, pady=4)
-
-        left = tk.Frame(panes, bg=BG)
-        left.pack(side="left", fill="both", expand=True)
-        tk.Label(left, text="Filter by category:", font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", padx=8)
-        cat_var = tk.StringVar(value="All")
-        cat_f = tk.Frame(left, bg=BG)
-        cat_f.pack(fill="x", padx=8)
-        for cat in ["All"] + WEAPON_CATEGORIES:
-            tk.Radiobutton(cat_f, text=cat, variable=cat_var, value=cat,
-                           bg=BG, fg=FG, selectcolor=INPUT_BG, activebackground=BG,
-                           font=FONT_SM).pack(side="left", padx=2)
-        wep_frame, wep_lb = _listbox(left, [], height=12, width=26)
-        wep_frame.pack(padx=8, pady=4, fill="x")
-        det_lbl = tk.Label(left, text="Select a weapon", font=FONT_SM,
-                           bg=BG, fg=DIM, wraplength=240, justify="left")
-        det_lbl.pack(anchor="w", padx=8, pady=2)
-
-        def refresh_wep(*_):
-            cat = cat_var.get()
-            wep_lb.delete(0, tk.END)
-            for name, data in WEAPONS.items():
-                if cat == "All" or data.get("cat") == cat:
-                    wep_lb.insert(tk.END, name)
-        cat_var.trace_add("write", refresh_wep)
-        refresh_wep()
-
-        def on_wep_select(*_):
-            sel = wep_lb.curselection()
-            if not sel:
-                return
-            name = wep_lb.get(sel[0])
-            w = WEAPONS.get(name, {})
-            props = ", ".join(w.get("props", [])) or "none"
-            det_lbl.config(text=f"{name}\n{w.get('damage','?')} {w.get('type','?')}\n"
-                                f"{w.get('cat','?')}\nProps: {props}", fg=FG)
-        wep_lb.bind("<<ListboxSelect>>", on_wep_select)
-
-        right = tk.Frame(panes, bg=BG, width=310)
-        right.pack(side="left", fill="both", padx=(8,0))
-        right.pack_propagate(False)
-        tk.Label(right, text="Character's Attacks:", font=("Segoe UI",9,"bold"),
-                 bg=BG, fg=DIM).pack(anchor="w", padx=8)
-        atk_f = tk.Frame(right, bg=INPUT_BG)
-        atk_f.pack(fill="x", padx=8, pady=4)
-
-        def refresh_atks():
-            for w in atk_f.winfo_children():
-                w.destroy()
-            for i, atk in enumerate(attacks):
-                f = tk.Frame(atk_f, bg=INPUT_BG)
-                f.pack(fill="x", pady=1)
-                tk.Label(f, text=f"{atk['name']}  {atk['attack_bonus']:+d}  {atk['damage']} {atk['damage_type']}",
-                         font=FONT_SM, bg=INPUT_BG, fg=FG).pack(side="left", padx=4)
-                _btn(f, "x", lambda i=i: (attacks.pop(i), refresh_atks()),
-                     bg="#3a1e1e", font=("Segoe UI",8)).pack(side="right", padx=2)
-
-        prof_var    = tk.BooleanVar(value=True)
-        use_dex_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(right, text=f"Proficient (+{pb} prof bonus)", variable=prof_var,
-                       bg=BG, fg=FG, selectcolor=INPUT_BG, activebackground=BG,
-                       font=FONT_SM).pack(anchor="w", padx=8, pady=2)
-        tk.Checkbutton(right, text="Use DEX (finesse/ranged)", variable=use_dex_var,
-                       bg=BG, fg=FG, selectcolor=INPUT_BG, activebackground=BG,
-                       font=FONT_SM).pack(anchor="w", padx=8, pady=2)
-
-        def add_weapon():
-            sel = wep_lb.curselection()
-            if not sel:
-                messagebox.showinfo("No Selection", "Pick a weapon from the list.", parent=d)
-                return
-            name  = wep_lb.get(sel[0])
-            w     = WEAPONS.get(name, {})
-            props = w.get("props", [])
-            use_d = use_dex_var.get() or "Ranged" in w.get("cat","")
-            if "finesse" in props:
-                atk_mod = max(str_mod, dex_mod)
-            else:
-                atk_mod = dex_mod if use_d else str_mod
-            bonus = atk_mod + (pb if prof_var.get() else 0)
-            dmg_b = w.get("damage","1d4")
-            dmg   = f"{dmg_b}+{atk_mod}" if atk_mod >= 0 else f"{dmg_b}{atk_mod}"
-            attacks.append({"name": name, "attack_bonus": bonus,
-                            "damage": dmg, "damage_type": w.get("type","?"), "notes": ""})
-            refresh_atks()
-
-        _btn(right, "+ Add Weapon", add_weapon, bg="#1e4620").pack(anchor="w", padx=8, pady=6)
-        tk.Label(right, text="-- Custom Attack --", font=FONT_SM, bg=BG, fg=DIM).pack(pady=4)
-        cust_f = tk.Frame(right, bg=BG)
-        cust_f.pack(fill="x", padx=8)
-        cn = tk.Entry(cust_f, bg=INPUT_BG, fg=FG, font=FONT_SM, width=12,
-                      insertbackground=FG, relief="flat")
-        cn.pack(side="left", padx=2)
-        cn.insert(0,"Name")
-        cb2 = tk.Entry(cust_f, bg=INPUT_BG, fg=FG, font=FONT_SM, width=4,
-                       insertbackground=FG, relief="flat")
-        cb2.pack(side="left", padx=2)
-        cb2.insert(0,"+0")
-        cd = tk.Entry(cust_f, bg=INPUT_BG, fg=FG, font=FONT_SM, width=7,
-                      insertbackground=FG, relief="flat")
-        cd.pack(side="left", padx=2)
-        cd.insert(0,"1d6")
-        ct = tk.Entry(cust_f, bg=INPUT_BG, fg=FG, font=FONT_SM, width=8,
-                      insertbackground=FG, relief="flat")
-        ct.pack(side="left", padx=2)
-        ct.insert(0,"slashing")
-
-        def add_custom():
-            name = cn.get().strip()
-            if not name or name == "Name":
-                return
-            try:    bonus = int(cb2.get().replace("+",""))
-            except: bonus = 0
-            attacks.append({"name": name, "attack_bonus": bonus,
-                            "damage": cd.get().strip(), "damage_type": ct.get().strip(), "notes": ""})
-            refresh_atks()
-
-        _btn(right, "+ Add Custom", add_custom, bg=BTN_BG).pack(anchor="w", padx=8, pady=4)
-        refresh_atks()
-
-        def on_save():
-            c["attacks"] = attacks
-            self._mark_done("Attacks", len(attacks) > 0)
-            self._refresh_preview()
-            d.destroy()
-
-        self._ok_cancel(d, on_save)
-        d.wait_window()
-
-    # ── 6. SPELLCASTING ───────────────────────────────────────────────────────
+    # ── 5. SPELLCASTING ───────────────────────────────────────────────────────
 
     def _dlg_spellcasting(self):
         d   = self._dlg("Spellcasting", 900, 640)
@@ -1085,7 +1088,77 @@ class CharacterBuilderApp:
         equipment = [dict(e) for e in c.get("equipment", [])]
         currency  = dict(c.get("currency", {"cp":0,"sp":0,"ep":0,"gp":0,"pp":0}))
         start_gp  = CLASS_STARTING_GOLD.get(cls, 75)
+
+        armor_row = tk.Frame(d, bg=BG, padx=20, pady=6)
+        armor_row.pack(fill="x")
+        tk.Label(armor_row, text="Worn Armor:", font=FONT_SM, bg=BG, fg=DIM,
+                 width=14, anchor="w").pack(side="left")
+        armor_name_var = tk.StringVar(value=c.get("_armor_name", ""))
+        tk.Label(armor_row, textvariable=armor_name_var, font=FONT_SM,
+                 bg=BTN_BG, fg=FG, padx=8, pady=2, width=22, anchor="w").pack(side="left")
+        armor_names = list(ARMOR_TABLE.keys()) + ["Unarmored"]
+        _btn(armor_row, "Pick",
+             lambda: _pick_from_list(d, "Select Armor", armor_names, armor_name_var),
+             bg=BTN_BG).pack(side="left", padx=6)
+        _btn(armor_row, "Clear", lambda: armor_name_var.set(""), bg=BTN_BG).pack(side="left")
+        tk.Frame(d, bg=PANEL, height=1).pack(fill="x", padx=12)
+
         nb = self._notebook(d)
+
+        # Weapons tab
+        tw = tk.Frame(nb, bg=BG)
+        nb.add(tw, text="Weapons")
+
+        avail_weapons = [(name, data) for name, data in WEAPONS.items()
+                         if _weapon_proficient(cls, name, data["cat"])] if cls else list(WEAPONS.items())
+        avail_names   = [name for name, _ in avail_weapons]
+
+        hdr_text = (f"{cls} weapon proficiencies ({len(avail_names)} weapons)"
+                    if cls else "All weapons — set a class in Basic Info to filter")
+        tk.Label(tw, text=hdr_text, font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", padx=12, pady=(6,2))
+
+        tw_body = tk.Frame(tw, bg=BG)
+        tw_body.pack(fill="both", expand=True, padx=8, pady=4)
+
+        wf, wlb = _listbox(tw_body, avail_names, height=12, width=26)
+        wf.pack(side="left", fill="y")
+
+        det_f = tk.Frame(tw_body, bg=BG)
+        det_f.pack(side="left", fill="both", expand=True, padx=12)
+        det_lbl = tk.Label(det_f, text="Select a weapon for details.",
+                           font=FONT_SM, bg=BG, fg=DIM, justify="left",
+                           wraplength=220, anchor="nw")
+        det_lbl.pack(anchor="nw", pady=4)
+
+        def on_wep_select(*_):
+            sel = wlb.curselection()
+            if not sel:
+                return
+            wname = avail_names[sel[0]]
+            w     = WEAPONS[wname]
+            props = ", ".join(w.get("props", [])) or "—"
+            already = any(e["name"] == wname for e in equipment)
+            status  = "  [already in equipment]" if already else ""
+            det_lbl.config(
+                text=f"{wname}{status}\n\nDamage:  {w['damage']} {w['type']}\n"
+                     f"Category: {w['cat']}\nProperties: {props}",
+                fg=ACCENT if already else FG,
+            )
+
+        wlb.bind("<<ListboxSelect>>", on_wep_select)
+
+        def add_weapon_to_equip():
+            sel = wlb.curselection()
+            if not sel:
+                return
+            wname = avail_names[sel[0]]
+            if not any(e["name"] == wname for e in equipment):
+                equipment.append({"name": wname, "quantity": 1, "weight": 0, "notes": ""})
+                on_wep_select()
+                refresh_equip()
+            nb.select(1)
+
+        _btn(det_f, "+ Add to Equipment", add_weapon_to_equip, bg="#1e4620").pack(anchor="w", pady=6)
 
         # Packs tab
         t1 = tk.Frame(nb, bg=BG)
@@ -1170,8 +1243,9 @@ class CharacterBuilderApp:
              lambda: curr_vars["gp"].set(start_gp), bg=BTN_BG).pack(anchor="w", padx=20, pady=6)
 
         def on_save():
-            c["equipment"] = equipment
-            c["currency"]  = {coin: v.get() for coin, v in curr_vars.items()}
+            c["equipment"]    = equipment
+            c["currency"]     = {coin: v.get() for coin, v in curr_vars.items()}
+            c["_armor_name"]  = armor_name_var.get()
             self._mark_done("Equipment",
                             len(equipment)>0 or any(v.get()>0 for v in curr_vars.values()))
             self._refresh_preview()
@@ -1360,9 +1434,7 @@ class CharacterBuilderApp:
                 self._mark_done(sec, False)
             self._mark_done("Basic Info",    bool(self.char["name"]))
             self._mark_done("Ability Scores", any(v!=10 for v in self.char["abilities"].values()))
-            self._mark_done("Combat Stats",   self.char["hp"]["max"]>0)
             self._mark_done("Proficiencies",  bool(self.char.get("skill_proficiencies")))
-            self._mark_done("Attacks",        bool(self.char.get("attacks")))
             self._mark_done("Spellcasting",   self.char.get("spellcasting",{}).get("enabled",False))
             self._mark_done("Equipment",      bool(self.char.get("equipment")))
             self._mark_done("Personality",    bool(self.char.get("personality_traits")))

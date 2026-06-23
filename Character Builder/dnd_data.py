@@ -772,6 +772,239 @@ BACKGROUND_FEATURES = {
     "Waterdhavian Noble":  ("Kept in Style", "While in Waterdeep or any city of the North, you can live at a wealthy lifestyle for free by staying with your family or guild associates."),
 }
 
+# ── Race descriptions ──────────────────────────────────────────────────────────
+
+RACE_DESCRIPTIONS = {
+    "Dragonborn": (
+        "Dragonborn look very much like dragons standing erect in humanoid form, though they lack wings "
+        "or a tail. Born of draconic gods or the descendants of dragons, they walk proudly through a world "
+        "that greets them with fearful incomprehension. Their coloring — red, gold, bronze, blue, white, "
+        "green, black, copper, brass, or silver — reflects their draconic bloodline. They prize skill "
+        "and excellence above all else, and a dragonborn's clan is the most important thing in their life, "
+        "even for those who have been cast out."
+    ),
+    "Dwarf (Hill)": (
+        "Bold and hardy, hill dwarves are known as skilled warriors, miners, and workers of stone and metal. "
+        "More commonly seen among surface folk than their mountain cousins, they have an innate toughness "
+        "that lets them outlast almost any hardship. Hill dwarves hold their traditions close, value loyalty "
+        "above almost anything else, and carry a deep-seated hatred of goblins and orcs — ancient enemies "
+        "of their people. Their lifespan stretches past 400 years, giving them a long memory for both "
+        "grudges and friendships."
+    ),
+    "Dwarf (Mountain)": (
+        "Mountain dwarves are physically stronger and more martially disciplined than their hill-dwelling "
+        "kin, bred over generations to defend the great stone halls carved from the highest peaks. They are "
+        "stocky and powerful, with a natural aptitude for armor and combat. Mountain dwarves have made their "
+        "strongholds in the deep places of the earth, often far from the surface world, and they carry the "
+        "weight of centuries of tradition and war. Their stubbornness is legendary — a mountain dwarf does "
+        "not abandon a cause, a friend, or a grudge."
+    ),
+    "Elf (Drow / Dark)": (
+        "Drow are a subrace of elves who were driven underground thousands of years ago for following the "
+        "spider goddess Lolth down the path of chaos and cruelty. In the Underdark, they built a society "
+        "of brutal ambition and arcane mastery, surviving by turning on each other as much as outsiders. "
+        "Drow who leave that world behind — whether by exile or choice — face deep suspicion on the surface, "
+        "their black skin and white hair marking them immediately. Yet some drow carry within them a will "
+        "to prove that destiny is not determined by birth."
+    ),
+    "Elf (High)": (
+        "High elves are slender, graceful beings who have cultivated arcane arts and refined culture over "
+        "millennia. They believe themselves to be among the most civilized and intellectually accomplished "
+        "of all races, and their ancient cities — often hidden in magically protected valleys or built near "
+        "ley lines — reflect centuries of accumulated wisdom and artistic achievement. High elves see "
+        "themselves as stewards of magical knowledge, and they carry an innate connection to the weave of "
+        "magic that gives every high elf at least one cantrip."
+    ),
+    "Elf (Wood)": (
+        "Wood elves are more primal and feral than their high elf kin, choosing the deep wilderness over "
+        "towers of scholarship. Quick, perceptive, and fiercely independent, they live in close communion "
+        "with the oldest forests of the world and guard those places jealously from intrusion. A wood elf "
+        "moves through the trees faster than most creatures can move on open ground, and their ability to "
+        "blend into natural surroundings makes them among the most elusive hunters and scouts in any world."
+    ),
+    "Gnome (Forest)": (
+        "Forest gnomes are small, curious beings with a natural affinity for the living world and a love "
+        "of minor illusion magic. They live in tight-knit communities hidden beneath old-growth forest "
+        "canopies, using their ability to communicate with small animals and weave illusions to stay safe "
+        "from larger predators and careless travellers. Cheerful and inventive, forest gnomes find wonder "
+        "in everything, and their small hidden villages are places of laughter, tinkering, and celebration "
+        "of nature's endless variety."
+    ),
+    "Gnome (Rock)": (
+        "Rock gnomes are the most commonly encountered gnomes in the wider world — energetic, inventive, "
+        "and perpetually tinkering. They have a deep love of gems, clockwork mechanisms, and the thrill "
+        "of discovery, and their communities often resemble workshops more than towns. Rock gnomes have "
+        "an innate talent for history and artifice, and their Gnome Cunning gives them a remarkable "
+        "resistance to magical manipulation. They tend to be talkative, enthusiastic, and occasionally "
+        "exhausting to keep up with."
+    ),
+    "Half-Elf": (
+        "Half-elves combine the ambition and adaptability of their human heritage with the grace, "
+        "perception, and longevity of their elven side. They tend to be curious, creative, and possessed "
+        "of a natural charisma that makes them gifted diplomats and storytellers. Half-elves have no "
+        "true homeland — neither fully accepted in elven communities nor entirely at home among humans — "
+        "and this sense of living between worlds gives them a unique perspective. Most half-elves are "
+        "wanderers by nature, building connections across cultures with ease."
+    ),
+    "Half-Orc": (
+        "Half-orcs inherit a powerful physique and a fierce determination from their orcish lineage, "
+        "combined with human flexibility and drive. They bear the physical marks of that heritage — "
+        "grayish skin, prominent lower canines, and a powerful build — and often face prejudice in "
+        "civilized lands. Half-orcs are rarely born into comfort; most have had to fight for their place "
+        "in the world. This shapes them into driven, resilient individuals who push past limits that "
+        "would stop others cold, and their orcish stubbornness means they are extraordinarily hard to kill."
+    ),
+    "Halfling (Lightfoot)": (
+        "Lightfoot halflings are small, cheerful wanderers with a surprising talent for going unnoticed. "
+        "They love the comforts of home — good food, warm fires, and the company of friends — but an "
+        "adventurous streak runs through many of them. Lightfoot halflings are naturally lucky, brave "
+        "despite their size, and possessed of a gift for blending into any crowd or background. They "
+        "make natural rogues and scouts, and their easy-going charm means they rarely stay without friends "
+        "for long wherever they travel."
+    ),
+    "Halfling (Stout)": (
+        "Stout halflings are tougher than their lightfoot cousins, thought by some scholars to carry a "
+        "thread of dwarven blood from ancient alliances. They share the halfling love of home and "
+        "community but add to it a hardiness that shrugs off poisons and hardship with equal ease. "
+        "Stout halflings are dependable, warm-hearted, and quietly courageous — the kind of companions "
+        "who never abandon a friend in trouble and who never seem to stay down no matter how hard life "
+        "knocks them."
+    ),
+    "Human": (
+        "Humans are the most widespread, adaptable, and ambitious race in the multiverse. Their short "
+        "lifespans drive them to heights of achievement that longer-lived races rarely match for sheer "
+        "drive and urgency. Humans build empires, establish religions, found academies, and explore "
+        "uncharted wilderness — all within what an elf would call a single lifetime. They are found in "
+        "every corner of every world, in every climate and culture, and their extraordinary variety makes "
+        "it nearly impossible to generalize about them beyond their boundless adaptability."
+    ),
+    "Human (Variant)": (
+        "Some humans are born with an exceptional natural gift — an innate talent that sets them apart "
+        "even as children. These variant humans learn faster than most, developing a notable skill or "
+        "feat early in life that other adventurers only acquire through years of practice. Where standard "
+        "humans excel through relentless effort, variant humans are defined by a particular brilliance "
+        "that marks them as remarkable even among their already remarkable kind."
+    ),
+    "Tiefling": (
+        "Tieflings are humans with an infernal bloodline — descendants of those who made pacts with "
+        "devils in ages past, or who were touched by demonic power. They bear unmistakable physical "
+        "marks: horns, a long tail, solid-colored eyes without whites, and skin tones ranging from "
+        "deep red to purple and blue. Despite the suspicion this appearance invites, tieflings are "
+        "not inherently evil — they are their own people, shaped by their choices rather than their "
+        "heritage. Many tieflings carry a fierce determination to prove that blood is not destiny."
+    ),
+    "Aasimar": (
+        "Aasimar are humans touched by celestial power, carrying the divine spark of angels, gods, "
+        "or the Upper Planes in their blood. They often appear nearly human at first glance, but bear "
+        "subtle signs of their heritage — luminous eyes, a faint glow to their skin, or an unearthly "
+        "beauty. Most aasimar feel a calling toward good and justice, guided by a celestial spirit that "
+        "whispers counsel in their dreams. That destiny is theirs to accept or reject, but the potential "
+        "for greatness — and sacrifice — marks them from birth."
+    ),
+    "Firbolg": (
+        "Firbolgs are large, reclusive humanoids deeply attuned to the natural world, preferring the "
+        "quiet of ancient forests to the company of other races. Despite their imposing size, they are "
+        "gentle, patient, and fundamentally peaceful — turning to violence only as a true last resort. "
+        "Firbolgs can communicate with beasts and plants, turn invisible, and move with surprising "
+        "subtlety for their size. Their forest homes are places of deep calm and ancient wisdom, and "
+        "firbolgs who venture into the wider world do so with careful, measured purpose."
+    ),
+    "Genasi (Air)": (
+        "Air genasi are touched by the Elemental Plane of Air, born of mortals with djinn blood or "
+        "conceived during exposure to planar energy. They tend to be light-footed and free-spirited, "
+        "with blue-gray or pale skin and hair that drifts as if in a constant breeze. Air genasi "
+        "prize freedom above all else and find confinement — physical or social — deeply uncomfortable. "
+        "They are drawn to open skies, high places, and the thrill of travel, and their connection to "
+        "elemental air lets them hold their breath indefinitely and call on wind magic."
+    ),
+    "Genasi (Earth)": (
+        "Earth genasi carry the solidity and endurance of the Elemental Plane of Earth in their very "
+        "bones. They tend to be stocky and powerful, with skin that resembles stone — rough-textured, "
+        "dark, or threaded with mineral veins of quartz or ore. Calm and deliberate by nature, earth "
+        "genasi are as reliable as bedrock, moving through the world with steady, unhurried purpose. "
+        "They walk across difficult rocky terrain without effort and draw upon the deep magic of stone "
+        "to pass untracked through the wilderness."
+    ),
+    "Genasi (Fire)": (
+        "Fire genasi are touched by elemental flame — most descended from efreeti or born near powerful "
+        "fire nodes on the Material Plane. They run hot in every sense: their hair flickers like flame, "
+        "their eyes glow, and their skin carries a reddish or coal-dark warmth. Passionate, fierce, and "
+        "hard to ignore, fire genasi have a natural magnetism that draws others to them even as their "
+        "intensity keeps some at a distance. They are drawn to leadership, conflict, and glory, their "
+        "inner fire driving them toward the center of every storm."
+    ),
+    "Genasi (Water)": (
+        "Water genasi are calm and fluid, touched by the Elemental Plane of Water through merfolk "
+        "lineages, sea spirits, or planar crossings. Their skin carries blue-green or sea-gray tones, "
+        "and their hair drifts as if perpetually submerged. Patient and adaptable, water genasi are at "
+        "home in any environment but feel most themselves near the ocean. Their temperament tends toward "
+        "deep contemplation and long memory, and their connection to elemental water lets them breathe "
+        "beneath the waves and shape water with a touch."
+    ),
+    "Goblin": (
+        "Goblins are small, nimble humanoids with a survival-driven cunning that larger races tend to "
+        "underestimate. Long dismissed as vermin by the major civilizations of the world, individual "
+        "goblins who find their own path are often surprisingly resourceful, quick-thinking, and tough. "
+        "Their small size and explosive speed make them natural skirmishers, and their ability to "
+        "disengage or hide at a moment's notice means they rarely stay in a losing fight. A goblin "
+        "adventurer has usually left behind the chaos of their kin by choice — and usually has a very "
+        "interesting story about why."
+    ),
+    "Goliath": (
+        "Goliaths are towering humanoids who dwell in the highest mountain peaks, shaped by the brutal "
+        "demands of survival at altitude. Their society prizes individual achievement, fairness, and "
+        "contribution — a goliath who cannot pull their weight is a danger to the whole tribe. They "
+        "compete constantly in tests of strength and endurance, not from cruelty but from a genuine "
+        "belief that excellence keeps everyone alive. Goliaths carry a stone's endurance into battle, "
+        "shrugging off damage that would fell a lesser warrior, and their competitive drive makes them "
+        "relentless opponents."
+    ),
+    "Kenku": (
+        "Kenku are cursed, flightless bird-folk who once soared the skies but lost their wings and "
+        "their original voice in punishment for an ancient betrayal. They communicate entirely through "
+        "mimicry — reproducing sounds, voices, and phrases they have heard, never speaking in their "
+        "own words. This gives them an unsettling manner, but also extraordinary skill at copying "
+        "sounds, handwriting, and craftsmanship. Kenku are survivors by nature, clever and opportunistic, "
+        "and those who become adventurers often do so seeking to understand the curse that defines them."
+    ),
+    "Lizardfolk": (
+        "Lizardfolk are cold-blooded reptilian humanoids who experience the world through a lens of "
+        "pure pragmatism — survival is the only true value, and sentiment is a luxury they have never "
+        "been able to afford. They do not understand sorrow, attachment, or mercy in the way mammalian "
+        "races do, and what others call ruthlessness they simply call reason. Lizardfolk are formidable "
+        "hunters and ingenious crafters, using every part of their environment and prey. Those who "
+        "adventure among other races often find themselves genuinely baffled by emotions they observe "
+        "but cannot share."
+    ),
+    "Tabaxi": (
+        "Tabaxi are lithe, agile cat-folk from a distant jungle continent, driven by an insatiable "
+        "curiosity that propels them to travel the world collecting stories, objects, and experiences. "
+        "A tabaxi who has heard of something interesting cannot rest until they have seen it for "
+        "themselves — which makes them natural wanderers and somewhat unpredictable companions. Their "
+        "feline speed lets them burst into incredible movement when the need arises, and their climbing "
+        "ability makes them at home in any environment with vertical surfaces. Tabaxi prize stories "
+        "above gold; the greatest treasure is a tale no one else has heard."
+    ),
+    "Triton": (
+        "Tritons are a proud aquatic race who have spent millennia guarding the deepest ocean trenches "
+        "against horrors from the Elemental Plane of Water. They are humanoid in form, with blue-green "
+        "skin, webbed hands and feet, and features that suggest the sea. Tritons see themselves as "
+        "civilization's silent protectors — even when civilization has no idea it is being protected. "
+        "This gives them a somewhat superior bearing that can read as arrogance, though their dedication "
+        "to defending the innocent from dark-water threats is entirely genuine. They can breathe water "
+        "and call on elemental magic of wind and wave."
+    ),
+    "Yuan-ti Pureblood": (
+        "Yuan-ti purebloods are the most human-appearing of the serpent-blooded yuan-ti — the product "
+        "of ancient rituals in which humans bound themselves to serpent gods, merging their bloodlines "
+        "with those of snakes. To the casual eye they appear nearly human, but subtle scales around "
+        "the neck, serpentine eyes, and an unnerving stillness betray their nature. Purebloods are "
+        "valued by yuan-ti society as infiltrators and agents in the surface world, their human "
+        "appearance making them ideal spies. Their magic resistance makes them extraordinarily "
+        "difficult to control or manipulate with spells."
+    ),
+}
+
 # ── Racial traits ──────────────────────────────────────────────────────────────
 
 RACIAL_TRAITS = {
