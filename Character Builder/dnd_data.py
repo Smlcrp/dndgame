@@ -1005,6 +1005,258 @@ RACE_DESCRIPTIONS = {
     ),
 }
 
+# ── Background descriptions ────────────────────────────────────────────────────
+
+BACKGROUND_DESCRIPTIONS = {
+    "Acolyte": (
+        "You have spent your life in the service of a temple, acting as an intermediary between the realm "
+        "of the holy and the mortal world, performing sacred rites and offering sacrifices in honor of the "
+        "gods. You are not necessarily a cleric — performing sacred rites is not the same thing as channeling "
+        "divine power — but it is not uncommon for acolytes to awaken to a divine calling while serving at "
+        "an altar."
+    ),
+    "Anthropologist": (
+        "You have always been fascinated by other cultures, from the most ancient and primeval lost lands "
+        "to the most modern civilizations. You have likely spent years living among peoples different from "
+        "your birth culture, mastering their customs, adopting their superstitions, and learning their "
+        "languages. By immersing yourself in the daily lives of these cultures you have gained insight into "
+        "the bonds that hold civilizations together — and those that break them apart."
+    ),
+    "Archaeologist": (
+        "An archaeologist digs into the distant past, often in search of long-lost civilizations and the "
+        "treasures they left behind. Some work for academic institutions or well-funded patrons while others "
+        "operate as lone treasure-hunters after glory, fame, and wealth. Regardless of motivation, "
+        "archaeologists share a love of discovery and an ability to survive the dangers lurking in ancient, "
+        "trap-laden ruins."
+    ),
+    "Athlete": (
+        "You have trained your body to its limits, competing in grand games, famous tournaments, or seasonal "
+        "festivals that draw the greatest competitors from across the land. The cheers of the crowd, the "
+        "thrill of victory, and the sorrow of defeat have all shaped who you are. Your physical prowess "
+        "is matched by a fiercely competitive spirit and the discipline born from years of rigorous training."
+    ),
+    "Charlatan": (
+        "You have always had a way with people. You know what makes them tick, you can tease out their "
+        "desires after a few minutes of conversation, and with a few leading questions you can read them "
+        "like a children's book. It's a useful talent, and it has led you to make a living by exploiting "
+        "others. You're confident, smooth, and adept at spinning elaborate schemes — though the line between "
+        "a clever con and outright fraud is one you cross without hesitation."
+    ),
+    "City Watch": (
+        "You have served the community where you grew up, standing as its first line of defense against "
+        "crime. You aren't a soldier directing your gaze outward at possible enemies. Instead, your service "
+        "was to help police the populace, protecting the townsfolk from lawbreakers and malefactors of "
+        "every stripe. You are familiar with the criminal element of a city and have earned the respect — "
+        "and occasional resentment — of those you have kept in line."
+    ),
+    "Clan Crafter": (
+        "The Stout Folk are well known for their artisanship and the worth of their crafts, and you have "
+        "been trained in that ancient dwarven tradition. For years you labored under a master of the craft, "
+        "enduring long hours and honing your skills to a fine edge. You take pride in your work and in the "
+        "heritage of your craft, keeping the traditions of your ancestors alive in every piece you create."
+    ),
+    "Cloistered Scholar": (
+        "As a child, you were inquisitive when your playmates were possessive or raucous. In your formative "
+        "years, you found your way to one of the great institutes of learning, where you were apprenticed "
+        "and taught that knowledge is a more valuable treasure than gold or gems. Now you venture from the "
+        "library into a world that holds far more secrets than any book — and you intend to document them all."
+    ),
+    "Courtier": (
+        "In your earlier years, you devoted yourself to the workings of high courts and bureaucracies of "
+        "noble houses. You might have been a tax collector, a lawyer, a herald at the court of a noble "
+        "lord, or a diplomat in service to a city or kingdom. You have learned that words can be more "
+        "powerful than swords, and that a well-placed favor or a carefully worded letter can change the "
+        "course of history."
+    ),
+    "Criminal": (
+        "You are an experienced criminal with a history of breaking the law. You have spent a lot of time "
+        "among other criminals and still have contacts within the criminal underworld. You're far closer than "
+        "most people to the world of murder, theft, and violence that pervades the underbelly of civilization, "
+        "and you have used every trick in the book to stay one step ahead of the law."
+    ),
+    "Entertainer": (
+        "You thrive in front of an audience. You know how to entrance them, entertain them, and even inspire "
+        "them. Your poignant performances have touched the hearts of many listeners, and you have the fire "
+        "of performance in your blood. From humble taverns to grand theaters, you have honed your act and "
+        "learned to read a crowd — giving them what they want while leaving them wanting more."
+    ),
+    "Faction Agent": (
+        "Many organizations throughout the Sword Coast and beyond are bound by a shared philosophy, a "
+        "common religion, or a mutual commitment to a goal. You are an agent of one such faction, working "
+        "clandestinely to advance your organization's goals and gather intelligence against its enemies. "
+        "You know how to operate in the shadows and how to call on your faction's resources when you need "
+        "help — but you also know how to disappear when that becomes necessary."
+    ),
+    "Far Traveler": (
+        "You are from a distant place, one so remote that few of the common folk realize it even exists. "
+        "You have crossed seas and survived climates most adventurers never encounter, learning to navigate "
+        "unfamiliar cultures and languages through careful observation. Your exotic origins make you an "
+        "object of curiosity to those you meet, and your unique perspective on the world around you has "
+        "proved to be an unexpected advantage."
+    ),
+    "Fisher": (
+        "You have spent your life working the waters of a lake, river, or sea, harvesting the bounty they "
+        "offer. The life of a fisher is filled with hard work and routine — a cycle of tides, seasons, and "
+        "the ebb and flow of fish populations. You've weathered storms that would terrify landlocked folk "
+        "and learned the patience required to wait for fortune to find you on the open water."
+    ),
+    "Folk Hero": (
+        "You come from a humble social rank, but you are destined for so much more. Already the people of "
+        "your home village regard you as their champion, and your destiny calls you to stand against the "
+        "tyrants and monsters that threaten the common folk everywhere. You grew up among working people "
+        "and you share their values: fairness, hospitality, and the simple dignity of honest labor."
+    ),
+    "Gladiator": (
+        "A gladiator is as much an entertainer as any minstrel or circus performer, trained to make the "
+        "arts of combat into a spectacle the crowd can enjoy. You might have entered the arena as a "
+        "prisoner, a slave, a criminal, or a willing thrill-seeker. Whatever brought you there, you "
+        "survived — and you thrived. The roar of the crowd and the taste of victory in mortal combat "
+        "have left marks on your soul that civilized life can never quite erase."
+    ),
+    "Guild Artisan": (
+        "You are a member of an artisan's guild, skilled in a particular field and closely associated with "
+        "other artisans. You are a well-established part of the mercantile world, freed from the constraints "
+        "of a feudal social order. Your guild provides you with a social identity, a network of contacts, "
+        "and the assurance that your skills will be recognized and fairly compensated wherever you travel."
+    ),
+    "Guild Merchant": (
+        "Rather than mastering a craft, you have built your livelihood through the buying and selling of "
+        "goods. As a member of a merchant guild you have the skills to evaluate quality, negotiate deals, "
+        "and move merchandise across vast distances. You know how money flows through a city and how to "
+        "find buyers and sellers for nearly anything — a talent that translates surprisingly well to "
+        "the adventuring life."
+    ),
+    "Haunted One": (
+        "You are haunted by something so terrible that you dare not speak of it. You've tried to bury it "
+        "and run away from it, to no avail. Whatever this thing is that haunts you can't be fixed, and it "
+        "can't be unseen. When you close your eyes, you see it. When you sleep, you dream of it. Perhaps "
+        "someday you'll find a way to defeat it — but until then, you carry its shadow wherever you go."
+    ),
+    "Hermit": (
+        "You lived in seclusion — either in a sheltered community such as a monastery, or entirely alone — "
+        "for a formative part of your life. In your time apart from the clamor of society, you found quiet, "
+        "solitude, and perhaps some of the answers you were looking for. The wisdom you gained through "
+        "contemplation and simple living has proven far more valuable than anything you could have learned "
+        "in a city, and you carry it with you as you return to the world."
+    ),
+    "Inheritor": (
+        "You are the heir to something of great value — not merely money or physical wealth, but an object, "
+        "piece of information, or a title that has been entrusted to you by a member of your family, a "
+        "mentor, or a dying adventurer. The nature of this inheritance and its true significance may not "
+        "yet be fully clear to you, but the responsibility it carries has set you on the path of adventure."
+    ),
+    "Investigator": (
+        "As a city official or private investigator, you are trained — and authorized — to look into crimes "
+        "and uncover the truth behind mysterious events. You pride yourself on your ability to get results "
+        "where others have failed, often by following leads to dark and dangerous places. Logic, keen "
+        "observation, and an instinct for knowing when someone is lying are your most reliable tools."
+    ),
+    "Knight": (
+        "A knight is a member of the warrior elite, trained from youth in the arts of war and sworn to "
+        "uphold an order of chivalry, a noble liege, or a personal code of conduct. Most knights serve a "
+        "lord or king, but some travel as errant knights in search of quests to prove their valor. You "
+        "carry a title bestowed upon you by a liege lord or earned in the field, and with it the obligation "
+        "to act with honor, courage, and mercy."
+    ),
+    "Knight of the Order": (
+        "You belong to an order of knights who have sworn oaths to achieve a certain goal — whether "
+        "smashing a thieves' guild, establishing justice, or righting wrongs in a land where law is absent. "
+        "The order's goals define your own, and the brotherhood of your fellow knights provides both "
+        "support and a standard to live up to. You are more than a warrior; you are a symbol of your "
+        "order's ideals made manifest."
+    ),
+    "Marine": (
+        "You were trained for battle on sea and land alike. As a marine, you served aboard ships and "
+        "slogged through swamps and jungles on raids, defending your vessel against pirates and claiming "
+        "plunder of your own. The hardships of maritime combat — fighting on rolling decks, swimming in "
+        "full armor, enduring weeks at sea without fresh food — have forged you into a supremely adaptable "
+        "warrior."
+    ),
+    "Mercenary Veteran": (
+        "As a sell-sword who fought battles for coin, you're well acquainted with risking life and limb "
+        "for a chance at treasure. You've served in many companies and under many banners, and you've "
+        "learned that loyalty lasts only as long as the gold does. Now you look for other opportunities "
+        "to earn a living — ideally ones where you aren't being paid by someone who might decide you "
+        "cost too much."
+    ),
+    "Noble": (
+        "You understand wealth, power, and privilege. You carry a noble title, and your family owns land, "
+        "collects taxes, and wields significant political influence. You might be a pampered aristocrat "
+        "unfamiliar with work or discomfort, a former merchant who rose to nobility through wealth, or a "
+        "disinherited scoundrel with a name but no fortune. Whatever the case, your noble bearing opens "
+        "doors that remain closed to common folk — and creates enemies among those who resent your station."
+    ),
+    "Outlander": (
+        "You grew up in the wilds, far from civilization and the comforts of town and technology. You've "
+        "witnessed the migration of herds larger than forests, survived weather more extreme than any "
+        "city-dweller could comprehend, and enjoyed the solitude of being the only thinking creature for "
+        "miles in any direction. The city feels cramped and loud to you, but you've learned to navigate "
+        "it just as you navigate trackless wilderness — by adapting."
+    ),
+    "Pirate": (
+        "You spent your formative years under the sway of a dread pirate or among a crew of cutthroats, "
+        "learning to survive in a world of robbers and rogues. You've indulged in larceny on the high "
+        "seas, weathered storms that would splinter lesser ships, and sent more than one deserving soul "
+        "to a watery grave. The open ocean is your home, and the horizon your ever-retreating destination."
+    ),
+    "Sage": (
+        "You spent years learning the lore of the multiverse. You scoured manuscripts, studied scrolls, "
+        "and listened to the greatest experts on subjects that fascinate you. Your efforts have made you "
+        "a master of your chosen field. When you don't know an answer, you know where to find it — and "
+        "you've learned that the most dangerous thing in the world is a question no one has yet thought "
+        "to ask."
+    ),
+    "Sailor": (
+        "You sailed on a seagoing vessel for years. In that time, you faced down mighty storms, monsters "
+        "of the deep, and pirates who wanted to send your craft to the bottomless depths. Your first love "
+        "is the distant horizon, but the time has come to try your hand at something new. The sea will "
+        "always call you back — but for now, adventure on solid ground beckons."
+    ),
+    "Soldier": (
+        "War has been your life for as long as you care to remember. You trained as a youth, studied the "
+        "use of weapons and armor, and learned basic survival techniques, including how to stay alive on "
+        "the battlefield. You might have been part of a standing national army, a mercenary company, or "
+        "a local militia. Regardless, the discipline, camaraderie, and brutality of military life have "
+        "left an indelible mark on who you are."
+    ),
+    "Spy": (
+        "Although your capabilities are not much different from those of a criminal, you practiced them "
+        "as an espionage agent of a government, noble house, or other organization. The clandestine nature "
+        "of your work means your true employer may be unknown to most, even among your allies. You are "
+        "adept at moving through society unnoticed, gathering secrets, and making sure that those who "
+        "know too much don't remain a problem for long."
+    ),
+    "Urban Bounty Hunter": (
+        "Before you became an adventurer, your life was already full of conflict and excitement, because "
+        "you made a living tracking down people for pay. Unlike wilderness hunters, you are an urbanite — "
+        "skilled at navigating the underbelly of city life and tracking quarry through the thick of "
+        "civilization. Taverns, thieves' guilds, and shadowy alleyways are your hunting grounds, and "
+        "you've learned that the city always gives up its secrets to someone patient enough to listen."
+    ),
+    "Urchin": (
+        "You grew up on the streets alone, orphaned, and poor. You had no one to watch over you or "
+        "provide for you, so you learned to provide for yourself. You fought fiercely over food and kept "
+        "a constant watch out for other desperate souls who might steal from you. Sleep was a luxury, "
+        "and every meal was hard-won. Despite everything, you survived — and that alone makes you "
+        "tougher than most."
+    ),
+    "Uthgardt Tribe Member": (
+        "You are a member — or former member — of one of the Uthgardt barbarian tribes of the North. "
+        "Even if you've left your people behind to seek your fortune, you hold the traditions of the "
+        "Uthgardt close to your heart. Your people are known for their fierce pride, their reverence "
+        "for their totemic ancestors, and a deep suspicion of magic. The brutal nature of your upbringing "
+        "has made you strong and honed your instincts for survival to a razor's edge."
+    ),
+    "Waterdhavian Noble": (
+        "You are a scion of one of the great noble families of Waterdeep, the City of Splendors. "
+        "Waterdhavian noble families jealously guard their bloodlines as well as the coffers of their "
+        "banking houses, and they exert their influence throughout the North through commerce, politics, "
+        "and carefully arranged marriages. You were raised on the finest food, educated by the best "
+        "tutors, and dressed in the most fashionable clothes — but you've always suspected the real "
+        "world holds something more interesting than ballrooms and ledgers."
+    ),
+}
+
 # ── Racial traits ──────────────────────────────────────────────────────────────
 
 RACIAL_TRAITS = {

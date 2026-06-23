@@ -19,7 +19,8 @@ from dnd_data import (
     RACE_LANGUAGES, RACE_EXTRA_LANGUAGES, CLASS_SPELLCASTING,
     FULL_CASTER_SLOTS, HALF_CASTER_SLOTS, WARLOCK_SLOTS, CANTRIPS_KNOWN,
     WEAPONS, WEAPON_CATEGORIES, CLASS_STARTING_GOLD, EQUIPMENT_PACKS,
-    BACKGROUND_FEATURES, RACIAL_TRAITS, RACE_DESCRIPTIONS, CLASS_FEATURES,
+    BACKGROUND_FEATURES, BACKGROUND_DESCRIPTIONS, BACKGROUND_PROFICIENCIES,
+    RACIAL_TRAITS, RACE_DESCRIPTIONS, CLASS_FEATURES,
     get_personality_suggestions, ARTISAN_TOOLS, GAMING_SETS,
     MUSICAL_INSTRUMENTS,
 )
@@ -527,6 +528,69 @@ class CharacterBuilderApp:
         _btn(d, "Close", d.destroy, bg=BTN_BG).pack(pady=6)
         d.wait_window()
 
+    # ── BACKGROUND DETAILS ────────────────────────────────────────────────────
+
+    def _show_background_details(self, parent, background):
+        if not background:
+            messagebox.showinfo("No Background Selected", "Select a background first.", parent=parent)
+            return
+
+        profs   = BACKGROUND_PROFICIENCIES.get(background, {})
+        feature = BACKGROUND_FEATURES.get(background)
+
+        d = self._dlg(f"{background} — Details", 600, 520)
+        tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
+        tk.Label(d, text=f"  {background.upper()}", font=FONT_HDR,
+                 bg=PANEL, fg=ACCENT, pady=8).pack(fill="x")
+
+        txt = tk.Text(d, bg=INPUT_BG, fg=FG, font=("Consolas", 9),
+                      relief="flat", bd=0, wrap="word", padx=14, pady=10)
+        sb  = tk.Scrollbar(d, command=txt.yview, bg=BG, troughcolor=INPUT_BG)
+        txt.config(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        txt.pack(fill="both", expand=True, padx=6, pady=4)
+
+        def section(title):
+            txt.insert("end", f"\n{'─'*44}\n {title}\n{'─'*44}\n")
+
+        desc = BACKGROUND_DESCRIPTIONS.get(background, "")
+        if desc:
+            txt.insert("end", desc + "\n")
+
+        skills_fixed  = profs.get("skills_fixed", [])
+        skills_choose = profs.get("skills_choose")
+        tools_fixed   = profs.get("tools_fixed", [])
+        tools_choose  = profs.get("tools_choose")
+        lang_count    = profs.get("languages", 0)
+        lang_exotic   = profs.get("languages_exotic", False)
+
+        section("PROFICIENCIES")
+        skill_parts = list(skills_fixed)
+        if skills_choose:
+            skill_parts.append(f"choose {skills_choose['count']} from "
+                               f"{', '.join(skills_choose['from'])}")
+        txt.insert("end", f"  Skills: {', '.join(skill_parts) if skill_parts else 'None'}\n")
+
+        tool_parts = list(tools_fixed)
+        if tools_choose:
+            tool_parts.append(f"choose {tools_choose['count']} {tools_choose.get('label','tool')}")
+        txt.insert("end", f"  Tools: {', '.join(tool_parts) if tool_parts else 'None'}\n")
+
+        if lang_count:
+            kind = "exotic language" if lang_exotic else "language"
+            txt.insert("end", f"  Languages: {lang_count} {kind}{'s' if lang_count > 1 else ''} of your choice\n")
+        else:
+            txt.insert("end", "  Languages: None\n")
+
+        if feature:
+            feat_name, feat_desc = feature
+            section(f"FEATURE: {feat_name.upper()}")
+            txt.insert("end", f"  {feat_desc}\n")
+
+        txt.config(state="disabled")
+        _btn(d, "Close", d.destroy, bg=BTN_BG).pack(pady=6)
+        d.wait_window()
+
     # ── 1. BASIC INFO ─────────────────────────────────────────────────────────
 
     def _dlg_basic_info(self):
@@ -588,7 +652,13 @@ class CharacterBuilderApp:
         class_var.trace_add("write", lambda *_: sub_var.set(""))
         _btn(sf, "Choose", pick_subclass, bg=BTN_BG).pack(side="left", padx=6)
 
-        picker_row("Background", BACKGROUNDS,    bg_var)
+        bf = lrow("Background")
+        tk.Label(bf, textvariable=bg_var, bg=ACCENT, fg="#1a1a2e",
+                 font=("Segoe UI", 10, "bold"), padx=8, pady=2).pack(side="left")
+        _btn(bf, "Change",
+             lambda: _pick_from_list(d, "Select Background", BACKGROUNDS, bg_var,
+                                     detail_fn=self._show_background_details),
+             bg=BTN_BG).pack(side="left", padx=6)
         picker_row("Alignment",  DND_ALIGNMENTS, aln_var)
 
         lf = lrow("Level / XP")
