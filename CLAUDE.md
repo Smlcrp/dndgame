@@ -125,6 +125,24 @@ Pure logic dice engine — no API calls, no imports beyond `random` and `re`. Al
 
 ---
 
+### `combat.py`
+Turn-based combat engine. Uses `dice.py`, `game_state.py`, and `character.py`. Pure logic — no UI or API calls.
+
+**Enemy format:** `{name, hp, max_hp, ac, initiative_mod, attacks: [{name, bonus, damage, damage_type}], is_player: False, conditions: [], xp}`
+
+**Functions:**
+- `build_enemy(name, hp, ac, attacks, initiative_mod, xp)` — convenience constructor
+- `setup_combat(session, character, enemies)` — rolls initiative for all, calls `gs.start_combat()`, returns sorted order
+- `resolve_attack(session, attacker, target, attack_bonus, damage_notation, advantage, disadvantage)` — core attack logic; auto-applies condition-based adv/disadv; handles nat20 crits (doubled dice); returns `{attacker, target, target_ac, roll, hit, damage, new_hp, killed, critical}`
+- `player_attack(session, character, weapon_name, target_name, advantage, disadvantage)` — looks up weapon from `character["attacks"]`, calls `resolve_attack`
+- `enemy_attack(session, enemy_name, attack_index)` — enemy attacks the player; syncs damage to `session["current_hp"]`
+- `handle_death_save(session)` — rolls death save, updates `session["death_saves"]`; handles nat20 (revived at 1 HP), nat1 (double failure); returns `{..., outcome: "revived"/"stable"/"dead"/"ongoing"}`
+- `end_turn(session)` — advances to next living combatant, skips dead; increments round when order wraps
+- `combat_summary(session)` — snapshot dict for DM narration
+- `xp_from_combat(session)` — sums XP from all defeated enemies
+
+**Conditions tracked:** Prone, Paralyzed, Stunned, Unconscious, Blinded grant advantage to attackers; Prone, Blinded, Poisoned, Frightened, Restrained, Exhaustion impose disadvantage on the afflicted attacker.
+
 ### `game_state.py`
 JSON-based session persistence. Saves to `sessions/<name>.json`. Separates transient mid-game state from the permanent character sheet so a long rest or combat doesn't corrupt the saved character.
 
@@ -168,7 +186,7 @@ In order of dependency:
 
 1. **`dice.py`** — ✅ COMPLETE. See below.
 2. **`game_state.py`** — ✅ COMPLETE. See below.
-3. **`combat.py`** — Turn-based combat engine: initiative, attack resolution, damage, conditions, death saves. Uses `dice.py` and `character.py`.
+3. **`combat.py`** — ✅ COMPLETE. See below.
 4. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes game state + player action, returns DM narration + structured game events (combat start, skill check request, etc.).
 5. **`game.py`** — Main game interface tying everything together. GUI window: scene description panel, player input, character sheet sidebar.
 
