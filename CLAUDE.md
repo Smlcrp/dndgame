@@ -247,3 +247,15 @@ Main game interface. Launch with `python game.py`. Uses `GameApp` class.
 ## GitHub
 Repository: https://github.com/Smlcrp/dndgame
 Clone: `git clone https://github.com/Smlcrp/dndgame.git`
+
+---
+
+## Known Issues — Fix First Next Session
+
+### DM error on adventure start
+When running `game.py` and starting a New Adventure, the DM returned an error instead of opening narration. The exact error message was not captured. Likely causes to investigate:
+- Gemini API key expired or needs regenerating (user was previously warned the key in `dm_config.json` should be regenerated)
+- `dm_config.json` missing or malformed
+- Error handling in `_handle_dm_response` not surfacing the message clearly to the user
+
+**First thing to do next session:** reproduce the error, capture the exact message, and fix it.
