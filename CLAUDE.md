@@ -283,11 +283,30 @@ Build full D&D 5e character progression. Execute in three committed phases so co
 
 ---
 
-### Future Milestones (lower priority)
-- Web frontend — `views/web/api.py` with Flask/FastAPI routes (see project memory for complications)
+## Project Roadmap
+
+### Stage 1 — Game Mechanics (current focus)
+Complete the character progression system (Phases 1–3 above). This is the priority because UI polish and packaging work should wrap around a mechanically finished game, not the other way around.
+
+Remaining mechanical work after progression:
 - Spell combat support (spellcasting attacks, save DCs) in `models/combat.py`
 - Expanded enemy roster and encounter tables
 - Multiclassing (defer until single-class leveling is solid)
+
+### Stage 2 — Self-Contained Installer
+**⚠️ STOP — talk to the user about the vision before building anything here.**
+
+The goal is a game that installs and runs like any normal PC game — no manual Python setup, no terminal. Before writing any code for this stage, discuss:
+- Whether to bundle Ollama + model in the installer or download on first run (models are 4–8 GB)
+- Whether to stay Tkinter or move to a web-based UI (Electron/Tauri wrapping Flask) — this decision changes the entire packaging approach
+- Target audience and distribution method (GitHub releases, itch.io, etc.)
+
+High-level options to discuss:
+- **Tkinter path:** PyInstaller to freeze the Python app → NSIS or Inno Setup wraps it + Ollama installer into one .exe
+- **Web UI path:** Flask backend + HTML/JS frontend packaged as Electron or Tauri → ships as a native app with CSS/Bootstrap UI, built-in Ollama management
+
+### Stage 3 — UI Polish
+Last. The "make it pretty" pass only makes sense once Stage 1 is done and the Stage 2 packaging decision is made (since that decision determines whether we use Tkinter widgets or HTML/CSS).
 
 ---
 
