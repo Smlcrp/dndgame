@@ -31,18 +31,46 @@ Launch with:
 python main.py
 ```
 
-**Startup:**
-1. Choose **New Adventure** or **Resume Session**
-2. New Adventure → pick a saved character (or launch the builder to create one)
-3. The AI DM opens the scene and the adventure begins
+### Main Menu
 
-**During play:**
-- Type actions in the input bar — the DM responds and drives the story
-- When a **skill check** is triggered, a **Roll** button appears in the narration — click it to open the 3D d20 window, click the die to spin it, and it lands on your actual roll
-- **Combat** starts automatically when the DM encounters enemies — roll for initiative the same way, then choose your attack each turn
-- The sidebar tracks HP, AC, conditions, and the combat initiative order live
-- Death saves trigger automatically when the player hits 0 HP
-- Sessions save on quit and can be resumed from the main menu
+Choose **New Adventure** to pick a character and begin, or **Resume Session** to continue from where you left off.
+
+<img src="docs/screenshots/01_startup.png" alt="Main menu — New Adventure or Resume Session" width="280"/>
+
+---
+
+### The Game Interface
+
+Type actions in the input bar — the AI DM narrates the world and drives the story. The right-hand sidebar tracks your character's HP, AC, ability scores, saving throws, skills, and attack options in real time.
+
+<img src="docs/screenshots/06_main_game.png" alt="Main game interface showing narration and character sidebar" width="700"/>
+
+---
+
+### Skill Checks — 3D Animated d20
+
+When the DM triggers a skill check, a **Roll** button appears in the narration. Click it to open the 3D d20 window — click the die to spin it, and it eases to a stop landing exactly on your result. Each of the 20 possible roll values has its own pre-computed animation.
+
+<img src="docs/screenshots/08_d20_roller.png" alt="3D animated d20 roller showing a roll of 17" width="200"/>
+
+---
+
+### Combat
+
+Combat starts automatically when the DM encounters enemies. A `[COMBAT:]` event spins up the initiative engine — everyone rolls, and turns proceed in order. The narration shows the initiative list; the sidebar's **COMBAT** section tracks every combatant's current HP live. Your **ATTACKS** become clickable buttons that open the d20 roller for the attack roll.
+
+<img src="docs/screenshots/09_combat.png" alt="Combat encounter — initiative order, narration, and attack buttons" width="700"/>
+
+The sidebar combat tracker with HP bars for all combatants:
+
+<img src="docs/screenshots/10_combat_sidebar.png" alt="Sidebar showing the combat initiative tracker and attack buttons" width="200"/>
+
+**During combat:**
+- Roll for initiative the same way as skill checks — click the die, it lands on your result
+- Choose your attack from the sidebar buttons each turn; the d20 determines whether you hit
+- Enemy turns resolve automatically with narrated outcomes
+- Death saves trigger automatically when the player reaches 0 HP
+- Sessions save on quit and resume mid-combat
 
 ---
 
@@ -100,6 +128,18 @@ Then click **New Adventure → Create Character**, or run directly:
 cd views/desktop/character_builder
 python character_builder_app.py
 ```
+
+The builder opens with a left-panel section list and a live character sheet preview on the right:
+
+<img src="docs/screenshots/03_character_builder.png" alt="Character builder — section list and live character sheet preview" width="600"/>
+
+Clicking a section opens a focused dialog. The **Basic Info** dialog covers name, race, class, background, alignment, and level:
+
+<img src="docs/screenshots/04_basic_info.png" alt="Basic Info dialog with race, class, background selectors" width="380"/>
+
+Every picker is a filterable list. Here's the race picker — 28 options with a Details button for lore and racial traits:
+
+<img src="docs/screenshots/05_race_picker.png" alt="Race picker showing all 28 D&D 5e race options" width="200"/>
 
 ### What it covers
 
@@ -223,6 +263,65 @@ pip install requests
 - `tkinter` (included with Python on Windows)
 - `requests` — for DM API calls (Ollama and Gemini)
 - Ollama installed locally **or** a free Google Gemini API key
+
+## Bug Fixes
+
+Bugs discovered and fixed in order of discovery.
+
+---
+
+### 1. `requests` package not installed
+
+**Where:** Runtime, on first launch.
+
+**Symptom:** `ModuleNotFoundError: No module named 'requests'` when starting the app, because `requests` is required by `models/dm.py` for Ollama and Gemini API calls but is not a stdlib module.
+
+**Fix:** `pip install requests`. The dependency was already documented in the Requirements section; no code change was needed. Noted here because it blocks the app from starting at all on a fresh Python install.
+
+---
+
+### 2. Character-select Listbox clears selection on button click (`char_lb`)
+
+**Where:** `views/desktop/app.py` → `_show_character_page()` → `char_lb` Listbox.
+
+**Symptom:** Clicking **Begin →** after selecting a character appeared to do nothing. The button would silently return without starting the game. No error was shown to the user because the error label (`_dlg_err`) was positioned at the very bottom of the dialog window and was obscured.
+
+**Root cause:** Tkinter Listbox defaults to `exportselection=True`. When focus moves to another widget (the "Begin →" button), the Listbox automatically clears its selection. `begin()` then called `char_lb.curselection()`, got an empty tuple, and returned early with the message `"Select a character first."` — which was never seen.
+
+**Fix:** Added `exportselection=False` to the `char_lb` Listbox constructor in `views/desktop/app.py` so the selection is retained when the widget loses focus.
+
+---
+
+### 3. Session-select Listbox clears selection on button click (`ses_lb`)
+
+**Where:** `views/desktop/app.py` → `_show_resume_page()` → `ses_lb` Listbox.
+
+**Symptom:** Identical to bug 2 but on the **Resume Session** path — clicking **Resume →** after selecting a session did nothing.
+
+**Root cause:** Same as bug 2: the `ses_lb` Listbox was also missing `exportselection=False`.
+
+**Fix:** Added `exportselection=False` to the `ses_lb` Listbox constructor in `views/desktop/app.py`.
+
+---
+
+### 4. Character `hp` field schema not enforced — `init_hp()` crashes on integer `hp`
+
+**Where:** `models/game_state.py` → `init_hp()`.
+
+**Symptom:** When a character is loaded whose `hp` field is stored as a plain integer (e.g. `28`) rather than the schema dict (`{"max": 28, "current": 28, "temp": 0}`), `init_hp()` raises `AttributeError: 'int' object has no attribute 'get'`. Because this is called inside the `begin()` callback with no surrounding `try/except`, the exception is swallowed silently by Tkinter and the dialog stays open with no feedback to the user — indistinguishable from bug 2 or 3.
+
+**Root cause:** `empty_character()` in `models/character.py` correctly initialises `hp` as a dict, and the character builder always produces this format. However, there is no validation at the `save_character` / `load_character` boundary to catch a malformed `hp` field, and `init_hp()` has no defensive check.
+
+**Fix (immediate):** Ensure all character JSON files store `hp` as `{"max": N, "current": N, "temp": 0}`. A more robust fix would be to add a guard in `init_hp()`:
+```python
+def init_hp(session, character):
+    hp = character["hp"]
+    max_hp = hp.get("max", 1) if isinstance(hp, dict) else hp
+    if session["current_hp"] is None:
+        session["current_hp"] = max_hp
+```
+
+---
 
 ## Repository
 

@@ -379,6 +379,7 @@ class GameApp:
         char_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
                              selectbackground=ACCENT, selectforeground="#1a1a2e",
                              relief="flat", bd=0, activestyle="none",
+                             exportselection=False,
                              yscrollcommand=sb.set, height=7)
         sb.config(command=char_lb.yview)
         char_lb.pack(fill="both", expand=True, padx=4, pady=4)
@@ -487,6 +488,7 @@ class GameApp:
         ses_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
                             selectbackground=ACCENT, selectforeground="#1a1a2e",
                             relief="flat", bd=0, activestyle="none",
+                            exportselection=False,
                             yscrollcommand=sb.set, height=7)
         sb.config(command=ses_lb.yview)
         ses_lb.pack(fill="both", expand=True, padx=4, pady=4)
