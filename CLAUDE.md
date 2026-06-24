@@ -125,6 +125,32 @@ Pure logic dice engine — no API calls, no imports beyond `random` and `re`. Al
 
 ---
 
+### `game_state.py`
+JSON-based session persistence. Saves to `sessions/<name>.json`. Separates transient mid-game state from the permanent character sheet so a long rest or combat doesn't corrupt the saved character.
+
+**Session dict keys:**
+- `character_name`, `session_name` — identity
+- `location`, `scene`, `history` — scene state. `history` is a list of `{role, text}` entries ("dm"/"player")
+- `flags` — arbitrary story booleans/values, e.g. `{"rescued_villager": True}`
+- `current_hp`, `temp_hp`, `hit_dice_spent`, `spell_slots_used`, `conditions`, `death_saves`, `stable` — transient character state
+- `in_combat`, `round`, `initiative_order`, `current_turn` — combat state. `initiative_order` is sorted descending by initiative; each entry is `{name, initiative, hp, max_hp, is_player, conditions}`
+
+**Functions:**
+- `empty_session(character_name, session_name)` — blank session dict
+- `save_session(session)` / `load_session(name)` / `list_sessions()` / `delete_session(name)`
+- `add_history(session, role, text)` / `set_flag(session, key, value)` / `get_flag(session, key)`
+- `init_hp(session, character)` — sets `current_hp` from character max on first load
+- `apply_damage(session, amount)` — consumes temp HP first
+- `apply_healing(session, amount, max_hp)`
+- `use_spell_slot(session, level)` / `restore_spell_slot(session, level)`
+- `long_rest(session, character)` — restores HP, slots, clears conditions; recovers half level in hit dice
+- `short_rest(session, hp_gained)` — applies hit die healing
+- `start_combat(session, combatants)` / `end_combat(session)` / `advance_turn(session)`
+- `current_combatant(session)` — returns the active combatant dict
+- `apply_combat_damage(session, name, amount)` / `apply_combat_healing(session, name, amount)`
+- `add_condition(session, name, condition)` / `remove_condition(session, name, condition)`
+- `living_combatants(session)` / `enemies_alive(session)`
+
 ## Coding Conventions
 - **GUI:** Tkinter, dark theme. Colors: `BG="#1a1a2e"`, `ACCENT="#c8a951"` (gold), `INPUT_BG="#0f0f1a"`, `PANEL="#16213e"`, `BTN_BG="#2a2a4a"`, `FG="#e0e0e0"`, `DIM="#888888"`, `GREEN="#4caf50"`, `RED="#e05050"`, `BLUE="#5b8cdc"`
 - **Fonts:** `FONT_TITLE=("Segoe UI",14,"bold")`, `FONT_HDR=("Segoe UI",11,"bold")`, `FONT_BODY=("Segoe UI",10)`, `FONT_SM=("Segoe UI",9)`
@@ -141,7 +167,7 @@ Pure logic dice engine — no API calls, no imports beyond `random` and `re`. Al
 In order of dependency:
 
 1. **`dice.py`** — ✅ COMPLETE. See below.
-2. **`game_state.py`** — Persist the active game session (current scene, inventory changes mid-game, combat state). JSON-based like characters.
+2. **`game_state.py`** — ✅ COMPLETE. See below.
 3. **`combat.py`** — Turn-based combat engine: initiative, attack resolution, damage, conditions, death saves. Uses `dice.py` and `character.py`.
 4. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes game state + player action, returns DM narration + structured game events (combat start, skill check request, etc.).
 5. **`game.py`** — Main game interface tying everything together. GUI window: scene description panel, player input, character sheet sidebar.
