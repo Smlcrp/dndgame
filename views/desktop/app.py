@@ -670,8 +670,20 @@ class GameApp:
                 f"  Rolled {pre_roll['kept']} + {total_mod:+d} = {result} "
                 f"vs DC {dc} — {'SUCCESS' if success else 'FAILURE'}\n\n",
                 "hit" if success else "danger")
-            outcome = (f"I attempted a {skill} check (DC {dc}) and "
-                       f"{'succeeded' if success else 'failed'} with a roll of {result}.")
+            if pre_roll["nat20"]:
+                result_tag = "CRITICAL SUCCESS"
+                instruction = "The player rolled a natural 20 — a spectacular success. Reward them with something extra: exceptional information, a bonus, or a lucky break beyond what they expected."
+            elif pre_roll["nat1"]:
+                result_tag = "CRITICAL FAILURE"
+                instruction = "The player rolled a natural 1 — a catastrophic failure. Punish them: something goes wrong beyond just failing, an unexpected complication, embarrassment, or consequence."
+            elif success:
+                result_tag = "SUCCESS"
+                instruction = "Narrate a clean success."
+            else:
+                result_tag = "FAILURE"
+                instruction = "Narrate a clean failure."
+            outcome = (f"[{skill} check: {result_tag}] "
+                       f"{instruction} Do not mention the roll value, the DC, or any game stats.")
             self._set_input_enabled(False)
             self._dm_call(outcome)
 
