@@ -1,30 +1,12 @@
 {
   "_comment": "Copy this file to dm_config.json and fill in your settings. dm_config.json is gitignored.",
 
-  "backend": "ollama",
   "model": "dolphin-llama3",
-  "api_key": "",
 
-  "_backends": {
-    "ollama": {
-      "description": "Free, runs locally. Requires Ollama installed and running (ollama serve).",
-      "setup": [
-        "1. Install Ollama: https://ollama.com  (or: winget install Ollama.Ollama)",
-        "2. Pull a model:   ollama pull dolphin-llama3",
-        "3. Set backend to 'ollama' and model to 'dolphin-llama3' (or whichever you pulled)",
-        "4. Leave api_key blank"
-      ],
-      "recommended_models": ["dolphin-llama3", "llama3.1", "mistral", "gemma2"]
-    },
-    "gemini": {
-      "description": "Free tier (1500 requests/day). Requires a Google account and API key.",
-      "setup": [
-        "1. Go to https://aistudio.google.com and sign in with your Google account",
-        "2. Click 'Get API key' and create a new key (free, no credit card needed)",
-        "3. Set backend to 'gemini' and paste your key in api_key",
-        "   OR set the GEMINI_API_KEY environment variable instead"
-      ],
-      "recommended_models": ["gemini-2.0-flash", "gemini-2.0-flash-lite"]
-    }
-  }
+  "_setup": [
+    "1. Install Ollama: https://ollama.com  (or: winget install Ollama.Ollama)",
+    "2. Pull a model:   ollama pull dolphin-llama3",
+    "3. Set model to whichever you pulled"
+  ],
+  "_recommended_models": ["dolphin-llama3", "llama3.1", "mistral", "gemma2"]
 }

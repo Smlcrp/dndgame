@@ -3,8 +3,6 @@
 ## Security Constraint (NEVER SKIP)
 **Always warn the user before making any Claude API calls that will cost tokens. Get explicit confirmation before proceeding.** This applies to any AI Dungeon Master calls, `dm.py` testing, or any Anthropic API invocation.
 
-**WARN USER before any DM testing — Gemini API calls cost quota.**
-
 ---
 
 ## Project Vision
@@ -148,12 +146,12 @@ JSON session persistence to `sessions/<name>.json`.
 - `living_combatants` / `enemies_alive`
 
 ### `dm.py`
-AI DM. Supports Ollama (local) and Google Gemini (cloud). Config from `dm_config.json` (gitignored).
+AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 
-- `DungeonMaster(backend, model, api_key)`
+- `DungeonMaster(model)`
 - `respond(session, character, player_input)` → `{"narration": str, "events": list}`
 - `_parse_events(raw_text)` — extracts `[CHECK: Skill DC##]`, `[COMBAT: Name×N]`, `[SCENE: Location]`
-- `from_config(path)` — loads backend settings
+- `from_config(path)` — loads model setting from config
 
 ### `d20_roller.py`
 3D animated d20 roll window. Renders an icosahedron with perspective projection and gold shading.

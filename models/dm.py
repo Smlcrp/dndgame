@@ -11,26 +11,17 @@ if str(_root) not in sys.path:
 from models import game_state as gs
 from models.character import modifier
 
-OLLAMA_URL         = "http://localhost:11434/api/chat"
-GEMINI_URL         = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+OLLAMA_URL           = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
-_DEFAULT_CONFIG    = Path(__file__).parent.parent / "data" / "dm_config.json"
+_DEFAULT_CONFIG      = Path(__file__).parent.parent / "data" / "dm_config.json"
 
 import requests
 
 
 class DungeonMaster:
 
-    def __init__(self, backend="ollama", model=None, api_key=None):
-        self.backend = backend.lower()
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        if self.backend == "ollama":
-            self.model = model or DEFAULT_OLLAMA_MODEL
-        elif self.backend == "gemini":
-            self.model = model or DEFAULT_GEMINI_MODEL
-        else:
-            raise ValueError(f"Unknown backend '{backend}'. Use 'ollama' or 'gemini'.")
+    def __init__(self, model=None):
+        self.model = model or DEFAULT_OLLAMA_MODEL
 
     def _build_system_prompt(self, character):
         name  = character.get("name") or "the adventurer"
@@ -95,17 +86,6 @@ NARRATION RULES — READ CAREFULLY:
         messages.append({"role": "user", "content": player_input})
         return messages
 
-    def _messages_for_gemini(self, session, character, player_input):
-        contents = []
-        for entry in session.get("history", []):
-            role = "user" if entry["role"] == "player" else "model"
-            contents.append({"role": role, "parts": [{"text": entry["text"]}]})
-        contents.append({"role": "user", "parts": [{"text": player_input}]})
-        if not contents or contents[0]["role"] != "user":
-            contents.insert(0, {"role": "user",
-                                 "parts": [{"text": "Begin the adventure."}]})
-        return contents
-
     def _call_ollama(self, messages):
         try:
             resp = requests.post(OLLAMA_URL, json={
@@ -125,30 +105,6 @@ NARRATION RULES — READ CAREFULLY:
             raise RuntimeError("Ollama timed out. The model may still be loading — try again.")
         except (KeyError, ValueError) as e:
             raise RuntimeError(f"Unexpected Ollama response: {e}")
-
-    def _call_gemini(self, system_prompt, contents):
-        if not self.api_key:
-            raise RuntimeError(
-                "No Gemini API key found.\n"
-                "Set the GEMINI_API_KEY environment variable, or add it to dm_config.json."
-            )
-        url = GEMINI_URL.format(model=self.model)
-        payload = {
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "contents":          contents,
-            "generationConfig":  {"temperature": 0.9, "maxOutputTokens": 1024},
-        }
-        try:
-            resp = requests.post(url, params={"key": self.api_key}, json=payload, timeout=60)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except requests.exceptions.Timeout:
-            raise RuntimeError("Gemini request timed out.")
-        except requests.exceptions.HTTPError:
-            raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text[:200]}")
-        except (KeyError, IndexError):
-            raise RuntimeError(f"Unexpected Gemini response format: {resp.text[:200]}")
 
     def _parse_events(self, raw_text):
         events = []
@@ -181,13 +137,8 @@ NARRATION RULES — READ CAREFULLY:
         return clean, events
 
     def respond(self, session, character, player_input):
-        if self.backend == "ollama":
-            messages  = self._messages_for_ollama(session, character, player_input)
-            raw       = self._call_ollama(messages)
-        else:
-            system   = self._build_system_prompt(character)
-            contents = self._messages_for_gemini(session, character, player_input)
-            raw      = self._call_gemini(system, contents)
+        messages  = self._messages_for_ollama(session, character, player_input)
+        raw       = self._call_ollama(messages)
 
         narration, events = self._parse_events(raw)
 
@@ -210,7 +161,7 @@ def load_config(path=None):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    return {"backend": "ollama", "model": DEFAULT_OLLAMA_MODEL, "api_key": ""}
+    return {"model": DEFAULT_OLLAMA_MODEL}
 
 
 def save_config(config, path=None):
@@ -222,8 +173,4 @@ def save_config(config, path=None):
 
 def from_config(path=None):
     cfg = load_config(path)
-    return DungeonMaster(
-        backend = cfg.get("backend", "ollama"),
-        model   = cfg.get("model"),
-        api_key = cfg.get("api_key") or os.environ.get("GEMINI_API_KEY", ""),
-    )
+    return DungeonMaster(model=cfg.get("model"))

@@ -1,6 +1,6 @@
 # D&D AI Dungeon Master
 
-A fully playable D&D 5e adventure game built in Python. Create a character with the GUI character builder, then play through a text adventure where an AI Dungeon Master narrates the world, adjudicates rules, and runs combat — powered by either a free local model (Ollama) or Google Gemini's free tier.
+A fully playable D&D 5e adventure game built in Python. Create a character with the GUI character builder, then play through a text adventure where an AI Dungeon Master narrates the world, adjudicates rules, and runs combat — powered by a free local model via Ollama.
 
 ---
 
@@ -12,7 +12,7 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `models/dice.py` | ✅ Complete | Dice rolling engine |
 | `models/game_state.py` | ✅ Complete | Session persistence and combat state |
 | `models/combat.py` | ✅ Complete | Turn-based combat engine |
-| `models/dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
+| `models/dm.py` | ✅ Complete | AI Dungeon Master (Ollama) |
 | `controllers/game_controller.py` | ✅ Complete | Game logic — combat, skills, enemies |
 | `views/desktop/d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
 | `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
@@ -161,39 +161,18 @@ Every picker is a filterable list. Here's the race picker — 28 options with a 
 
 ## AI Dungeon Master Setup
 
-The DM supports two free backends. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure one:
-
-### Option A — Ollama (free local, no internet required)
-Runs entirely on your machine. Requires 8 GB+ RAM.
+The DM runs locally via Ollama. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure it:
 
 1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
 2. Pull the recommended model: `ollama pull dolphin-llama3`
 3. Edit `data/dm_config.json`:
 ```json
 {
-  "backend": "ollama",
-  "model": "dolphin-llama3",
-  "api_key": ""
+  "model": "dolphin-llama3"
 }
 ```
 
 Other models that work well: `llama3.1`, `mistral`, `gemma2`
-
-### Option B — Google Gemini (free cloud)
-No special hardware needed. Free tier: 1,500 requests/day.
-
-1. Go to **aistudio.google.com** and sign in with your Google account
-2. Click **Get API key** → **Create API key**
-3. Edit `data/dm_config.json`:
-```json
-{
-  "backend": "gemini",
-  "model": "gemini-2.0-flash",
-  "api_key": "your-api-key-here"
-}
-```
-
-> `dm_config.json` is gitignored — your API key will never be committed to the repo.
 
 ---
 
@@ -233,7 +212,7 @@ Turn-based combat engine. Uses `dice.py` and `game_state.py`.
 - XP tallying from defeated enemies
 
 ### `models/dm.py`
-AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
+AI Dungeon Master. Runs via Ollama (local).
 - Builds a system prompt from the character sheet for personalized narration
 - Maintains full session history for context continuity
 - Parses structured game events from DM responses:
@@ -261,8 +240,8 @@ pip install requests
 
 - Python 3.8+
 - `tkinter` (included with Python on Windows)
-- `requests` — for DM API calls (Ollama and Gemini)
-- Ollama installed locally **or** a free Google Gemini API key
+- `requests` — for DM API calls (Ollama)
+- Ollama installed locally
 
 ## Bug Fixes
 
