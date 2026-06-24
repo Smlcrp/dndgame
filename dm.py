@@ -9,7 +9,7 @@ from character import modifier
 OLLAMA_URL         = "http://localhost:11434/api/chat"
 GEMINI_URL         = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
-DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 
 class DungeonMaster:

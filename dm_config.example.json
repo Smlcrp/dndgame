@@ -24,7 +24,7 @@
         "3. Set backend to 'gemini' and paste your key in api_key",
         "   OR set the GEMINI_API_KEY environment variable instead"
       ],
-      "recommended_models": ["gemini-1.5-flash", "gemini-1.5-pro"]
+      "recommended_models": ["gemini-2.0-flash", "gemini-2.0-flash-lite"]
     }
   }
 }

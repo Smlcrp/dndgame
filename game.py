@@ -11,6 +11,7 @@ import game_state as gs
 import combat as cb
 import dm as dm_module
 import dice
+from d20_roller import D20RollerWindow
 
 # ── Theme ──────────────────────────────────────────────────────────────────────
 BG       = "#1a1a2e"
@@ -527,7 +528,8 @@ class GameApp:
                 result = self.dm.respond(self.session, self.char, action)
                 self.root.after(0, lambda: self._handle_dm_response(result))
             except Exception as e:
-                self.root.after(0, lambda: self._handle_dm_error(str(e)))
+                msg = str(e) or repr(e)
+                self.root.after(0, lambda: self._handle_dm_error(msg))
         threading.Thread(target=_thread, daemon=True).start()
 
     def _handle_dm_response(self, result):
@@ -556,26 +558,34 @@ class GameApp:
         self._display("── Combat begins! ──\n\n", "header")
         level = self.char.get("level", 1)
         enemies = []
-        counts  = {}
         for spec in enemy_specs:
             base  = ENEMY_STATS.get(spec["name"], _enemy_defaults(spec["name"], level))
             count = spec.get("count", 1)
             for i in range(count):
                 label = spec["name"] if count == 1 else f"{spec['name']} {i+1}"
-                counts[label] = counts.get(label, 0)
                 enemies.append(cb.build_enemy(
                     label, base["hp"], base["ac"], base["attacks"],
                     base["initiative_mod"], base["xp"]))
-        cb.setup_combat(self.session, self.char, enemies)
-        self.state = "COMBAT"
-        self._update_sidebar()
-        self._display("Initiative order:\n", "system")
-        for c in self.session["initiative_order"]:
-            marker = "▶" if c["is_player"] else "·"
-            self._display(f"  {marker} {c['name']} (HP {c['hp']}/{c['max_hp']}) "
-                          f"— init {c['initiative']}\n", "system")
-        self._display("\n", "dm")
-        self._next_turn()
+
+        dex_mod   = modifier(self.char["abilities"].get("dexterity", 10))
+        init_roll = dice.initiative(dex_mod)
+
+        self._display(f"Roll for initiative!  (modifier {init_roll['modifier']:+d})\n\n", "system")
+
+        def _after_init():
+            cb.setup_combat(self.session, self.char, enemies,
+                            player_initiative=init_roll["total"])
+            self.state = "COMBAT"
+            self._update_sidebar()
+            self._display("Initiative order:\n", "system")
+            for c in self.session["initiative_order"]:
+                marker = "▶" if c["is_player"] else "·"
+                self._display(f"  {marker} {c['name']} (HP {c['hp']}/{c['max_hp']}) "
+                              f"— init {c['initiative']}\n", "system")
+            self._display("\n", "dm")
+            self._next_turn()
+
+        self._show_roll_button("Initiative", init_roll["roll"], _after_init)
 
     def _next_turn(self):
         self._update_sidebar()
@@ -602,16 +612,32 @@ class GameApp:
         if not living_enemies:
             self._end_combat(victory=True)
             return
-        # auto-target single enemy; if multiple, pick first for now
         target = living_enemies[0]["name"]
-        result = cb.player_attack(self.session, self.char, weapon_name, target)
-        self._display_attack_result(result)
+
+        weapon = next((a for a in self.char.get("attacks", [])
+                       if a["name"].lower() == weapon_name.lower()), None)
+        if not weapon:
+            self._display(f"  Weapon '{weapon_name}' not found.\n\n", "danger")
+            return
+
+        attack_bonus = weapon.get("attack_bonus", 0)
+        pre_roll     = dice.d20_check(modifier=attack_bonus)
+
+        self._display(f"── Attacking {target} with {weapon_name} ──\n"
+                      f"  Attack bonus: {attack_bonus:+d}\n\n", "header")
         self._build_explore_input()
-        if not gs.enemies_alive(self.session):
-            self.root.after(600, lambda: self._end_combat(victory=True))
-        else:
-            self.root.after(600, lambda: (
-                cb.end_turn(self.session), self._next_turn()))
+
+        def _after_roll():
+            result = cb.player_attack(self.session, self.char, weapon_name, target,
+                                      d20_override=pre_roll["kept"])
+            self._display_attack_result(result)
+            if not gs.enemies_alive(self.session):
+                self.root.after(600, lambda: self._end_combat(victory=True))
+            else:
+                self.root.after(600, lambda: (
+                    cb.end_turn(self.session), self._next_turn()))
+
+        self._show_roll_button(f"d20 ({weapon_name})", pre_roll["kept"], _after_roll)
 
     def _do_enemy_turn(self):
         current = gs.current_combatant(self.session)
@@ -707,27 +733,32 @@ class GameApp:
     # ── Skill checks ───────────────────────────────────────────────────────────
 
     def _handle_skill_check(self, skill, dc):
-        ability = SKILL_ABILITIES.get(skill, "")
-        ab      = self.char.get("abilities", {})
-        ab_mod  = modifier(ab.get(ability, 10)) if ability else 0
-        prof_b  = proficiency_bonus(self.char.get("level", 1))
+        ability    = SKILL_ABILITIES.get(skill, "")
+        ab         = self.char.get("abilities", {})
+        ab_mod     = modifier(ab.get(ability, 10)) if ability else 0
+        prof_b     = proficiency_bonus(self.char.get("level", 1))
         proficient = skill in self.char.get("skill_proficiencies", [])
         total_mod  = ab_mod + (prof_b if proficient else 0)
 
-        roll   = dice.d20_check(modifier=total_mod)
-        result = roll["total"]
-        success = roll["nat20"] or (not roll["nat1"] and result >= dc)
+        pre_roll  = dice.d20_check(modifier=total_mod)
+        prof_note = f", proficiency +{prof_b}" if proficient else ""
 
-        prof_note = f" (proficient, +{prof_b})" if proficient else ""
-        self._display(
-            f"── Skill Check: {skill} DC {dc} ──\n"
-            f"  Rolled {roll['kept']} + {total_mod} modifier{prof_note} = {result} "
-            f"vs DC {dc} — {'SUCCESS' if success else 'FAILURE'}\n\n",
-            "hit" if success else "danger")
+        self._display(f"── Skill Check: {skill} DC {dc} ──\n"
+                      f"  Modifier: {total_mod:+d}{prof_note}\n\n", "header")
 
-        outcome = f"I attempted a {skill} check (DC {dc}) and {'succeeded' if success else 'failed'} with a roll of {result}."
-        self._set_input_enabled(False)
-        self._dm_call(outcome)
+        def _after_roll():
+            result  = pre_roll["total"]
+            success = pre_roll["nat20"] or (not pre_roll["nat1"] and result >= dc)
+            self._display(
+                f"  Rolled {pre_roll['kept']} + {total_mod:+d} = {result} "
+                f"vs DC {dc} — {'SUCCESS' if success else 'FAILURE'}\n\n",
+                "hit" if success else "danger")
+            outcome = (f"I attempted a {skill} check (DC {dc}) and "
+                       f"{'succeeded' if success else 'failed'} with a roll of {result}.")
+            self._set_input_enabled(False)
+            self._dm_call(outcome)
+
+        self._show_roll_button(f"d20 ({skill} DC {dc})", pre_roll["kept"], _after_roll)
 
     # ── Display helpers ────────────────────────────────────────────────────────
 
@@ -802,6 +833,24 @@ class GameApp:
                 pass
 
     # ── Save & quit ────────────────────────────────────────────────────────────
+
+    def _show_roll_button(self, label, d20_value, on_confirm):
+        """Embed a gold Roll button in the narration text area."""
+        self._narration.config(state="normal")
+        btn = tk.Button(
+            self._narration, text=f"  Roll {label}  ",
+            font=FONT_BODY, bg=ACCENT, fg="#1a1a2e",
+            relief="flat", bd=0, padx=4, pady=6,
+            activebackground="#e0c060", activeforeground="#1a1a2e",
+        )
+        def _clicked():
+            btn.config(state="disabled")
+            D20RollerWindow(self.root, d20_value, on_confirm)
+        btn.config(command=_clicked)
+        self._narration.window_create("end", window=btn)
+        self._narration.insert("end", "\n\n")
+        self._narration.see("end")
+        self._narration.config(state="disabled")
 
     def _save_and_quit(self):
         if self.session:

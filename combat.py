@@ -36,12 +36,12 @@ def build_enemy(name, hp, ac, attacks, initiative_mod=0, xp=0):
     }
 
 
-def setup_combat(session, character, enemies):
+def setup_combat(session, character, enemies, player_initiative=None):
     """Roll initiative for everyone and start combat.
     Returns the sorted initiative order list.
     """
     dex_mod = modifier(character["abilities"].get("dexterity", 10))
-    player_init = dice.initiative(dex_mod)["total"]
+    player_init = player_initiative if player_initiative is not None else dice.initiative(dex_mod)["total"]
 
     combatants = [{
         "name":       character["name"] or "Player",
@@ -88,7 +88,7 @@ def _get_combatant(session, name):
 
 
 def resolve_attack(session, attacker_name, target_name, attack_bonus,
-                   damage_notation, advantage=False, disadvantage=False):
+                   damage_notation, advantage=False, disadvantage=False, d20_override=None):
     """Resolve a single attack roll against a target.
     Automatically applies condition-based advantage/disadvantage.
     Returns a result dict with all roll details.
@@ -111,8 +111,13 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
             disadvantage = True
             break
 
-    roll = dice.d20_check(modifier=attack_bonus, advantage=advantage,
-                          disadvantage=disadvantage)
+    if d20_override is not None:
+        d20 = d20_override
+        roll = {"rolls": [d20], "kept": d20, "modifier": attack_bonus,
+                "total": d20 + attack_bonus, "nat20": d20 == 20, "nat1": d20 == 1}
+    else:
+        roll = dice.d20_check(modifier=attack_bonus, advantage=advantage,
+                              disadvantage=disadvantage)
     hit  = roll["nat20"] or (not roll["nat1"] and roll["total"] >= target_ac)
 
     result = {
@@ -141,7 +146,7 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
 # ── Player attack ──────────────────────────────────────────────────────────────
 
 def player_attack(session, character, weapon_name, target_name,
-                  advantage=False, disadvantage=False):
+                  advantage=False, disadvantage=False, d20_override=None):
     """Find the named weapon in the character's attack list and resolve the attack."""
     attacks = character.get("attacks", [])
     weapon  = next((a for a in attacks if a["name"].lower() == weapon_name.lower()), None)
@@ -150,11 +155,11 @@ def player_attack(session, character, weapon_name, target_name,
 
     attacker_name = character["name"] or "Player"
     attack_bonus  = weapon.get("attack_bonus", 0)
-    damage_note   = f"{weapon['damage']} {weapon.get('damage_type','')}"
     damage_note   = weapon["damage"]
 
     result = resolve_attack(session, attacker_name, target_name,
-                            attack_bonus, damage_note, advantage, disadvantage)
+                            attack_bonus, damage_note, advantage, disadvantage,
+                            d20_override=d20_override)
     result["weapon"] = weapon_name
     return result
 
