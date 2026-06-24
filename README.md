@@ -17,13 +17,18 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
 | `game.py` | 🚧 In Progress | Main game interface (GUI) |
 
+> **Next milestone:** MVC restructure — splitting the project into `models/`, `controllers/`, and `views/` to prepare for a future web frontend. See the Architecture section below.
+
 ---
 
 ## Gameplay
 
 Launch with:
 ```
-cd dndgame
+python main.py
+```
+or directly:
+```
 python game.py
 ```
 
@@ -39,6 +44,44 @@ python game.py
 - The sidebar tracks HP, AC, conditions, and the combat initiative order live
 - Death saves trigger automatically when the player hits 0 HP
 - Sessions save on quit and can be resumed from the main menu
+
+---
+
+## Architecture
+
+The project follows an MVC structure (in progress):
+
+```
+dndgame/
+├── models/                   # Pure logic — no UI, no framework
+│   ├── character.py
+│   ├── dice.py
+│   ├── game_state.py
+│   ├── combat.py
+│   └── dm.py
+│
+├── controllers/              # Orchestrates models, returns plain dicts
+│   └── game_controller.py
+│
+├── views/
+│   ├── desktop/              # Tkinter desktop app
+│   │   ├── app.py
+│   │   ├── d20_roller.py
+│   │   └── character_builder/
+│   └── web/                  # Future web frontend
+│       ├── api.py            # Flask/FastAPI endpoints
+│       ├── templates/
+│       └── static/
+│
+├── data/
+│   ├── characters/
+│   ├── sessions/
+│   └── dm_config.json
+│
+└── main.py
+```
+
+**Models** contain pure game logic with no UI imports. **Controllers** orchestrate models and return plain dicts — identical whether called from Tkinter or a Flask API. **Views** handle presentation only: Tkinter today, HTML/JS tomorrow.
 
 ---
 
@@ -128,7 +171,7 @@ Pure Python dice engine. No API calls.
 - `death_save()` — includes nat1 double-failure per 5e RAW
 
 ### `d20_roller.py`
-3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Each face displays its number (1–20, opposite faces sum to 21). Click the die to spin it; it decelerates then snaps with an ease-out animation to bring the rolled face front-and-centre. Used for skill checks, initiative, and player attacks.
+3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Each face displays its number (1–20, opposite faces sum to 21). Each roll value 1–20 has its own unique pre-computed animation that spins naturally and lands exactly on the correct face via a single smooth ease-out deceleration curve. Used for skill checks, initiative, and player attacks.
 
 ### `game_state.py`
 JSON session persistence. Saves to `sessions/`. Keeps mid-game character state (current HP, spell slots used, conditions) separate from the permanent character sheet.
