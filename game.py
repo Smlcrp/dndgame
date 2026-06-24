@@ -245,128 +245,235 @@ class GameApp:
     # ── Startup ────────────────────────────────────────────────────────────────
 
     def _startup_dialog(self):
-        chars = list_characters()
-
         d = tk.Toplevel(self.root)
-        d.title("Start Game")
+        d.title("D&D AI Dungeon Master")
         d.configure(bg=BG)
         d.grab_set()
         d.resizable(False, False)
         self.root.update_idletasks()
         rx = self.root.winfo_x() + self.root.winfo_width()  // 2 - 220
-        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 190
-        d.geometry(f"440x380+{rx}+{ry}")
+        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 200
+        d.geometry(f"440x400+{rx}+{ry}")
 
         tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
-        tk.Label(d, text="  ⚔  START ADVENTURE", font=FONT_HDR,
-                 bg=PANEL, fg=ACCENT, pady=8).pack(fill="x")
+        self._dlg_title = tk.Label(d, text="  ⚔  D&D AI DUNGEON MASTER",
+                                   font=FONT_HDR, bg=PANEL, fg=ACCENT, pady=8)
+        self._dlg_title.pack(fill="x")
 
-        body = tk.Frame(d, bg=BG, padx=20, pady=10)
-        body.pack(fill="both", expand=True)
+        self._dlg_body = tk.Frame(d, bg=BG, padx=24, pady=16)
+        self._dlg_body.pack(fill="both", expand=True)
 
-        # character row: label + dropdown + New button
-        char_row = tk.Frame(body, bg=BG)
-        char_row.pack(fill="x", pady=(0, 2))
-        tk.Label(char_row, text="Select Character:", font=FONT_SM,
-                 bg=BG, fg=DIM).pack(side="left")
-        tk.Button(char_row, text="+ New", font=FONT_SM, bg=BTN_BG, fg=ACCENT,
-                  relief="flat", bd=0, padx=6, pady=2,
-                  activebackground=ACCENT, activeforeground="#1a1a2e",
-                  command=lambda: self._launch_builder(d, char_var,
-                                                       char_menu)).pack(side="right")
+        self._dlg_err = tk.Label(d, text="", font=FONT_SM, bg=BG, fg=RED)
+        self._dlg_err.pack(pady=(0, 6))
 
-        char_var  = tk.StringVar(value=chars[0] if chars else "")
-        char_menu = tk.OptionMenu(body, char_var, *(chars or ["—"]))
-        char_menu.config(bg=INPUT_BG, fg=FG, font=FONT_BODY, relief="flat",
-                         activebackground=ACCENT, activeforeground="#1a1a2e",
-                         highlightthickness=0, bd=0, width=28)
-        char_menu["menu"].config(bg=INPUT_BG, fg=FG, font=FONT_BODY)
-        char_menu.pack(fill="x", pady=(0, 12))
+        self._show_mode_page(d)
 
-        mode_var = tk.StringVar(value="new")
-        tk.Label(body, text="Session:", font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w")
-        tk.Radiobutton(body, text="New adventure", variable=mode_var, value="new",
-                       bg=BG, fg=FG, selectcolor=BTN_BG,
-                       activebackground=BG, font=FONT_BODY).pack(anchor="w")
-        tk.Radiobutton(body, text="Resume session", variable=mode_var, value="resume",
-                       bg=BG, fg=FG, selectcolor=BTN_BG,
-                       activebackground=BG, font=FONT_BODY).pack(anchor="w")
+    def _clear_body(self):
+        for w in self._dlg_body.winfo_children():
+            w.destroy()
+        self._dlg_err.config(text="")
 
-        sessions = gs.list_sessions()
-        session_var = tk.StringVar(value=sessions[0] if sessions else "")
-        session_menu = tk.OptionMenu(body, session_var,
-                                     *sessions if sessions else ["—"])
-        session_menu.config(bg=INPUT_BG, fg=FG, font=FONT_BODY, relief="flat",
-                            activebackground=ACCENT, activeforeground="#1a1a2e",
-                            highlightthickness=0, bd=0, width=28)
-        session_menu["menu"].config(bg=INPUT_BG, fg=FG, font=FONT_BODY)
-        session_menu.pack(fill="x", pady=(2,12))
+    def _btn_large(self, parent, text, sub, command):
+        f = tk.Frame(parent, bg=BTN_BG, padx=12, pady=10, cursor="hand2")
+        f.pack(fill="x", pady=6)
+        tk.Label(f, text=text, font=FONT_HDR, bg=BTN_BG,
+                 fg=ACCENT).pack(anchor="w")
+        tk.Label(f, text=sub, font=FONT_SM, bg=BTN_BG,
+                 fg=DIM).pack(anchor="w")
+        for w in (f,) + f.winfo_children():
+            w.bind("<Button-1>", lambda e: command())
+            w.bind("<Enter>", lambda e, fw=f: fw.config(bg="#3a3a5a"))
+            w.bind("<Leave>", lambda e, fw=f: fw.config(bg=BTN_BG))
+        return f
 
-        err_lbl = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
-        err_lbl.pack()
+    # ── Page 1: Mode selection ─────────────────────────────────────────────────
 
-        def start():
-            char_name = char_var.get()
-            if not char_name or char_name == "—":
-                err_lbl.config(text="No character selected. Create one with '+ New'.")
+    def _show_mode_page(self, d):
+        self._clear_body()
+        self._dlg_title.config(text="  ⚔  D&D AI DUNGEON MASTER")
+
+        tk.Label(self._dlg_body, text="What would you like to do?",
+                 font=FONT_BODY, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 12))
+
+        self._btn_large(self._dlg_body,
+                        "⚔  New Adventure",
+                        "Create or select a character and start a new session.",
+                        lambda: self._show_character_page(d))
+
+        self._btn_large(self._dlg_body,
+                        "↩  Resume Session",
+                        "Continue from a previously saved session.",
+                        lambda: self._show_resume_page(d))
+
+    # ── Page 2a: Character selection ───────────────────────────────────────────
+
+    def _show_character_page(self, d):
+        self._clear_body()
+        self._dlg_title.config(text="  ⚔  SELECT CHARACTER")
+
+        tk.Label(self._dlg_body, text="Choose a character to play:",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+
+        # character listbox
+        lf = tk.Frame(self._dlg_body, bg=INPUT_BG)
+        lf.pack(fill="both", expand=True)
+        sb = tk.Scrollbar(lf, bg=BG, troughcolor=INPUT_BG)
+        sb.pack(side="right", fill="y")
+        char_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
+                             selectbackground=ACCENT, selectforeground="#1a1a2e",
+                             relief="flat", bd=0, activestyle="none",
+                             yscrollcommand=sb.set, height=7)
+        sb.config(command=char_lb.yview)
+        char_lb.pack(fill="both", expand=True, padx=4, pady=4)
+
+        def _populate(select_last=False):
+            chars = list_characters()
+            char_lb.delete(0, "end")
+            for c in chars:
+                char_lb.insert("end", c)
+            if chars:
+                idx = len(chars) - 1 if select_last else 0
+                char_lb.select_set(idx)
+                char_lb.see(idx)
+
+        _populate()
+
+        # action buttons
+        btn_row = tk.Frame(self._dlg_body, bg=BG)
+        btn_row.pack(fill="x", pady=(8, 0))
+
+        def new_char():
+            import subprocess
+            builder = Path(__file__).parent / "Character Builder" / "character_builder_app.py"
+            def _run():
+                subprocess.run([sys.executable, str(builder)],
+                               cwd=str(builder.parent))
+                self._dlg_body.after(0, lambda: _populate(select_last=True))
+            threading.Thread(target=_run, daemon=True).start()
+
+        def delete_char():
+            sel = char_lb.curselection()
+            if not sel:
+                self._dlg_err.config(text="Select a character to delete.")
                 return
-            mode = mode_var.get()
+            name = char_lb.get(sel[0])
+            if not messagebox.askyesno("Delete Character",
+                                       f"Permanently delete '{name}'?",
+                                       parent=d):
+                return
+            char_file = Path(__file__).parent / "characters" / f"{name}.json"
+            if char_file.exists():
+                char_file.unlink()
+            _populate()
+
+        def begin():
+            sel = char_lb.curselection()
+            if not sel:
+                self._dlg_err.config(text="Select a character first.")
+                return
+            char_name = char_lb.get(sel[0])
             try:
                 self.char = load_character(char_name)
             except Exception as e:
-                err_lbl.config(text=f"Could not load character: {e}")
+                self._dlg_err.config(text=f"Could not load character: {e}")
                 return
-            if mode == "resume":
-                sname = session_var.get()
-                if not sname or sname == "—":
-                    err_lbl.config(text="No session selected.")
-                    return
-                try:
-                    self.session = gs.load_session(sname)
-                except Exception as e:
-                    err_lbl.config(text=f"Could not load session: {e}")
-                    return
-            else:
-                self.session = gs.empty_session(
-                    character_name=char_name,
-                    session_name=char_name)
-                gs.init_hp(self.session, self.char)
-
             try:
                 self.dm = dm_module.from_config()
             except Exception as e:
-                err_lbl.config(text=f"DM config error: {e}")
+                self._dlg_err.config(text=f"DM config error: {e}")
                 return
-
+            self.session = gs.empty_session(character_name=char_name,
+                                            session_name=char_name)
+            gs.init_hp(self.session, self.char)
             d.destroy()
-            self._start_adventure(new=(mode == "new"))
+            self._start_adventure(new=True)
 
-        tk.Button(body, text="⚔  Begin", font=FONT_HDR, bg=ACCENT,
-                  fg="#1a1a2e", relief="flat", bd=0, padx=12, pady=6,
+        tk.Button(btn_row, text="+ New Character", font=FONT_SM, bg=BTN_BG,
+                  fg=ACCENT, relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=new_char).pack(side="left", padx=(0, 4))
+        tk.Button(btn_row, text="Delete", font=FONT_SM, bg=BTN_BG, fg=RED,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground="#5a1e1e", activeforeground=FG,
+                  command=delete_char).pack(side="left")
+        tk.Button(btn_row, text="← Back", font=FONT_SM, bg=BTN_BG, fg=DIM,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=FG,
+                  command=lambda: self._show_mode_page(d)).pack(side="right", padx=(4, 0))
+        tk.Button(btn_row, text="Begin →", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                  relief="flat", bd=0, padx=12, pady=5,
                   activebackground="#e0c060", activeforeground="#1a1a2e",
-                  command=start).pack(pady=4, fill="x")
+                  command=begin).pack(side="right")
 
-    def _launch_builder(self, dialog, char_var, char_menu):
-        """Launch character builder in background. Refresh dropdown when it closes."""
-        import subprocess
-        builder = Path(__file__).parent / "Character Builder" / "character_builder_app.py"
+    # ── Page 2b: Resume session ────────────────────────────────────────────────
 
-        def _run():
-            subprocess.run([sys.executable, str(builder)],
-                           cwd=str(builder.parent))
-            dialog.after(0, lambda: self._refresh_char_dropdown(char_var, char_menu))
+    def _show_resume_page(self, d):
+        self._clear_body()
+        self._dlg_title.config(text="  ↩  RESUME SESSION")
 
-        threading.Thread(target=_run, daemon=True).start()
+        sessions = gs.list_sessions()
 
-    def _refresh_char_dropdown(self, char_var, char_menu):
-        """Repopulate the character dropdown and select the newest character."""
-        chars = list_characters()
-        menu  = char_menu["menu"]
-        menu.delete(0, "end")
-        for c in chars:
-            menu.add_command(label=c, command=lambda v=c: char_var.set(v))
-        if chars:
-            char_var.set(chars[-1])   # newest character is last alphabetically
+        if not sessions:
+            tk.Label(self._dlg_body, text="No saved sessions found.",
+                     font=FONT_BODY, bg=BG, fg=DIM).pack(pady=20)
+            tk.Button(self._dlg_body, text="← Back", font=FONT_SM, bg=BTN_BG,
+                      fg=DIM, relief="flat", bd=0, padx=8, pady=5,
+                      command=lambda: self._show_mode_page(d)).pack()
+            return
+
+        tk.Label(self._dlg_body, text="Choose a session to resume:",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+
+        lf = tk.Frame(self._dlg_body, bg=INPUT_BG)
+        lf.pack(fill="both", expand=True)
+        sb = tk.Scrollbar(lf, bg=BG, troughcolor=INPUT_BG)
+        sb.pack(side="right", fill="y")
+        ses_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
+                            selectbackground=ACCENT, selectforeground="#1a1a2e",
+                            relief="flat", bd=0, activestyle="none",
+                            yscrollcommand=sb.set, height=7)
+        sb.config(command=ses_lb.yview)
+        ses_lb.pack(fill="both", expand=True, padx=4, pady=4)
+        for s in sessions:
+            ses_lb.insert("end", s)
+        ses_lb.select_set(0)
+
+        btn_row = tk.Frame(self._dlg_body, bg=BG)
+        btn_row.pack(fill="x", pady=(8, 0))
+
+        def resume():
+            sel = ses_lb.curselection()
+            if not sel:
+                self._dlg_err.config(text="Select a session first.")
+                return
+            sname = ses_lb.get(sel[0])
+            try:
+                self.session = gs.load_session(sname)
+            except Exception as e:
+                self._dlg_err.config(text=f"Could not load session: {e}")
+                return
+            char_name = self.session.get("character_name", "")
+            try:
+                self.char = load_character(char_name)
+            except Exception as e:
+                self._dlg_err.config(text=f"Could not load character '{char_name}': {e}")
+                return
+            try:
+                self.dm = dm_module.from_config()
+            except Exception as e:
+                self._dlg_err.config(text=f"DM config error: {e}")
+                return
+            d.destroy()
+            self._start_adventure(new=False)
+
+        tk.Button(btn_row, text="← Back", font=FONT_SM, bg=BTN_BG, fg=DIM,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=FG,
+                  command=lambda: self._show_mode_page(d)).pack(side="right", padx=(4, 0))
+        tk.Button(btn_row, text="Resume →", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                  relief="flat", bd=0, padx=12, pady=5,
+                  activebackground="#e0c060", activeforeground="#1a1a2e",
+                  command=resume).pack(side="right")
 
     def _start_adventure(self, new=True):
         self._char_var.set(
