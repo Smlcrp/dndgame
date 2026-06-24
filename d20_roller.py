@@ -62,6 +62,57 @@ def _angle_diff(a, b):
         d -= 2 * math.pi
     return d
 
+
+def _generate_animation(face_idx, seed):
+    """
+    Build a deterministic list of (rx, ry) frames for a single smooth roll
+    that ends with face face_idx pointing directly at the camera.
+
+    Uses a pure ease-out curve (no separate phases): the die throws fast and
+    decelerates continuously to zero, landing exactly on the target face.
+    Each axis gets its own random rotation count and deceleration exponent so
+    every number looks like a distinct natural tumble.
+    """
+    rng = random.Random(seed)
+
+    rx_t, ry_t = _face_target_angles(face_idx)
+
+    # Random full extra rotations per axis — controls how much the die spins
+    extra_rx = rng.randint(2, 4)
+    extra_ry = rng.randint(2, 4)
+
+    # Slightly different deceleration curves per axis — breaks the artificial
+    # "both axes stop at once" look and feels more like a real tumble
+    exp_rx = rng.uniform(2.6, 3.4)
+    exp_ry = rng.uniform(2.6, 3.4)
+
+    # Work backwards: start position is target minus the total arc each axis travels
+    rx_start = rx_t - extra_rx * 2 * math.pi
+    ry_start = ry_t - extra_ry * 2 * math.pi
+
+    total = 100
+    frames = []
+    for i in range(total):
+        t      = i / (total - 1)          # 0.0 → 1.0
+        ease_x = 1.0 - (1.0 - t) ** exp_rx
+        ease_y = 1.0 - (1.0 - t) ** exp_ry
+        frames.append((
+            rx_start + ease_x * extra_rx * 2 * math.pi,
+            ry_start + ease_y * extra_ry * 2 * math.pi,
+        ))
+
+    return frames
+
+
+# Pre-compute all 20 animations at module load.
+# Each is seeded by the roll value so every number always plays
+# the same unique spin sequence and always lands on the correct face.
+ANIMATIONS = {
+    n: _generate_animation(FACE_NUMBERS.index(n), seed=n * 137 + 42)
+    for n in range(1, 21)
+}
+
+
 CANVAS_W = 300
 CANVAS_H = 300
 OX = CANVAS_W // 2
@@ -99,7 +150,7 @@ class D20RollerWindow:
     """
     Pop-up 3D d20 roller.
 
-    d20_value  — the pre-computed actual roll (1-20); animation lands here.
+    d20_value  — the pre-computed actual roll (1-20); plays the matching animation.
     on_confirm — called with no args after the user clicks Confirm.
     """
 
@@ -108,13 +159,9 @@ class D20RollerWindow:
         self._on_confirm = on_confirm
         self._rolling    = False
         self._done       = False
-        self._rx         = 0.30
-        self._ry         = 0.55
         self._rz         = 0.0
-        self._vx         = 0.0
-        self._vy         = 0.0
-        self._frame      = 0
-        self._phase      = "idle"
+        # Start at the first frame of this number's animation
+        self._rx, self._ry = ANIMATIONS[d20_value][0]
 
         self.win = tk.Toplevel(parent)
         self.win.title("Roll d20")
@@ -156,57 +203,19 @@ class D20RollerWindow:
             return
         self._rolling = True
         self._hint.config(text="Rolling…")
-        self._vx    = random.uniform(0.06, 0.11)
-        self._vy    = random.uniform(0.09, 0.14)
-        self._frame = 0
-        self._phase = "fast"
-        self._tick()
+        self._play_frame(0)
 
-    def _tick(self):
-        self._frame += 1
-
-        if self._phase == "fast" and self._frame > 38:
-            self._phase = "slow"
-            self._frame = 0
-
-        if self._phase == "slow":
-            self._vx *= 0.87
-            self._vy *= 0.87
-            if max(abs(self._vx), abs(self._vy)) < 0.003:
-                self._begin_snap()
-                return
-
-        self._rx += self._vx
-        self._ry += self._vy
-        self._redraw()
-        self.win.after(30, self._tick)
-
-    def _begin_snap(self):
-        face_idx       = FACE_NUMBERS.index(self._val)
-        rx_t, ry_t     = _face_target_angles(face_idx)
-        self._snap_rx0 = self._rx
-        self._snap_ry0 = self._ry
-        self._snap_drx = _angle_diff(self._rx, rx_t)
-        self._snap_dry = _angle_diff(self._ry, ry_t)
-        self._snap_n   = 22
-        self._snap_i   = 0
-        self._phase    = "snap"
-        self._tick_snap()
-
-    def _tick_snap(self):
-        self._snap_i += 1
-        t    = self._snap_i / self._snap_n
-        ease = 1.0 - (1.0 - t) ** 2          # ease-out
-        self._rx = self._snap_rx0 + ease * self._snap_drx
-        self._ry = self._snap_ry0 + ease * self._snap_dry
-        self._redraw()
-        if self._snap_i < self._snap_n:
-            self.win.after(18, self._tick_snap)
+    def _play_frame(self, i):
+        frames = ANIMATIONS[self._val]
+        if i < len(frames):
+            self._rx, self._ry = frames[i]
+            self._redraw()
+            self.win.after(35, lambda: self._play_frame(i + 1))
         else:
             self._land()
 
     def _land(self):
-        self._done = True
+        self._done    = True
         self._rolling = False
         self._redraw()
         self._hint.config(text="")
