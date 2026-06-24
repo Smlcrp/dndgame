@@ -166,7 +166,7 @@ AI DM. Supports Ollama (local) and Google Gemini (cloud). Config from `dm_config
 - Face numbers: black text with light `#dddddd` halo shadow. Visibility threshold `normal[2] > 0.15`.
 - Standalone: `root.geometry("1x1+0+0")` NOT `root.withdraw()` — withdraw breaks Toplevel display on Windows.
 
-### `game.py` *(in progress — will become `views/desktop/app.py` after MVC split)*
+### `views/desktop/app.py`
 Main game interface. `GameApp` class.
 
 **Constants:** `ENEMY_STATS` (20 monsters), `_enemy_defaults(name, level)`, `SKILL_ABILITIES`
@@ -181,6 +181,16 @@ Main game interface. `GameApp` class.
 - Roll button pattern: `_show_roll_button(label, d20_value, on_confirm)` embeds a gold Button in the narration Text widget via `window_create`; clicking opens `D20RollerWindow`
 - Combat loop: `_next_turn()` → player turn (`_build_combat_input`) or enemy turn (`_do_enemy_turn`)
 - Death saves triggered at 0 HP
+
+---
+
+## Known Quirks & Pitfalls
+
+- **Listbox `exportselection`** — Both `char_lb` (character select) and `ses_lb` (session select) in `views/desktop/app.py` must have `exportselection=False`. Without it, clicking any button causes the Listbox to clear its selection, making `curselection()` return an empty tuple. The failure is silent because the error label (`_dlg_err`) is positioned at the very bottom of the dialog and gets obscured.
+
+- **Character `hp` field must be a dict** — `init_hp()` in `models/game_state.py` calls `character["hp"].get("max", 1)`. If `hp` is stored as a plain integer, this raises `AttributeError: 'int' object has no attribute 'get'` which Tkinter silently swallows inside callbacks. Always store `hp` as `{"max": N, "current": N, "temp": 0}`. `empty_character()` does this correctly; the risk is hand-edited JSON files.
+
+- **Tkinter swallows callback exceptions silently** — Any exception raised inside a Tkinter event callback (button click, etc.) is caught by Tkinter, printed to stderr, and the UI stays open with no visible feedback to the user. If `begin()` or any callback appears to do nothing, check stderr or add a try/except with explicit error display.
 
 ---
 
