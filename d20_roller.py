@@ -41,6 +41,27 @@ for _f in FACES:
 
 LIGHT = _norm((0.5, 0.7, 1.0))
 
+# Numbers 1-20 assigned to faces; opposite faces sum to 21 (standard d20)
+FACE_NUMBERS = [1,20,2,19,3,18,4,17,5,16,6,15,7,14,8,13,9,12,10,11]
+
+
+def _face_target_angles(face_idx):
+    """Return (rx, ry) with rz=0 so face face_idx points directly at the camera."""
+    n  = FACE_NORMALS[face_idx]
+    ry = math.atan2(-n[0], n[2])
+    sy, cy = math.sin(ry), math.cos(ry)
+    npz = -sy * n[0] + cy * n[2]
+    rx  = math.atan2(n[1], npz)
+    return rx, ry
+
+
+def _angle_diff(a, b):
+    """Shortest arc from angle a to angle b, result in [-pi, pi]."""
+    d = (b - a) % (2 * math.pi)
+    if d > math.pi:
+        d -= 2 * math.pi
+    return d
+
 CANVAS_W = 300
 CANVAS_H = 300
 OX = CANVAS_W // 2
@@ -152,13 +173,37 @@ class D20RollerWindow:
             self._vx *= 0.87
             self._vy *= 0.87
             if max(abs(self._vx), abs(self._vy)) < 0.003:
-                self._land()
+                self._begin_snap()
                 return
 
         self._rx += self._vx
         self._ry += self._vy
         self._redraw()
         self.win.after(30, self._tick)
+
+    def _begin_snap(self):
+        face_idx       = FACE_NUMBERS.index(self._val)
+        rx_t, ry_t     = _face_target_angles(face_idx)
+        self._snap_rx0 = self._rx
+        self._snap_ry0 = self._ry
+        self._snap_drx = _angle_diff(self._rx, rx_t)
+        self._snap_dry = _angle_diff(self._ry, ry_t)
+        self._snap_n   = 22
+        self._snap_i   = 0
+        self._phase    = "snap"
+        self._tick_snap()
+
+    def _tick_snap(self):
+        self._snap_i += 1
+        t    = self._snap_i / self._snap_n
+        ease = 1.0 - (1.0 - t) ** 2          # ease-out
+        self._rx = self._snap_rx0 + ease * self._snap_drx
+        self._ry = self._snap_ry0 + ease * self._snap_dry
+        self._redraw()
+        if self._snap_i < self._snap_n:
+            self.win.after(18, self._tick_snap)
+        else:
+            self._land()
 
     def _land(self):
         self._done = True
@@ -184,11 +229,13 @@ class D20RollerWindow:
             visible.append((depth, i, face, rn[i]))
         visible.sort()  # back → front
 
-        for _depth, _fi, face, normal in visible:
+        for _depth, fi, face, normal in visible:
             pts = []
+            projected_face = []
             for vi in face:
                 px, py = _project(rv[vi])
                 pts += [px, py]
+                projected_face.append((px, py))
 
             b = max(0.1, _dot(normal, LIGHT))
             r  = min(255, int(0x1a + b * (0xc8 - 0x1a)))
@@ -200,6 +247,17 @@ class D20RollerWindow:
             ebl  = min(255, int(bl * 1.18))
             edge = f"#{er:02x}{eg:02x}{ebl:02x}"
             c.create_polygon(pts, fill=fill, outline=edge, width=1)
+
+            # Draw face number — only when facing camera enough to be readable
+            if normal[2] > 0.15:
+                fx = sum(p[0] for p in projected_face) / 3
+                fy = sum(p[1] for p in projected_face) / 3
+                fsize = max(8, int(normal[2] * 16))
+                num   = str(FACE_NUMBERS[fi])
+                font  = ("Consolas", fsize, "bold")
+                # Light halo then black text for readability on any face colour
+                c.create_text(fx + 1, fy + 1, text=num, font=font, fill="#dddddd")
+                c.create_text(fx,     fy,     text=num, font=font, fill="#000000")
 
         if self._done:
             c.create_text(OX, OY, text=str(self._val),
@@ -214,6 +272,6 @@ if __name__ == "__main__":
     import random as _r
     root = tk.Tk()
     root.configure(bg=BG)
-    root.withdraw()
+    root.geometry("1x1+0+0")
     D20RollerWindow(root, d20_value=_r.randint(1, 20), on_confirm=root.destroy)
     root.mainloop()
