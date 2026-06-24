@@ -41,6 +41,50 @@ FONT_BODY  = ("Segoe UI", 10)
 FONT_SM    = ("Segoe UI",  9)
 FONT_MONO  = ("Consolas", 10)
 
+ABILITY_KEYS = [
+    ("STR", "strength"), ("DEX", "dexterity"), ("CON", "constitution"),
+    ("INT", "intelligence"), ("WIS", "wisdom"), ("CHA", "charisma"),
+]
+SKILL_ABILITY = {
+    "Acrobatics":"dexterity","Animal Handling":"wisdom","Arcana":"intelligence",
+    "Athletics":"strength","Deception":"charisma","History":"intelligence",
+    "Insight":"wisdom","Intimidation":"charisma","Investigation":"intelligence",
+    "Medicine":"wisdom","Nature":"intelligence","Perception":"wisdom",
+    "Performance":"charisma","Persuasion":"charisma","Religion":"intelligence",
+    "Sleight of Hand":"dexterity","Stealth":"dexterity","Survival":"wisdom",
+}
+
+
+class _Tooltip:
+    def __init__(self, widget, text_fn):
+        self._text_fn = text_fn
+        self._win     = None
+        widget.bind("<Enter>",   self._show)
+        widget.bind("<Leave>",   self._hide)
+        widget.bind("<Destroy>", self._hide)
+
+    def _show(self, event):
+        if self._win:
+            return
+        w = event.widget
+        x = w.winfo_rootx() + 4
+        y = w.winfo_rooty() + w.winfo_height() + 4
+        self._win = tk.Toplevel()
+        self._win.wm_overrideredirect(True)
+        self._win.attributes("-topmost", True)
+        self._win.geometry(f"+{x}+{y}")
+        tk.Label(self._win, text=self._text_fn(),
+                 bg=BTN_BG, fg=FG, font=FONT_SM,
+                 padx=10, pady=5, relief="flat", justify="left").pack()
+
+    def _hide(self, event=None):
+        if self._win:
+            try:
+                self._win.destroy()
+            except Exception:
+                pass
+            self._win = None
+
 
 class GameApp:
 
@@ -53,8 +97,8 @@ class GameApp:
 
         root.title("D&D AI Dungeon Master")
         root.configure(bg=BG)
-        root.geometry("1100x700")
-        root.minsize(800, 560)
+        root.geometry("1340x780")
+        root.minsize(900, 600)
 
         self._build_ui()
         root.after(150, self._startup_dialog)
@@ -95,41 +139,109 @@ class GameApp:
         self._narration.tag_config("header", foreground=ACCENT,
                                    font=("Consolas", 10, "bold"))
 
-        sf = tk.Frame(main, bg=PANEL, width=220)
+        # ── Scrollable sidebar ──────────────────────────────────────────────────
+        sf = tk.Frame(main, bg=PANEL, width=320)
         sf.pack(side="right", fill="y", padx=(4,8), pady=6)
         sf.pack_propagate(False)
 
-        tk.Label(sf, text="CHARACTER", font=FONT_SM, bg=PANEL,
-                 fg=ACCENT).pack(anchor="w", padx=10, pady=(10,2))
-        self._hp_label  = tk.Label(sf, text="HP: —", font=FONT_BODY,
-                                   bg=PANEL, fg=FG)
+        _sb_bar = tk.Scrollbar(sf, orient="vertical", bg=PANEL, troughcolor=INPUT_BG)
+        _sb_bar.pack(side="right", fill="y")
+        _sb_cv = tk.Canvas(sf, bg=PANEL, highlightthickness=0,
+                           yscrollcommand=_sb_bar.set)
+        _sb_cv.pack(side="left", fill="both", expand=True)
+        _sb_bar.config(command=_sb_cv.yview)
+        self._sb_inner = tk.Frame(_sb_cv, bg=PANEL)
+        _win_id = _sb_cv.create_window((0, 0), window=self._sb_inner, anchor="nw")
+        self._sb_inner.bind(
+            "<Configure>",
+            lambda e: _sb_cv.configure(scrollregion=_sb_cv.bbox("all")))
+        _sb_cv.bind(
+            "<Configure>",
+            lambda e: _sb_cv.itemconfig(_win_id, width=e.width))
+        sf.bind_all("<MouseWheel>",
+                    lambda e: _sb_cv.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        def _sec(text):
+            tk.Label(self._sb_inner, text=text, font=("Segoe UI", 8, "bold"),
+                     bg=PANEL, fg=ACCENT).pack(anchor="w", padx=10, pady=(10,0))
+            tk.Frame(self._sb_inner, bg=BTN_BG, height=1).pack(
+                fill="x", padx=10, pady=(2,4))
+
+        # CHARACTER INFO
+        _sec("CHARACTER")
+        self._char_info_label = tk.Label(
+            self._sb_inner, text="—", font=FONT_SM, bg=PANEL, fg=FG,
+            anchor="w", justify="left", wraplength=285)
+        self._char_info_label.pack(anchor="w", padx=10, pady=(0,4))
+
+        # VITALS
+        _sec("VITALS")
+        self._hp_label = tk.Label(self._sb_inner, text="HP: —",
+                                  font=FONT_BODY, bg=PANEL, fg=FG)
         self._hp_label.pack(anchor="w", padx=10)
-        self._hp_bar_canvas = tk.Canvas(sf, bg=PANEL, height=8,
+        self._hp_bar_canvas = tk.Canvas(self._sb_inner, bg=PANEL, height=8,
                                         highlightthickness=0)
         self._hp_bar_canvas.pack(fill="x", padx=10, pady=2)
-        self._ac_label  = tk.Label(sf, text="AC: —", font=FONT_SM,
-                                   bg=PANEL, fg=DIM)
-        self._ac_label.pack(anchor="w", padx=10)
-        self._spd_label = tk.Label(sf, text="Speed: —", font=FONT_SM,
-                                   bg=PANEL, fg=DIM)
-        self._spd_label.pack(anchor="w", padx=10)
-        self._cond_label = tk.Label(sf, text="Conditions: —", font=FONT_SM,
-                                    bg=PANEL, fg=DIM, wraplength=190,
-                                    justify="left")
-        self._cond_label.pack(anchor="w", padx=10, pady=(0,6))
+        vrow = tk.Frame(self._sb_inner, bg=PANEL)
+        vrow.pack(anchor="w", padx=10, pady=(0,2), fill="x")
+        self._ac_label   = tk.Label(vrow, text="AC —",   font=FONT_SM, bg=PANEL, fg=DIM)
+        self._ac_label.pack(side="left")
+        tk.Label(vrow, text="  |  ", font=FONT_SM, bg=PANEL, fg=BTN_BG).pack(side="left")
+        self._spd_label  = tk.Label(vrow, text="Spd —",  font=FONT_SM, bg=PANEL, fg=DIM)
+        self._spd_label.pack(side="left")
+        tk.Label(vrow, text="  |  ", font=FONT_SM, bg=PANEL, fg=BTN_BG).pack(side="left")
+        self._init_label = tk.Label(vrow, text="Init —", font=FONT_SM, bg=PANEL, fg=DIM)
+        self._init_label.pack(side="left")
+        self._cond_label = tk.Label(
+            self._sb_inner, text="Conditions: —", font=FONT_SM,
+            bg=PANEL, fg=DIM, wraplength=285, justify="left")
+        self._cond_label.pack(anchor="w", padx=10, pady=(0,4))
 
-        tk.Frame(sf, bg=BTN_BG, height=1).pack(fill="x", padx=10, pady=4)
+        # ABILITIES
+        _sec("ABILITIES")
+        ab_grid = tk.Frame(self._sb_inner, bg=PANEL)
+        ab_grid.pack(anchor="w", padx=8, pady=2)
+        self._ab_labels = {}
+        for i, (abbr, key) in enumerate(ABILITY_KEYS):
+            col, row_i = i % 3, i // 3
+            cell = tk.Frame(ab_grid, bg=BTN_BG, padx=6, pady=4, width=88)
+            cell.grid(row=row_i, column=col, padx=3, pady=3)
+            cell.grid_propagate(False)
+            tk.Label(cell, text=abbr, font=("Segoe UI",7,"bold"),
+                     bg=BTN_BG, fg=DIM).pack()
+            lbl = tk.Label(cell, text="—", font=("Segoe UI",10,"bold"),
+                           bg=BTN_BG, fg=FG)
+            lbl.pack()
+            self._ab_labels[key] = lbl
 
-        tk.Label(sf, text="COMBAT", font=FONT_SM, bg=PANEL,
-                 fg=ACCENT).pack(anchor="w", padx=10, pady=(4,2))
-        self._combat_frame = tk.Frame(sf, bg=PANEL)
+        # SAVING THROWS
+        _sec("SAVING THROWS")
+        self._save_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._save_frame.pack(anchor="w", padx=10, pady=(0,4), fill="x")
+
+        # PROFICIENT SKILLS
+        _sec("SKILLS")
+        self._skills_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._skills_frame.pack(anchor="w", padx=10, pady=(0,4), fill="x")
+
+        # ATTACKS
+        _sec("ATTACKS")
+        self._attacks_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._attacks_frame.pack(fill="x", padx=6, pady=(0,4))
+
+        # COMBAT ORDER
+        _sec("COMBAT")
+        self._combat_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._combat_frame.pack(fill="x", padx=6)
 
-        tk.Frame(sf, bg=BTN_BG, height=1).pack(fill="x", padx=10, pady=8)
-        tk.Button(sf, text="Save & Quit", font=FONT_SM, bg=BTN_BG, fg=FG,
-                  relief="flat", bd=0, padx=8, pady=4,
+        # Save & Quit
+        tk.Frame(self._sb_inner, bg=BTN_BG, height=1).pack(
+            fill="x", padx=10, pady=(12,4))
+        tk.Button(self._sb_inner, text="Save & Quit", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=4,
                   activebackground=ACCENT, activeforeground="#1a1a2e",
-                  command=self._save_and_quit).pack(padx=10, pady=4, fill="x")
+                  command=self._save_and_quit).pack(
+                      padx=10, pady=(0,12), fill="x")
 
         inp = tk.Frame(self.root, bg=PANEL, pady=6)
         inp.pack(fill="x", side="bottom")
@@ -705,27 +817,88 @@ class GameApp:
     def _update_sidebar(self):
         if not self.char or not self.session:
             return
+        ab      = self.char.get("abilities", {})
+        lvl     = self.char.get("level", 1)
+        pb      = proficiency_bonus(lvl)
         cur_hp  = self.session.get("current_hp", 0) or 0
         max_hp  = self.char["hp"].get("max", 1)
         ac      = self.char.get("armor_class", 10)
         speed   = self.char.get("speed", 30)
+        dex_mod = modifier(ab.get("dexterity", 10))
         conds   = self.session.get("conditions", [])
 
-        self._hp_label.config(text=f"HP: {cur_hp} / {max_hp}")
-        self._ac_label.config(text=f"AC: {ac}")
-        self._spd_label.config(text=f"Speed: {speed} ft")
-        self._cond_label.config(
-            text="Conditions: " + (", ".join(conds) if conds else "—"))
+        # Character info
+        name    = self.char.get("name", "—")
+        race    = self.char.get("race", "—")
+        cls     = self.char.get("class", "—")
+        sub     = self.char.get("subclass", "")
+        bg_name = self.char.get("background", "—")
+        sub_str = f" ({sub})" if sub else ""
+        self._char_info_label.config(
+            text=f"{name}\n{race}  {cls}{sub_str}\nLevel {lvl}  •  {bg_name}")
 
+        # Vitals
+        self._hp_label.config(text=f"HP: {cur_hp} / {max_hp}")
         ratio  = cur_hp / max(1, max_hp)
         colour = GREEN if ratio > 0.5 else (YELLOW if ratio > 0.25 else RED)
         self._hp_bar_canvas.delete("all")
-        w = 180
-        self._hp_bar_canvas.config(width=w)
-        self._hp_bar_canvas.create_rectangle(0, 0, w, 8, fill=BTN_BG, outline="")
-        self._hp_bar_canvas.create_rectangle(0, 0, int(w * ratio), 8,
+        bw = self._hp_bar_canvas.winfo_width() or 260
+        self._hp_bar_canvas.create_rectangle(0, 0, bw, 8, fill=BTN_BG, outline="")
+        self._hp_bar_canvas.create_rectangle(0, 0, int(bw * ratio), 8,
                                              fill=colour, outline="")
+        self._ac_label.config(text=f"AC {ac}")
+        self._spd_label.config(text=f"Spd {speed}")
+        self._init_label.config(text=f"Init {dex_mod:+d}")
+        self._cond_label.config(
+            text="Conditions: " + (", ".join(conds) if conds else "—"))
 
+        # Abilities
+        for key, lbl in self._ab_labels.items():
+            score = ab.get(key, 10)
+            lbl.config(text=f"{score}\n({modifier(score):+d})")
+
+        # Saving throws
+        for w in self._save_frame.winfo_children():
+            w.destroy()
+        save_profs = set(self.char.get("saving_throw_proficiencies", []))
+        sg = tk.Frame(self._save_frame, bg=PANEL)
+        sg.pack(anchor="w")
+        for i, (abbr, key) in enumerate(ABILITY_KEYS):
+            prof  = key in save_profs
+            mod_v = modifier(ab.get(key, 10)) + (pb if prof else 0)
+            col   = 0 if i < 3 else 1
+            row_i = i % 3
+            f = tk.Frame(sg, bg=PANEL)
+            f.grid(row=row_i, column=col, sticky="w", padx=(0,10), pady=1)
+            tk.Label(f, text="●" if prof else "○", font=FONT_SM,
+                     bg=PANEL, fg=ACCENT if prof else DIM).pack(side="left")
+            tk.Label(f, text=f" {abbr} {mod_v:+d}", font=FONT_SM,
+                     bg=PANEL, fg=FG if prof else DIM).pack(side="left")
+
+        # Proficient skills
+        for w in self._skills_frame.winfo_children():
+            w.destroy()
+        skill_profs = self.char.get("skill_proficiencies", [])
+        if skill_profs:
+            sk_grid = tk.Frame(self._skills_frame, bg=PANEL)
+            sk_grid.pack(anchor="w")
+            for i, sk in enumerate(skill_profs):
+                ab_key = SKILL_ABILITY.get(sk, "")
+                mod_v  = modifier(ab.get(ab_key, 10)) + pb
+                col    = 0 if i % 2 == 0 else 1
+                row_i  = i // 2
+                f = tk.Frame(sk_grid, bg=PANEL)
+                f.grid(row=row_i, column=col, sticky="w", padx=(0,6), pady=1)
+                tk.Label(f, text=f"● {sk[:13]} {mod_v:+d}",
+                         font=("Segoe UI", 8), bg=PANEL, fg=FG).pack(side="left")
+        else:
+            tk.Label(self._skills_frame, text="—",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+
+        # Attacks (state-aware)
+        self._refresh_attacks()
+
+        # Combat order
         for w in self._combat_frame.winfo_children():
             w.destroy()
         if self.session.get("in_combat"):
@@ -743,8 +916,72 @@ class GameApp:
                 tk.Label(row, text=f"{c['hp']}/{c['max_hp']}", font=FONT_SM,
                          bg=PANEL, fg=bar_c).pack(side="right")
         else:
-            tk.Label(self._combat_frame, text="Not in combat", font=FONT_SM,
-                     bg=PANEL, fg=DIM).pack(anchor="w")
+            tk.Label(self._combat_frame, text="Not in combat",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+
+    def _is_player_turn(self):
+        if not self.session or not self.session.get("in_combat"):
+            return False
+        current = gs.current_combatant(self.session)
+        return bool(current and current.get("is_player", False))
+
+    def _refresh_attacks(self):
+        for w in self._attacks_frame.winfo_children():
+            w.destroy()
+        if not self.char:
+            return
+        attacks = self.char.get("attacks", [])
+        if not attacks:
+            tk.Label(self._attacks_frame, text="No attacks configured.",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
+            return
+
+        player_turn = self._is_player_turn()
+
+        for atk in attacks:
+            name      = atk["name"]
+            bonus     = atk.get("attack_bonus", 0)
+            damage    = atk.get("damage", "—")
+            dmg_type  = atk.get("damage_type", "")
+            notes     = atk.get("notes", "")
+
+            if player_turn:
+                btn_bg = ACCENT
+                btn_fg = "#1a1a2e"
+                cursor = "hand2"
+                state  = "normal"
+                tip    = (f"{damage}  {dmg_type}\n{notes}" if notes
+                          else f"{damage}  {dmg_type}\nClick to attack")
+            else:
+                btn_bg = BTN_BG
+                btn_fg = DIM
+                cursor = "arrow"
+                state  = "disabled"
+                if self.state != "COMBAT":
+                    tip = f"{damage}  {dmg_type}\nOnly available during combat"
+                else:
+                    tip = f"{damage}  {dmg_type}\nWait for your turn"
+
+            row = tk.Frame(self._attacks_frame, bg=PANEL)
+            row.pack(fill="x", pady=2)
+
+            btn = tk.Button(
+                row, text=f"{name}  {bonus:+d}",
+                font=FONT_SM, bg=btn_bg, fg=btn_fg,
+                relief="flat", bd=0, padx=8, pady=5,
+                activebackground=ACCENT, activeforeground="#1a1a2e",
+                cursor=cursor, state=state, anchor="w",
+                command=lambda n=name: self._do_player_attack(n),
+            )
+            btn.pack(side="left", fill="x", expand=True)
+
+            dmg_lbl = tk.Label(row, text=damage,
+                               font=("Segoe UI", 8), bg=PANEL,
+                               fg=DIM if state == "disabled" else FG)
+            dmg_lbl.pack(side="right", padx=6)
+
+            _Tooltip(btn,     lambda t=tip: t)
+            _Tooltip(dmg_lbl, lambda t=tip: t)
 
     def _set_input_enabled(self, enabled):
         state = "normal" if enabled else "disabled"

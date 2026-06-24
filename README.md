@@ -17,7 +17,10 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `views/desktop/d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
 | `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
 | `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
+| `models/progression.py` | 🔜 Next | XP thresholds, level-up logic, feature charges |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
+
+> **Next milestone:** Full D&D 5e character progression — XP tracking, level-up dialog (HP roll, ASI/Feat, subclass, spell selection), feature charge tracking, short/long rest UI, and a dev test panel for simulating level-ups.
 
 ---
 

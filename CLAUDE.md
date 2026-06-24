@@ -197,13 +197,89 @@ Main game interface. `GameApp` class.
 
 ## What to Build Next
 
-**MVC Restructure** — ✅ Complete. The project is fully restructured. `python main.py` launches the game.
+**MVC Restructure** — ✅ Complete. `python main.py` launches the game.
 
-**Possible next milestones:**
-- Web frontend — implement `views/web/api.py` with Flask/FastAPI routes calling the existing controller
-- Expanded enemy roster and encounter tables in `controllers/game_controller.py`
+---
+
+### NEXT SESSION — Character Progression & Leveling System
+
+Build full D&D 5e character progression. Execute in three committed phases so context limits don't lose work.
+
+#### Phase 1 — Core data + level-up flow (do this first)
+- **New file `models/progression.py`** — all progression data in one place:
+  - `XP_THRESHOLDS` list (levels 1–20): `[0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 83000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000]`
+  - `ASI_LEVELS` dict — per-class levels that grant ASI/Feat (Fighter gets extras at 6, 14)
+  - `SUBCLASS_TRIGGER_LEVELS` — level at which each class picks a subclass (most=3, Cleric/Sorcerer/Warlock=1, Druid/Wizard=2)
+  - `CLASS_FEATURE_CHARGES` — structured dict: feature name → `{max_uses, recharge: "short_rest"|"long_rest", desc}`
+    - Fighter: Second Wind (1, short), Action Surge (1, short), Indomitable (1→3, long)
+    - Rogue: Cunning Action (passive), Uncanny Dodge (passive), Evasion (passive)
+    - Cleric: Channel Divinity (1→3, short)
+    - Bard: Bardic Inspiration (CHA mod, long→short at Lv5)
+    - Druid: Wild Shape (2, short)
+    - Monk: Ki Points (level, short)
+    - Paladin: Lay on Hands (5×level pool, long), Divine Smite (passive/spell slots)
+    - Ranger: (mostly passive)
+    - Barbarian: Rage (2→∞, long)
+    - Warlock: Eldritch Invocations (passive), spell slots (short)
+    - Wizard: Arcane Recovery (1/2 level slots, long)
+    - Sorcerer: Sorcery Points (level, long)
+  - `level_from_xp(xp)` → int
+  - `xp_for_level(level)` → int (XP needed to reach that level)
+  - `xp_to_next_level(xp, current_level)` → int (XP remaining)
+  - `is_asi_level(cls, level)` → bool
+  - `get_subclass_trigger(cls)` → int
+  - `features_gained_at(cls, level)` → list of feature names (from CLASS_FEATURES in dnd_data.py)
+  - `feature_charges_gained_at(cls, level)` → list of charge dicts for features newly gained
+
+- **`models/character.py`** — add to `empty_character()`:
+  - `"feature_uses": {}` — `{feature_name: {"current": N, "max": N, "recharge": "short_rest"|"long_rest"}}`
+  - `"inspiration": False`
+
+- **`models/dm.py`** — add `[XP: N]` tag parsing in `_parse_events`. Returns event `{"type": "xp_award", "amount": N}`.
+
+- **`controllers/game_controller.py`** — add:
+  - `process_xp_award(session, char, amount)` → `{"xp_gained": int, "total_xp": int, "leveled_up": bool, "new_level": int}`
+  - `process_short_rest(session, char, dice_spent)` → `{"hp_recovered": int, "features_recharged": list}`
+  - `process_long_rest(session, char)` → `{"hp_recovered": int, "slots_recovered": dict, "features_recharged": list}`
+
+- **`views/desktop/app.py`** — add level-up dialog (multi-step modal Toplevel):
+  - Step 1: "You reached Level N!" — display all new class features as readable text
+  - Step 2: HP roll — show the hit die, Roll button (uses D20RollerWindow pattern but for hit die), or "Take Average" button. Apply result.
+  - Step 3: Subclass picker — only shown if `char["level"]` == `get_subclass_trigger(cls)` AND `char["subclass"]` is empty. Reuse `_pick_from_list` pattern.
+  - Step 4: ASI/Feat — only shown if `is_asi_level(cls, level)`. Two options: "+2 to one ability" (dropdown) or "+1/+1 to two abilities" (two dropdowns). Feat option: "Choose Feat" (stub — show coming soon).
+  - Step 5: Spell selection — only shown for caster classes. Show new slot levels unlocked, let player pick new spells/cantrips if class is Bard/Ranger/Sorcerer/Warlock (spells known). Wizard gets "add 2 spells to spellbook." Skip for Cleric/Druid (prepare from full list).
+  - Handle XP award event from DM in `_handle_dm_response`
+
+→ **Commit after Phase 1**
+
+#### Phase 2 — Sidebar upgrades + rest UI
+- **XP bar in sidebar** — below vitals: "XP: 450 / 900 (Lv 2→3)" with a gold progress bar
+- **Feature charges in sidebar** — new "FEATURES" section below ATTACKS showing each limited-use feature as `[●●○] Action Surge` style with current/max pips. Clickable to use (with confirmation). Recharge on rest.
+- **Inspiration** — small toggle button in vitals row. Gold when active, grey when not.
+- **Short Rest / Long Rest buttons** in sidebar — Short rest opens a hit-dice spending dialog (spinbox for dice to spend, shows expected HP recovery, Roll or Take Average). Long rest is one-click with confirmation.
+- `_update_sidebar` already calls `_refresh_attacks` — also add `_refresh_features()`
+
+→ **Commit after Phase 2**
+
+#### Phase 3 — Test harness (DEV panel)
+- **Ctrl+D** opens a floating DEV panel (Toplevel, no grab_set so game stays interactive):
+  - "Award XP" — text entry + button (calls `process_xp_award`)
+  - Quick jump buttons: "→ Lv 2" through "→ Lv 10" — sets XP to exact threshold and triggers level-up dialog
+  - "Short Rest" / "Long Rest" instant buttons
+  - "Set HP" — spinbox to set current HP to any value (for testing death saves)
+  - "Add Condition" — dropdown of all conditions
+  - "Start Combat (test)" — spawns 1 Goblin immediately for combat testing
+- Panel stays open across multiple uses so you can level up 1→10 repeatedly without reopening it
+
+→ **Commit after Phase 3**
+
+---
+
+### Future Milestones (lower priority)
+- Web frontend — `views/web/api.py` with Flask/FastAPI routes (see project memory for complications)
 - Spell combat support (spellcasting attacks, save DCs) in `models/combat.py`
-- Long rest / short rest UI in `views/desktop/app.py`
+- Expanded enemy roster and encounter tables
+- Multiclassing (defer until single-class leveling is solid)
 
 ---
 
