@@ -23,8 +23,11 @@ dndgame/
 ├── dice.py                   # ✅ Dice rolling engine
 ├── game_state.py             # ✅ Session persistence and combat state
 ├── combat.py                 # ✅ Turn-based combat engine
-├── dm.py                     # 🔲 AI Dungeon Master (Claude API)
-└── game.py                   # 🔲 Main game interface (GUI)
+├── dm.py                     # ✅ AI Dungeon Master (Ollama + Gemini)
+├── dm_config.json            # Gitignored — backend/API key config
+├── dm_config.example.json    # Committed template for dm_config.json
+├── sessions/                 # Saved session JSON files (gitignored)
+└── game.py                   # 🚧 Main game interface (GUI) — in progress
 ```
 
 ## What Is COMPLETE
@@ -179,10 +182,67 @@ JSON-based session persistence. Saves to `sessions/<name>.json`. Separates trans
 - **`_weapon_proficient(cls, name, cat)`** — module-level function for checking weapon proficiency against `CLASS_WEAPON_PROFS`. Handles "Simple weapons"/"Martial weapons" group strings and specific named weapons (normalises plurals).
 - **Auto-calc methods:** `_calc_combat_stats()` and `_calc_attacks()` are called at the start of every `_refresh_preview()` and write results directly back to `self.char` so saves always have current values.
 
+### `dm.py`
+AI Dungeon Master. Supports two free backends — Ollama (local) and Google Gemini (cloud). Config loaded from `dm_config.json` (gitignored).
+
+- `DungeonMaster(backend, model, api_key)` — main class
+- `_build_system_prompt(character)` — personalised system prompt from character sheet
+- `_messages_for_ollama(session, character, player_input)` — OpenAI-style message list
+- `_messages_for_gemini(session, character, player_input)` — Gemini contents array
+- `_call_ollama(messages)` — POST to `http://localhost:11434/api/chat`, stream=False
+- `_call_gemini(system_prompt, contents)` — POST to Gemini REST API with API key
+- `_parse_events(raw_text)` — extracts `[CHECK: Skill DC##]`, `[COMBAT: Name×N]`, `[SCENE: Location]` tags; returns `(clean_narration, events_list)`
+- `respond(session, character, player_input)` — main entry point; saves both turns to session history; returns `{"narration": str, "events": list}`
+- `load_config(path)` / `save_config(config, path)` / `from_config(path)` — config helpers
+
+**WARN USER before any DM testing — Gemini API calls cost quota.**
+
+### `game.py` *(in progress)*
+Main game interface. Launch with `python game.py`. Uses `GameApp` class.
+
+**Module-level constants:**
+- `ENEMY_STATS` — dict of ~20 common 5e monsters with hp, ac, xp, initiative_mod, attacks list
+- `_enemy_defaults(name, level)` — fallback scaled stat block for unlisted enemies
+- `SKILL_ABILITIES` — dict mapping skill/ability names to ability score keys
+
+**`GameApp.__init__`:** Creates root window (1100×700), calls `_build_ui()`, then `_startup_dialog()` after 150ms.
+
+**UI layout (`_build_ui`):**
+- Header bar — character name (gold) + current location (dim)
+- Left: narration `Text` widget (Consolas, INPUT_BG, read-only). Tags: `dm`, `player`, `system`, `hit`, `miss`, `danger`, `header`
+- Right sidebar (220px, PANEL): HP label + canvas HP bar, AC, speed, conditions, combat tracker frame, Save & Quit button
+- Bottom input area: explore mode (text entry + Send) or combat mode (attack buttons), swapped via `_build_explore_input()` / `_build_combat_input()`
+
+**Startup flow (multi-page dialog in one Toplevel):**
+- `_startup_dialog()` — creates the dialog shell with title label and body/error frames; calls `_show_mode_page()`
+- `_clear_body()` — destroys all body children, clears error label
+- `_btn_large(parent, text, sub, command)` — styled clickable card; hover highlights entire card gold (frame + both labels change on Enter/Leave); all three widgets bound to click
+- `_show_mode_page(d)` — Page 1: "New Adventure" and "Resume Session" large buttons
+- `_show_character_page(d)` — Page 2a: scrollable Listbox of characters; "+ New Character" (subprocess builder, auto-refresh), "Delete" (with messagebox confirm, unlinks `characters/<name>.json`), "← Back", "Begin →"
+- `_show_resume_page(d)` — Page 2b: scrollable Listbox of sessions; loads session + its character; "← Back", "Resume →"
+
+**Adventure flow:**
+- `_start_adventure(new)` — updates header, updates sidebar, displays opening prompt, calls DM in thread
+- `_send_action()` — reads input, displays player text, disables input, calls DM in thread
+- `_dm_call(player_input)` — daemon thread; calls `self.dm.respond()`; posts result via `root.after(0, ...)`
+- `_handle_dm_response(result)` — displays narration, processes events (combat_start → `_start_combat`, skill_check → `_handle_skill_check`, scene_change → updates location), saves session
+- `_start_combat(enemies)` — builds enemy list from `ENEMY_STATS` / `_enemy_defaults`, calls `cb.setup_combat()`, updates sidebar, calls `_next_turn()`
+- `_next_turn()` — checks combat end; on player turn → `_build_combat_input()`; on enemy turn → `_do_enemy_turn()`
+- `_do_player_attack(weapon_name)` — calls `cb.player_attack()`, displays result, calls `_end_combat()` or `end_turn()` + `_next_turn()`
+- `_do_enemy_turn()` — calls `cb.enemy_attack()`, displays result, checks player HP (0 → death saves), calls `end_turn()` + `_next_turn()`
+- `_display_attack_result(result, attacker_name)` — formats hit/miss/kill line with colour tags
+- `_end_combat(xp)` — calls `gs.end_combat()`, awards XP, re-enables explore input, tells DM combat ended
+- `_handle_death_saves(session)` — calls `cb.handle_death_save()`, displays outcome, marks DEAD or stable
+- `_handle_skill_check(event)` — auto-rolls the check with proficiency if applicable, displays result, feeds outcome to DM
+- `_display(text, tag)` — appends to narration Text, auto-scrolls
+- `_erase_last_line()` — removes last line from narration (used for "thinking…" spinner)
+- `_update_sidebar()` — refreshes HP label + canvas bar (green/yellow/red by percentage), AC, speed, conditions, combat initiative list
+- `_set_input_enabled(enabled)` — enables/disables the input entry
+- `_save_and_quit()` — saves session if active, destroys root
+
 ## What to Build Next
 
-1. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes session history + character context + player action, returns DM narration + structured game events (combat triggers, skill check requests, scene transitions, etc.).
-2. **`game.py`** — Main game interface tying everything together. Tkinter GUI: scene/narration panel, player input bar, character sheet sidebar showing live HP/AC/conditions, combat tracker when in combat.
+- **Continue `game.py`** — exercise and test the full play loop end-to-end: narration → skill checks → combat → death saves → rest → session save/resume
 
 ## GitHub
 Repository: https://github.com/Smlcrp/dndgame
