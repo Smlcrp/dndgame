@@ -8,23 +8,23 @@
 ## Project Vision
 A fully playable D&D 5e adventure game with an AI Dungeon Master powered by the Claude API. The player builds a character, then plays through a text/GUI adventure where Claude acts as the DM — describing scenes, adjudicating rules, and running combat.
 
-## Planned Full Architecture
+## Full Architecture
 ```
 dndgame/
-├── character.py              # Core character data model, save/load, helpers
+├── character.py              # ✅ Core character data model, save/load, helpers
 ├── characters/               # Saved character JSON files (gitignored)
 ├── Character Builder/
-│   ├── character_builder_app.py   # Main GUI character builder (COMPLETE)
-│   ├── dnd_data.py               # Complete D&D 5e rules data (COMPLETE)
-│   ├── spells.py                 # Full spell lists by class/level (COMPLETE)
-│   ├── ddb_import.py             # D&D Beyond import (COMPLETE)
+│   ├── character_builder_app.py   # ✅ Main GUI character builder
+│   ├── dnd_data.py               # ✅ Complete D&D 5e rules data
+│   ├── spells.py                 # ✅ Full spell lists by class/level
+│   ├── ddb_import.py             # ✅ D&D Beyond import
 │   ├── character_builder.py      # Legacy CLI builder (unused, kept for reference)
 │   └── Launch Character Builder.bat
-├── dice.py                   # (PLANNED) Dice rolling engine
-├── combat.py                 # (PLANNED) Combat system
-├── game_state.py             # (PLANNED) Game state persistence
-├── dm.py                     # (PLANNED) AI Dungeon Master (Claude API)
-└── game.py                   # (PLANNED) Main game interface
+├── dice.py                   # ✅ Dice rolling engine
+├── game_state.py             # ✅ Session persistence and combat state
+├── combat.py                 # ✅ Turn-based combat engine
+├── dm.py                     # 🔲 AI Dungeon Master (Claude API)
+└── game.py                   # 🔲 Main game interface (GUI)
 ```
 
 ## What Is COMPLETE
@@ -123,8 +123,6 @@ Pure logic dice engine — no API calls, no imports beyond `random` and `re`. Al
 - `death_save()` — 10+ success, 20 = critical (regain 1 HP), 1 = double failure (two failures instead of one, per 5e RAW). Returns `{roll, success, critical, double_fail}`
 - `initiative(dex_mod)` — d20 + DEX mod. Returns `{roll, modifier, total}`
 
----
-
 ### `combat.py`
 Turn-based combat engine. Uses `dice.py`, `game_state.py`, and `character.py`. Pure logic — no UI or API calls.
 
@@ -182,13 +180,9 @@ JSON-based session persistence. Saves to `sessions/<name>.json`. Separates trans
 - **Auto-calc methods:** `_calc_combat_stats()` and `_calc_attacks()` are called at the start of every `_refresh_preview()` and write results directly back to `self.char` so saves always have current values.
 
 ## What to Build Next
-In order of dependency:
 
-1. **`dice.py`** — ✅ COMPLETE. See below.
-2. **`game_state.py`** — ✅ COMPLETE. See below.
-3. **`combat.py`** — ✅ COMPLETE. See below.
-4. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes game state + player action, returns DM narration + structured game events (combat start, skill check request, etc.).
-5. **`game.py`** — Main game interface tying everything together. GUI window: scene description panel, player input, character sheet sidebar.
+1. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes session history + character context + player action, returns DM narration + structured game events (combat triggers, skill check requests, scene transitions, etc.).
+2. **`game.py`** — Main game interface tying everything together. Tkinter GUI: scene/narration panel, player input bar, character sheet sidebar showing live HP/AC/conditions, combat tracker when in combat.
 
 ## GitHub
 Repository: https://github.com/Smlcrp/dndgame
