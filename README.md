@@ -270,17 +270,7 @@ Bugs discovered and fixed in order of discovery.
 
 ---
 
-### 1. `requests` package not installed
-
-**Where:** Runtime, on first launch.
-
-**Symptom:** `ModuleNotFoundError: No module named 'requests'` when starting the app, because `requests` is required by `models/dm.py` for Ollama and Gemini API calls but is not a stdlib module.
-
-**Fix:** `pip install requests`. The dependency was already documented in the Requirements section; no code change was needed. Noted here because it blocks the app from starting at all on a fresh Python install.
-
----
-
-### 2. Character-select Listbox clears selection on button click (`char_lb`)
+### 1. Character-select Listbox clears selection on button click (`char_lb`)
 
 **Where:** `views/desktop/app.py` → `_show_character_page()` → `char_lb` Listbox.
 
@@ -292,19 +282,19 @@ Bugs discovered and fixed in order of discovery.
 
 ---
 
-### 3. Session-select Listbox clears selection on button click (`ses_lb`)
+### 2. Session-select Listbox clears selection on button click (`ses_lb`)
 
 **Where:** `views/desktop/app.py` → `_show_resume_page()` → `ses_lb` Listbox.
 
-**Symptom:** Identical to bug 2 but on the **Resume Session** path — clicking **Resume →** after selecting a session did nothing.
+**Symptom:** Identical to bug 1 but on the **Resume Session** path — clicking **Resume →** after selecting a session did nothing.
 
-**Root cause:** Same as bug 2: the `ses_lb` Listbox was also missing `exportselection=False`.
+**Root cause:** Same as bug 1: the `ses_lb` Listbox was also missing `exportselection=False`.
 
 **Fix:** Added `exportselection=False` to the `ses_lb` Listbox constructor in `views/desktop/app.py`.
 
 ---
 
-### 4. Character `hp` field schema not enforced — `init_hp()` crashes on integer `hp`
+### 3. Character `hp` field schema not enforced — `init_hp()` crashes on integer `hp`
 
 **Where:** `models/game_state.py` → `init_hp()`.
 
