@@ -51,7 +51,7 @@ Complete GUI-driven Tkinter app. Launched via `python character_builder_app.py` 
 - **Attacks** — removed as a clickable section. Auto-generated from weapons in the Equipment list (cross-referenced against `WEAPONS` dict). Proficiency applied via `_weapon_proficient()`. Monk Unarmed Strike auto-added (Martial Arts die scales by level). Attacks update live when Equipment is saved.
 
 **7 clickable section dialogs (all modal Toplevels with grab_set):**
-1. **Basic Info** — name entry, Race/Class/Subclass/Background/Alignment pickers. Race picker includes a "Details" button showing lore, size, speed, ability bonuses, languages, key advantages, and all racial traits. Subclass list filters to selected class.
+1. **Basic Info** — name entry, Race/Class/Subclass/Background/Alignment pickers, Level/XP spinboxes. Race picker includes a "Details" button showing lore, size, speed, ability bonuses, languages, key advantages, and all racial traits. Background picker includes a "Details" button showing lore, skill/tool/language proficiencies, and the background feature. Subclass row is hidden when level < 3 (appears at level 3+, clears if level drops back below 3). Subclass list filters to selected class.
 2. **Ability Scores** — Standard Array (dropdowns that filter to unselected values only), Point Buy, or Manual. Racial bonuses auto-applied from `RACIAL_BONUSES["fixed"]`. Half-Elf and Human (Variant) show flexible bonus pickers. Live totals and modifiers update as you pick.
 3. **Proficiencies** — Tabbed: Saving Throws, Skills, Languages, Armor & Weapons, Tools.
 4. **Spellcasting** — only visible when selected class can cast spells (checked via `CLASS_SPELLCASTING`). Spell slot tracker, cantrips tab, one tab per spell level.
@@ -96,6 +96,7 @@ Comprehensive D&D 5e data module. Key exports:
 - `WEAPON_CATEGORIES` — ["Simple Melee","Simple Ranged","Martial Melee","Martial Ranged"]
 - `CLASS_STARTING_GOLD` / `EQUIPMENT_PACKS`
 - `BACKGROUND_FEATURES` — dict: background → (feature_name, description)
+- `BACKGROUND_DESCRIPTIONS` — dict: background → lore paragraph string (accurate D&D 5e descriptions for all 37 backgrounds)
 - `RACIAL_TRAITS` — dict: race → [(name, description), ...]
 - `CLASS_FEATURES` — dict: class → {level: [feature_names]}
 - `PERSONALITY_SUGGESTIONS` — dict: background → {traits, ideals, bonds, flaws}
