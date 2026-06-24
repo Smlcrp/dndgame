@@ -14,7 +14,31 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `game_state.py` | ✅ Complete | Session persistence and combat state |
 | `combat.py` | ✅ Complete | Turn-based combat engine |
 | `dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
+| `d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
 | `game.py` | 🚧 In Progress | Main game interface (GUI) |
+
+---
+
+## Gameplay
+
+Launch with:
+```
+cd dndgame
+python game.py
+```
+
+**Startup:**
+1. Choose **New Adventure** or **Resume Session**
+2. New Adventure → pick a saved character (or launch the builder to create one)
+3. The AI DM opens the scene and the adventure begins
+
+**During play:**
+- Type actions in the input bar — the DM responds and drives the story
+- When a **skill check** is triggered, a **Roll** button appears in the narration — click it to open the 3D d20 window, click the die to spin it, and it lands on your actual roll
+- **Combat** starts automatically when the DM encounters enemies — roll for initiative the same way, then choose your attack each turn
+- The sidebar tracks HP, AC, conditions, and the combat initiative order live
+- Death saves trigger automatically when the player hits 0 HP
+- Sessions save on quit and can be resumed from the main menu
 
 ---
 
@@ -32,7 +56,7 @@ Or double-click `Launch Character Builder.bat`.
 ### What it covers
 
 - **Basic Info** — Name, Race (28 options with lore + trait details), Class (13), Subclass (filtered by class, only appears at level 3+), Background (37 with proficiency + feature details), Alignment, Level/XP
-- **Ability Scores** — Standard Array (filtered dropdowns), Point Buy (27-point budget), or Manual entry. Racial bonuses auto-applied — flexible bonuses (Half-Elf, Human Variant) have interactive pickers. Class primary stats and saving throws highlighted.
+- **Ability Scores** — Standard Array (filtered dropdowns), Point Buy (27-point budget), or Manual entry. Racial bonuses auto-applied — flexible bonuses (Half-Elf, Human Variant) have interactive pickers.
 - **Proficiencies** — Saving throws, skills, languages, armor & weapon proficiencies, tools. Class and background grants auto-applied.
 - **Spellcasting** — Only shown for caster classes. Spell slots auto-calculated by level and caster type (full/half/warlock). Cantrip and spell pickers per level.
 - **Equipment** — Weapons tab (filtered to class proficiencies), equipment packs, item list, currency, worn armor picker (drives AC calculation).
@@ -51,7 +75,7 @@ Or double-click `Launch Character Builder.bat`.
 
 The DM supports two free backends. Copy `dm_config.example.json` to `dm_config.json` and configure one:
 
-### Option A — Google Gemini (free cloud, recommended)
+### Option A — Google Gemini (free cloud)
 No special hardware needed. Free tier: 1,500 requests/day.
 
 1. Go to **aistudio.google.com** and sign in with your Google account
@@ -60,7 +84,7 @@ No special hardware needed. Free tier: 1,500 requests/day.
 ```json
 {
   "backend": "gemini",
-  "model": "gemini-1.5-flash",
+  "model": "gemini-2.0-flash",
   "api_key": "your-api-key-here"
 }
 ```
@@ -68,8 +92,10 @@ No special hardware needed. Free tier: 1,500 requests/day.
 ### Option B — Ollama (free local, no internet required)
 Runs entirely on your machine. Requires 8 GB+ RAM.
 
-1. Install Ollama: `winget install Ollama.Ollama`
-2. Pull a model: `ollama pull llama3.1`
+1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
+2. Pull a model:
+   - Standard: `ollama pull llama3.1`
+   - Uncensored (mature content): `ollama pull dolphin-mistral`
 3. Edit `dm_config.json`:
 ```json
 {
@@ -78,7 +104,6 @@ Runs entirely on your machine. Requires 8 GB+ RAM.
   "api_key": ""
 }
 ```
-4. Make sure Ollama is running before launching the game: `ollama serve`
 
 > `dm_config.json` is gitignored — your API key will never be committed to the repo.
 
@@ -101,6 +126,9 @@ Pure Python dice engine. No API calls.
 - `critical_damage(notation)` — doubles dice on a crit
 - `hit_die("d8", con_mod)` — short rest HP recovery
 - `death_save()` — includes nat1 double-failure per 5e RAW
+
+### `d20_roller.py`
+3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Click the die to spin it; it decelerates and lands on the accurate pre-computed roll. Used for skill checks, initiative, and player attacks.
 
 ### `game_state.py`
 JSON session persistence. Saves to `sessions/`. Keeps mid-game character state (current HP, spell slots used, conditions) separate from the permanent character sheet.
@@ -127,21 +155,7 @@ AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
 - `from_config()` — loads backend settings from `dm_config.json`
 
 ### `game.py` *(in progress)*
-Main game interface. Launch with `python game.py`.
-
-**Startup flow:**
-1. Landing screen — choose **New Adventure** or **Resume Session**
-2. New Adventure → character selection page: pick from saved characters, create a new one (launches the character builder, auto-refreshes the list), or delete a character
-3. Resume Session → list of saved sessions to continue from
-
-**During play:**
-- Narration panel showing the DM's story text
-- Player input bar for typing actions
-- Character sidebar — live HP, AC, conditions, spell slots, current location
-- Combat tracker when a fight begins: initiative order, enemy HP bars, Attack / End Turn buttons
-- Skill check prompts with auto-rolled results fed back to the DM
-- Death save tracker when the player hits 0 HP
-- Auto-save on quit; sessions stored in `sessions/`
+Main game interface. Full play loop including narration, skill checks, turn-based combat, death saves, and session save/resume. 3D d20 roll window pauses the game at every player roll.
 
 ---
 
