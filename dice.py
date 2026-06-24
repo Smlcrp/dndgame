@@ -94,23 +94,29 @@ def hit_die(die_str, con_mod=0):
     die_str is like 'd8' or '1d8'. Minimum result is 1.
     Returns {roll, con_mod, total}.
     """
-    die_str = die_str.strip().lower().lstrip("1")
-    if not die_str.startswith("d"):
-        die_str = "d" + die_str
-    sides = int(die_str[1:])
+    m = re.fullmatch(r"1?d(\d+)", die_str.strip().lower())
+    if not m:
+        raise ValueError(f"Invalid hit die: '{die_str}'")
+    sides = int(m.group(1))
     if sides not in VALID_DICE:
-        raise ValueError(f"Invalid hit die: {die_str}")
+        raise ValueError(f"Invalid hit die: '{die_str}'")
     result = random.randint(1, sides)
     total  = max(1, result + con_mod)
     return {"roll": result, "con_mod": con_mod, "total": total}
 
 
 def death_save():
-    """Roll a death saving throw. 10+ is a success; 20 is a critical (regain 1 HP).
-    Returns {roll, success, critical}.
+    """Roll a death saving throw.
+    10+ = success. 20 = critical (regain 1 HP). 1 = two failures instead of one.
+    Returns {roll, success, critical, double_fail}.
     """
     result = random.randint(1, 20)
-    return {"roll": result, "success": result >= 10, "critical": result == 20}
+    return {
+        "roll":        result,
+        "success":     result >= 10,
+        "critical":    result == 20,
+        "double_fail": result == 1,
+    }
 
 
 def initiative(dex_mod=0):
