@@ -274,16 +274,27 @@ class GameApp:
         self._dlg_err.config(text="")
 
     def _btn_large(self, parent, text, sub, command):
-        f = tk.Frame(parent, bg=BTN_BG, padx=12, pady=10, cursor="hand2")
+        f        = tk.Frame(parent, bg=BTN_BG, padx=12, pady=10, cursor="hand2")
         f.pack(fill="x", pady=6)
-        tk.Label(f, text=text, font=FONT_HDR, bg=BTN_BG,
-                 fg=ACCENT).pack(anchor="w")
-        tk.Label(f, text=sub, font=FONT_SM, bg=BTN_BG,
-                 fg=DIM).pack(anchor="w")
-        for w in (f,) + f.winfo_children():
+        lbl_main = tk.Label(f, text=text, font=FONT_HDR, bg=BTN_BG, fg=ACCENT)
+        lbl_main.pack(anchor="w")
+        lbl_sub  = tk.Label(f, text=sub,  font=FONT_SM,  bg=BTN_BG, fg=DIM)
+        lbl_sub.pack(anchor="w")
+
+        def on_enter(_):
+            f.config(bg=ACCENT)
+            lbl_main.config(bg=ACCENT, fg="#1a1a2e")
+            lbl_sub.config(bg=ACCENT,  fg="#1a1a2e")
+
+        def on_leave(_):
+            f.config(bg=BTN_BG)
+            lbl_main.config(bg=BTN_BG, fg=ACCENT)
+            lbl_sub.config(bg=BTN_BG,  fg=DIM)
+
+        for w in (f, lbl_main, lbl_sub):
             w.bind("<Button-1>", lambda e: command())
-            w.bind("<Enter>", lambda e, fw=f: fw.config(bg="#3a3a5a"))
-            w.bind("<Leave>", lambda e, fw=f: fw.config(bg=BTN_BG))
+            w.bind("<Enter>",    on_enter)
+            w.bind("<Leave>",    on_leave)
         return f
 
     # ── Page 1: Mode selection ─────────────────────────────────────────────────
