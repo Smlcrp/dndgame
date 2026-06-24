@@ -617,6 +617,7 @@ class CharacterBuilderApp:
         sub_var   = tk.StringVar(value=self.char.get("subclass", ""))
         bg_var    = tk.StringVar(value=self.char["background"])
         aln_var   = tk.StringVar(value=self.char["alignment"])
+        level_var = tk.IntVar(value=self.char["level"] or 1)
 
         def picker_row(label, options, var):
             f = lrow(label)
@@ -634,7 +635,11 @@ class CharacterBuilderApp:
                                      detail_fn=self._show_race_details),
              bg=BTN_BG).pack(side="left", padx=6)
 
-        picker_row("Class",      CLASSES,        class_var)
+        cf = lrow("Class")
+        tk.Label(cf, textvariable=class_var, bg=ACCENT, fg="#1a1a2e",
+                 font=("Segoe UI", 10, "bold"), padx=8, pady=2).pack(side="left")
+        _btn(cf, "Change", lambda: _pick_from_list(d, "Select Class", CLASSES, class_var),
+             bg=BTN_BG).pack(side="left", padx=6)
 
         sf = lrow("Subclass")
         tk.Label(sf, textvariable=sub_var, bg=BTN_BG, fg=FG,
@@ -652,6 +657,16 @@ class CharacterBuilderApp:
         class_var.trace_add("write", lambda *_: sub_var.set(""))
         _btn(sf, "Choose", pick_subclass, bg=BTN_BG).pack(side="left", padx=6)
 
+        def _refresh_subclass_row(*_):
+            if level_var.get() >= 3:
+                sf.pack(fill="x", pady=2, after=cf)
+            else:
+                sf.pack_forget()
+                sub_var.set("")
+
+        level_var.trace_add("write", _refresh_subclass_row)
+        _refresh_subclass_row()
+
         bf = lrow("Background")
         tk.Label(bf, textvariable=bg_var, bg=ACCENT, fg="#1a1a2e",
                  font=("Segoe UI", 10, "bold"), padx=8, pady=2).pack(side="left")
@@ -662,8 +677,7 @@ class CharacterBuilderApp:
         picker_row("Alignment",  DND_ALIGNMENTS, aln_var)
 
         lf = lrow("Level / XP")
-        level_var = tk.IntVar(value=self.char["level"] or 1)
-        xp_var    = tk.IntVar(value=self.char["experience"])
+        xp_var = tk.IntVar(value=self.char["experience"])
         tk.Label(lf, text="Level:", font=FONT_SM, bg=BG, fg=DIM).pack(side="left")
         tk.Spinbox(lf, from_=1, to=20, textvariable=level_var, width=4,
                    bg=INPUT_BG, fg=FG, font=FONT_BODY,
