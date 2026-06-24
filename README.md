@@ -1,6 +1,6 @@
 # D&D AI Dungeon Master
 
-A fully playable D&D 5e adventure game built in Python. Create a character with the GUI character builder, then play through a text adventure where an AI Dungeon Master (powered by Claude) narrates the world, adjudicates rules, and runs combat.
+A fully playable D&D 5e adventure game built in Python. Create a character with the GUI character builder, then play through a text adventure where an AI Dungeon Master narrates the world, adjudicates rules, and runs combat — powered by either a free local model (Ollama) or Google Gemini's free tier.
 
 ---
 
@@ -13,7 +13,7 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `dice.py` | ✅ Complete | Dice rolling engine |
 | `game_state.py` | ✅ Complete | Session persistence and combat state |
 | `combat.py` | ✅ Complete | Turn-based combat engine |
-| `dm.py` | 🔲 Planned | AI Dungeon Master (Claude API) |
+| `dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
 | `game.py` | 🔲 Planned | Main game interface (GUI) |
 
 ---
@@ -44,6 +44,43 @@ Or double-click `Launch Character Builder.bat`.
 - AC calculated from equipped armor (with Barbarian/Monk unarmored defense)
 - Attacks auto-generated from equipped weapons with proficiency and modifier applied
 - Speed set by race
+
+---
+
+## AI Dungeon Master Setup
+
+The DM supports two free backends. Copy `dm_config.example.json` to `dm_config.json` and configure one:
+
+### Option A — Google Gemini (free cloud, recommended)
+No special hardware needed. Free tier: 1,500 requests/day.
+
+1. Go to **aistudio.google.com** and sign in with your Google account
+2. Click **Get API key** → **Create API key**
+3. Edit `dm_config.json`:
+```json
+{
+  "backend": "gemini",
+  "model": "gemini-1.5-flash",
+  "api_key": "your-api-key-here"
+}
+```
+
+### Option B — Ollama (free local, no internet required)
+Runs entirely on your machine. Requires 8 GB+ RAM.
+
+1. Install Ollama: `winget install Ollama.Ollama`
+2. Pull a model: `ollama pull llama3.1`
+3. Edit `dm_config.json`:
+```json
+{
+  "backend": "ollama",
+  "model": "llama3.1",
+  "api_key": ""
+}
+```
+4. Make sure Ollama is running before launching the game: `ollama serve`
+
+> `dm_config.json` is gitignored — your API key will never be committed to the repo.
 
 ---
 
@@ -79,14 +116,28 @@ Turn-based combat engine. Uses `dice.py` and `game_state.py`.
 - Condition tracking (Prone, Poisoned, Stunned, Frightened, etc.)
 - XP tallying from defeated enemies
 
+### `dm.py`
+AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
+- Builds a system prompt from the character sheet for personalized narration
+- Maintains full session history for context continuity
+- Parses structured game events from DM responses:
+  - `[COMBAT: Goblin×2, Hobgoblin×1]` — triggers the combat engine
+  - `[CHECK: Perception DC13]` — requests a skill check
+  - `[SCENE: The Village Square]` — updates the current location
+- `from_config()` — loads backend settings from `dm_config.json`
+
 ---
 
 ## Requirements
 
+```
+pip install requests
+```
+
 - Python 3.8+
 - `tkinter` (included with Python on Windows)
-- `requests` (for D&D Beyond import only)
-- `anthropic` (for AI Dungeon Master — not yet implemented)
+- `requests` — for DM API calls (Ollama and Gemini)
+- Ollama installed locally **or** a free Google Gemini API key
 
 ## Repository
 
