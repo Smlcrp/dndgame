@@ -14,7 +14,7 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `game_state.py` | ✅ Complete | Session persistence and combat state |
 | `combat.py` | ✅ Complete | Turn-based combat engine |
 | `dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
-| `game.py` | 🔲 Planned | Main game interface (GUI) |
+| `game.py` | 🚧 In Progress | Main game interface (GUI) |
 
 ---
 
@@ -125,6 +125,23 @@ AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
   - `[CHECK: Perception DC13]` — requests a skill check
   - `[SCENE: The Village Square]` — updates the current location
 - `from_config()` — loads backend settings from `dm_config.json`
+
+### `game.py` *(in progress)*
+Main game interface. Launch with `python game.py`.
+
+**Startup flow:**
+1. Landing screen — choose **New Adventure** or **Resume Session**
+2. New Adventure → character selection page: pick from saved characters, create a new one (launches the character builder, auto-refreshes the list), or delete a character
+3. Resume Session → list of saved sessions to continue from
+
+**During play:**
+- Narration panel showing the DM's story text
+- Player input bar for typing actions
+- Character sidebar — live HP, AC, conditions, spell slots, current location
+- Combat tracker when a fight begins: initiative order, enemy HP bars, Attack / End Turn buttons
+- Skill check prompts with auto-rolled results fed back to the DM
+- Death save tracker when the player hits 0 HP
+- Auto-save on quit; sessions stored in `sessions/`
 
 ---
 
