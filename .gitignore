@@ -11,8 +11,12 @@ build/
 venv/
 .venv/
 
-# Saved characters (personal data)
+# Saved characters and sessions (personal data)
 characters/
+sessions/
+
+# DM config may contain API keys
+dm_config.json
 
 # Claude Code settings
 .claude/
