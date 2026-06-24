@@ -128,7 +128,7 @@ Pure Python dice engine. No API calls.
 - `death_save()` — includes nat1 double-failure per 5e RAW
 
 ### `d20_roller.py`
-3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Click the die to spin it; it decelerates and lands on the accurate pre-computed roll. Used for skill checks, initiative, and player attacks.
+3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Each face displays its number (1–20, opposite faces sum to 21). Click the die to spin it; it decelerates then snaps with an ease-out animation to bring the rolled face front-and-centre. Used for skill checks, initiative, and player attacks.
 
 ### `game_state.py`
 JSON session persistence. Saves to `sessions/`. Keeps mid-game character state (current HP, spell slots used, conditions) separate from the permanent character sheet.
