@@ -111,6 +111,18 @@ Comprehensive D&D 5e data module. Key exports:
 ### `Character Builder/ddb_import.py`
 D&D Beyond character import via their API. Uses threading for the network call (only place threads are used). Kept separate — don't integrate into the main app's thread model.
 
+### `dice.py`
+Pure logic dice engine — no API calls, no imports beyond `random` and `re`. All functions return dicts so callers get full context for narration.
+
+- `roll(sides)` — single die, validates against `VALID_DICE = {4,6,8,10,12,20,100}`
+- `roll_dice(notation)` — parses "2d6+3", "d20", "3d6-1" etc. Returns `{notation, rolls, modifier, total}`
+- `d20_check(modifier, advantage, disadvantage)` — advantage/disadvantage cancel if both True. Returns `{rolls, kept, modifier, total, nat20, nat1}`
+- `damage(notation)` — alias for `roll_dice`, named for call-site clarity
+- `critical_damage(notation)` — doubles the dice count, keeps same modifier ("2d6+3" → 4d6+3). Returns `{..., critical: True}`
+- `hit_die(die_str, con_mod)` — accepts "d8" or "1d8", uses regex (not lstrip) to avoid corrupting d12/d10. Minimum total is 1. Returns `{roll, con_mod, total}`
+- `death_save()` — 10+ success, 20 = critical (regain 1 HP), 1 = double failure (two failures instead of one, per 5e RAW). Returns `{roll, success, critical, double_fail}`
+- `initiative(dex_mod)` — d20 + DEX mod. Returns `{roll, modifier, total}`
+
 ---
 
 ## Coding Conventions
@@ -128,7 +140,7 @@ D&D Beyond character import via their API. Uses threading for the network call (
 ## What to Build Next
 In order of dependency:
 
-1. **`dice.py`** — Dice rolling engine (d4/d6/d8/d10/d12/d20/d100, advantage/disadvantage, modifiers). No API calls, pure logic.
+1. **`dice.py`** — ✅ COMPLETE. See below.
 2. **`game_state.py`** — Persist the active game session (current scene, inventory changes mid-game, combat state). JSON-based like characters.
 3. **`combat.py`** — Turn-based combat engine: initiative, attack resolution, damage, conditions, death saves. Uses `dice.py` and `character.py`.
 4. **`dm.py`** — AI Dungeon Master using Claude API. **WARN USER BEFORE ANY TESTING — costs tokens.** Takes game state + player action, returns DM narration + structured game events (combat start, skill check request, etc.).
