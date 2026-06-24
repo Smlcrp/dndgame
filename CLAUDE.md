@@ -10,32 +10,11 @@
 ## Project Vision
 A fully playable D&D 5e adventure game with an AI Dungeon Master. Currently a Python/Tkinter desktop app. The next major milestone is restructuring to MVC so the same game logic can power a future web frontend with no rewriting.
 
-## Current File Structure (pre-MVC)
+## Current File Structure (MVC — complete)
 ```
 dndgame/
-├── character.py              # ✅ Core character data model, save/load, helpers
-├── characters/               # Saved character JSON files (gitignored)
-├── Character Builder/
-│   ├── character_builder_app.py   # ✅ Main GUI character builder
-│   ├── dnd_data.py               # ✅ Complete D&D 5e rules data
-│   ├── spells.py                 # ✅ Full spell lists by class/level
-│   ├── ddb_import.py             # ✅ D&D Beyond import
-│   ├── character_builder.py      # Legacy CLI builder (unused)
-│   └── Launch Character Builder.bat
-├── dice.py                   # ✅ Dice rolling engine
-├── game_state.py             # ✅ Session persistence and combat state
-├── combat.py                 # ✅ Turn-based combat engine
-├── dm.py                     # ✅ AI Dungeon Master (Ollama + Gemini)
-├── d20_roller.py             # ✅ 3D animated d20 roll window
-├── dm_config.json            # Gitignored — backend/API key config
-├── dm_config.example.json    # Committed template
-├── sessions/                 # Saved session JSON files (gitignored)
-└── game.py                   # 🚧 Main game interface (GUI) — in progress
-```
-
-## Target MVC Structure (next milestone)
-```
-dndgame/
+├── main.py                   # Entry point: python main.py → desktop app
+│
 ├── models/                   # Pure logic — zero UI imports
 │   ├── __init__.py
 │   ├── character.py
@@ -46,32 +25,30 @@ dndgame/
 │
 ├── controllers/              # Orchestrates models, returns plain dicts — no UI
 │   ├── __init__.py
-│   └── game_controller.py   # process_action, start_combat, process_attack,
-│                            #   process_skill_check, process_enemy_turn,
-│                            #   process_death_save, build_enemy_list
+│   └── game_controller.py   # setup_combat, process_attack, process_skill_check,
+│                            #   process_enemy_turn, process_death_save, ENEMY_STATS
 │
 ├── views/
 │   ├── desktop/              # Tkinter desktop app
-│   │   ├── app.py            # GameApp (was game.py) — pure UI, calls controller
-│   │   ├── d20_roller.py
-│   │   └── character_builder/  # (was Character Builder/)
+│   │   ├── __init__.py
+│   │   ├── app.py            # GameApp — pure UI, calls controller
+│   │   ├── d20_roller.py     # 3D animated d20 roll window
+│   │   └── character_builder/
+│   │       ├── __init__.py
 │   │       ├── character_builder_app.py
 │   │       ├── dnd_data.py
 │   │       ├── spells.py
 │   │       ├── ddb_import.py
 │   │       └── Launch Character Builder.bat
 │   └── web/                  # Future web frontend
-│       ├── api.py            # Flask/FastAPI — same controller calls, JSON responses
-│       ├── templates/
-│       └── static/
+│       ├── __init__.py
+│       └── api.py            # Flask/FastAPI stub — same controller calls, JSON responses
 │
-├── data/
-│   ├── characters/
-│   ├── sessions/
-│   ├── dm_config.json
-│   └── dm_config.example.json
-│
-└── main.py                   # Entry point: python main.py → desktop app
+└── data/
+    ├── characters/           # Saved character JSON files (gitignored)
+    ├── sessions/             # Saved session JSON files (gitignored)
+    ├── dm_config.json        # Gitignored — backend/API key config
+    └── dm_config.example.json
 ```
 
 ### MVC Boundary Rules
@@ -124,7 +101,7 @@ Complete GUI-driven Tkinter app. Launched via `python character_builder_app.py` 
 6. **Features & Traits** — Read-only: Racial Traits, Class Features, Background Feature, Custom.
 7. **Personality** — Traits, ideals, bonds, flaws, backstory with background-based suggestions.
 
-**Import path in Character Builder files:** `sys.path.insert(0, str(Path(__file__).parent.parent))` to reach `character.py`.
+**Import path in Character Builder files:** `sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))` to reach the project root; imports use `from models.character import ...`.
 
 ### `Character Builder/dnd_data.py`
 Comprehensive D&D 5e data. Key exports: `RACES` (28), `CLASSES` (13), `SUBCLASSES`, `BACKGROUNDS` (37), `RACIAL_BONUSES`, `RACE_DESCRIPTIONS`, `STANDARD_ARRAY`, `POINT_BUY_COSTS/BUDGET`, `ABILITIES`, `CLASS_PRIMARY_STATS`, `CLASS_SAVING_THROWS`, `BACKGROUND_PROFICIENCIES`, `ALL_SKILLS`, `ALL_LANGUAGES`, `CLASS_HIT_DICE`, `RACE_SPEED`, `ARMOR_TABLE`, `CLASS_SKILLS`, `CLASS_ARMOR_PROFS`, `CLASS_WEAPON_PROFS`, `CLASS_SPELLCASTING`, `FULL/HALF/WARLOCK_CASTER_SLOTS`, `WEAPONS`, `WEAPON_CATEGORIES`, `EQUIPMENT_PACKS`, `BACKGROUND_FEATURES`, `BACKGROUND_DESCRIPTIONS`, `RACIAL_TRAITS`, `CLASS_FEATURES`, `PERSONALITY_SUGGESTIONS`.
@@ -220,16 +197,13 @@ Main game interface. `GameApp` class.
 
 ## What to Build Next
 
-**MVC Restructure** — agreed plan, ready to execute:
-1. Create `models/`, `controllers/`, `views/desktop/`, `views/web/`, `data/` folders
-2. Move model files into `models/`, add `__init__.py`, fix imports
-3. Move `d20_roller.py` and `Character Builder/` into `views/desktop/`
-4. Extract game logic from `game.py` → `controllers/game_controller.py`
-5. Rewrite `game.py` → `views/desktop/app.py` as pure UI calling the controller
-6. Add `main.py` entry point
-7. Move `characters/`, `sessions/`, config into `data/`
-8. Update all import paths
-9. Verify game runs identically
+**MVC Restructure** — ✅ Complete. The project is fully restructured. `python main.py` launches the game.
+
+**Possible next milestones:**
+- Web frontend — implement `views/web/api.py` with Flask/FastAPI routes calling the existing controller
+- Expanded enemy roster and encounter tables in `controllers/game_controller.py`
+- Spell combat support (spellcasting attacks, save DCs) in `models/combat.py`
+- Long rest / short rest UI in `views/desktop/app.py`
 
 ---
 

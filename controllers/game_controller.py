@@ -1,0 +1,172 @@
+import sys
+from pathlib import Path
+_root = Path(__file__).parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+from models import dice
+from models import game_state as gs
+from models import combat as cb
+from models.character import modifier, proficiency_bonus
+
+# ── Enemy data ─────────────────────────────────────────────────────────────────
+
+ENEMY_STATS = {
+    "Bandit":          {"hp": 11, "ac": 12, "xp": 25,  "initiative_mod": 1,
+                        "attacks": [{"name": "Scimitar",   "bonus": 3, "damage": "1d6+1", "damage_type": "slashing"}]},
+    "Cultist":         {"hp":  9, "ac": 12, "xp": 25,  "initiative_mod": 1,
+                        "attacks": [{"name": "Dagger",     "bonus": 3, "damage": "1d4+1", "damage_type": "piercing"}]},
+    "Goblin":          {"hp":  7, "ac": 15, "xp": 50,  "initiative_mod": 2,
+                        "attacks": [{"name": "Scimitar",   "bonus": 4, "damage": "1d6+2", "damage_type": "slashing"}]},
+    "Kobold":          {"hp":  5, "ac": 12, "xp": 25,  "initiative_mod": 2,
+                        "attacks": [{"name": "Dagger",     "bonus": 4, "damage": "1d4+2", "damage_type": "piercing"}]},
+    "Skeleton":        {"hp": 13, "ac": 13, "xp": 50,  "initiative_mod": 2,
+                        "attacks": [{"name": "Shortsword", "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
+    "Zombie":          {"hp": 22, "ac":  8, "xp": 50,  "initiative_mod":-2,
+                        "attacks": [{"name": "Slam",       "bonus": 3, "damage": "1d6+1", "damage_type": "bludgeoning"}]},
+    "Wolf":            {"hp": 11, "ac": 13, "xp": 50,  "initiative_mod": 2,
+                        "attacks": [{"name": "Bite",       "bonus": 4, "damage": "2d4+2", "damage_type": "piercing"}]},
+    "Guard":           {"hp": 11, "ac": 16, "xp": 25,  "initiative_mod": 1,
+                        "attacks": [{"name": "Spear",      "bonus": 3, "damage": "1d6+1", "damage_type": "piercing"}]},
+    "Gnoll":           {"hp": 22, "ac": 15, "xp": 100, "initiative_mod": 1,
+                        "attacks": [{"name": "Spear",      "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
+    "Hobgoblin":       {"hp": 11, "ac": 18, "xp": 100, "initiative_mod": 1,
+                        "attacks": [{"name": "Longsword",  "bonus": 3, "damage": "1d8+1", "damage_type": "slashing"}]},
+    "Lizardfolk":      {"hp": 22, "ac": 15, "xp": 100, "initiative_mod": 1,
+                        "attacks": [{"name": "Bite",       "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
+    "Orc":             {"hp": 15, "ac": 13, "xp": 100, "initiative_mod": 1,
+                        "attacks": [{"name": "Greataxe",   "bonus": 5, "damage": "1d12+3","damage_type": "slashing"}]},
+    "Thug":            {"hp": 32, "ac": 11, "xp": 100, "initiative_mod": 0,
+                        "attacks": [{"name": "Mace",       "bonus": 4, "damage": "1d6+2", "damage_type": "bludgeoning"}]},
+    "Spy":             {"hp": 27, "ac": 12, "xp": 200, "initiative_mod": 2,
+                        "attacks": [{"name": "Shortsword", "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
+    "Ogre":            {"hp": 59, "ac": 11, "xp": 450, "initiative_mod":-1,
+                        "attacks": [{"name": "Greatclub",  "bonus": 6, "damage": "2d8+4", "damage_type": "bludgeoning"}]},
+    "Troll":           {"hp": 84, "ac": 15, "xp":1800, "initiative_mod": 2,
+                        "attacks": [{"name": "Claw",       "bonus": 7, "damage": "2d6+4", "damage_type": "slashing"}]},
+    "Bandit Captain":  {"hp": 65, "ac": 15, "xp": 450, "initiative_mod": 2,
+                        "attacks": [{"name": "Scimitar",   "bonus": 5, "damage": "1d6+3", "damage_type": "slashing"}]},
+    "Werewolf":        {"hp": 58, "ac": 12, "xp": 700, "initiative_mod": 1,
+                        "attacks": [{"name": "Claws",      "bonus": 4, "damage": "2d4+2", "damage_type": "slashing"}]},
+    "Vampire Spawn":   {"hp": 82, "ac": 15, "xp":1800, "initiative_mod": 3,
+                        "attacks": [{"name": "Claws",      "bonus": 6, "damage": "2d4+3", "damage_type": "slashing"}]},
+}
+
+SKILL_ABILITIES = {
+    "Acrobatics": "dexterity",    "Animal Handling": "wisdom",
+    "Arcana": "intelligence",     "Athletics": "strength",
+    "Deception": "charisma",      "History": "intelligence",
+    "Insight": "wisdom",          "Intimidation": "charisma",
+    "Investigation": "intelligence","Medicine": "wisdom",
+    "Nature": "intelligence",     "Perception": "wisdom",
+    "Performance": "charisma",    "Persuasion": "charisma",
+    "Religion": "intelligence",   "Sleight of Hand": "dexterity",
+    "Stealth": "dexterity",       "Survival": "wisdom",
+    "Strength": "strength",       "Dexterity": "dexterity",
+    "Constitution": "constitution","Intelligence": "intelligence",
+    "Wisdom": "wisdom",           "Charisma": "charisma",
+    "Thieves Tools": "dexterity", "Thieves' Tools": "dexterity",
+}
+
+
+def _enemy_defaults(name, level):
+    hp  = max(5, level * 7)
+    ac  = 10 + max(0, level // 3)
+    atk = max(2, level // 2 + 1)
+    dmg = f"1d{'6' if level < 5 else '8'}+{max(1, level//3)}"
+    return {"hp": hp, "ac": ac, "xp": level * 50, "initiative_mod": 1,
+            "attacks": [{"name": "Attack", "bonus": atk, "damage": dmg,
+                         "damage_type": "slashing"}]}
+
+
+# ── Public controller API ──────────────────────────────────────────────────────
+
+def build_enemy_list(enemy_specs, player_level):
+    """Build a list of enemy dicts from DM event specs."""
+    enemies = []
+    for spec in enemy_specs:
+        base  = ENEMY_STATS.get(spec["name"], _enemy_defaults(spec["name"], player_level))
+        count = spec.get("count", 1)
+        for i in range(count):
+            label = spec["name"] if count == 1 else f"{spec['name']} {i+1}"
+            enemies.append(cb.build_enemy(
+                label, base["hp"], base["ac"], base["attacks"],
+                base["initiative_mod"], base["xp"]))
+    return enemies
+
+
+def setup_combat(session, char, enemy_specs, d20_initiative):
+    """Set up combat with a pre-rolled initiative value.
+    Returns {"order": list, "display": str}.
+    """
+    enemies = build_enemy_list(enemy_specs, char.get("level", 1))
+    order   = cb.setup_combat(session, char, enemies, player_initiative=d20_initiative)
+    lines   = []
+    for c in order:
+        marker = "▶" if c["is_player"] else "·"
+        lines.append(f"  {marker} {c['name']} (HP {c['hp']}/{c['max_hp']}) — init {c['initiative']}")
+    return {"order": order, "display": "\n".join(lines)}
+
+
+def get_skill_modifier(char, skill):
+    """Return the total modifier for a skill check (ability mod + proficiency if applicable)."""
+    ability    = SKILL_ABILITIES.get(skill, "")
+    ab_mod     = modifier(char.get("abilities", {}).get(ability, 10)) if ability else 0
+    prof_b     = proficiency_bonus(char.get("level", 1))
+    proficient = skill in char.get("skill_proficiencies", [])
+    total_mod  = ab_mod + (prof_b if proficient else 0)
+    return {
+        "modifier":  total_mod,
+        "ab_mod":    ab_mod,
+        "prof_b":    prof_b,
+        "proficient": proficient,
+    }
+
+
+def process_skill_check(char, skill, dc, d20_value):
+    """Resolve a skill check against DC with a pre-rolled d20.
+    Returns result dict including success flag and narrative outcome string.
+    """
+    info    = get_skill_modifier(char, skill)
+    total   = d20_value + info["modifier"]
+    success = d20_value == 20 or (d20_value != 1 and total >= dc)
+    return {
+        "d20":        d20_value,
+        "modifier":   info["modifier"],
+        "total":      total,
+        "dc":         dc,
+        "success":    success,
+        "proficient": info["proficient"],
+        "prof_bonus": info["prof_b"],
+        "outcome_text": (
+            f"I attempted a {skill} check (DC {dc}) and "
+            f"{'succeeded' if success else 'failed'} with a roll of {total}."
+        ),
+    }
+
+
+def process_attack(session, char, weapon_name, target_name, d20_value):
+    """Resolve a player attack with a pre-rolled d20.
+    Returns the combat.player_attack result dict.
+    """
+    return cb.player_attack(session, char, weapon_name, target_name,
+                            d20_override=d20_value)
+
+
+def process_enemy_turn(session):
+    """Resolve the current enemy's attack against the player.
+    Returns the combat result dict, or None if the current combatant is the player.
+    """
+    current = gs.current_combatant(session)
+    if not current or current["is_player"]:
+        return None
+    if current["hp"] <= 0:
+        return {"skip": True, "name": current["name"]}
+    return cb.enemy_attack(session, current["name"])
+
+
+def process_death_save(session):
+    """Roll a death save and update session.
+    Returns the combat.handle_death_save result dict.
+    """
+    return cb.handle_death_save(session)

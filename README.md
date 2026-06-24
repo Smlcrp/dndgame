@@ -8,16 +8,16 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 
 | Module | Status | Description |
 |---|---|---|
-| `Character Builder/` | ✅ Complete | Full GUI character builder |
-| `character.py` | ✅ Complete | Character data model, save/load |
-| `dice.py` | ✅ Complete | Dice rolling engine |
-| `game_state.py` | ✅ Complete | Session persistence and combat state |
-| `combat.py` | ✅ Complete | Turn-based combat engine |
-| `dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
-| `d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
-| `game.py` | 🚧 In Progress | Main game interface (GUI) |
-
-> **Next milestone:** MVC restructure — splitting the project into `models/`, `controllers/`, and `views/` to prepare for a future web frontend. See the Architecture section below.
+| `models/character.py` | ✅ Complete | Character data model, save/load |
+| `models/dice.py` | ✅ Complete | Dice rolling engine |
+| `models/game_state.py` | ✅ Complete | Session persistence and combat state |
+| `models/combat.py` | ✅ Complete | Turn-based combat engine |
+| `models/dm.py` | ✅ Complete | AI Dungeon Master (Ollama + Gemini) |
+| `controllers/game_controller.py` | ✅ Complete | Game logic — combat, skills, enemies |
+| `views/desktop/d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
+| `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
+| `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
+| `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
 ---
 
@@ -26,10 +26,6 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 Launch with:
 ```
 python main.py
-```
-or directly:
-```
-python game.py
 ```
 
 **Startup:**
@@ -49,11 +45,13 @@ python game.py
 
 ## Architecture
 
-The project follows an MVC structure (in progress):
+The project follows a clean MVC structure so the same game logic can power a future web frontend with no rewriting.
 
 ```
 dndgame/
-├── models/                   # Pure logic — no UI, no framework
+├── main.py                   # Entry point: python main.py
+│
+├── models/                   # Pure logic — no UI, no framework imports
 │   ├── character.py
 │   ├── dice.py
 │   ├── game_state.py
@@ -61,24 +59,25 @@ dndgame/
 │   └── dm.py
 │
 ├── controllers/              # Orchestrates models, returns plain dicts
-│   └── game_controller.py
+│   └── game_controller.py   # Same functions called by Tkinter or Flask
 │
 ├── views/
 │   ├── desktop/              # Tkinter desktop app
-│   │   ├── app.py
-│   │   ├── d20_roller.py
+│   │   ├── app.py            # GameApp — pure UI, calls controller
+│   │   ├── d20_roller.py     # 3D animated d20
 │   │   └── character_builder/
+│   │       ├── character_builder_app.py
+│   │       ├── dnd_data.py
+│   │       ├── spells.py
+│   │       └── ddb_import.py
 │   └── web/                  # Future web frontend
-│       ├── api.py            # Flask/FastAPI endpoints
-│       ├── templates/
-│       └── static/
+│       └── api.py            # Flask/FastAPI endpoints (stub)
 │
-├── data/
-│   ├── characters/
-│   ├── sessions/
-│   └── dm_config.json
-│
-└── main.py
+└── data/
+    ├── characters/           # Saved character JSON files (gitignored)
+    ├── sessions/             # Saved session JSON files (gitignored)
+    ├── dm_config.json        # Backend/API key config (gitignored)
+    └── dm_config.example.json
 ```
 
 **Models** contain pure game logic with no UI imports. **Controllers** orchestrate models and return plain dicts — identical whether called from Tkinter or a Flask API. **Views** handle presentation only: Tkinter today, HTML/JS tomorrow.
@@ -91,10 +90,13 @@ A complete GUI-driven D&D 5e character builder. No text input required — every
 
 **To launch:**
 ```
-cd "Character Builder"
+python main.py
+```
+Then click **New Adventure → Create Character**, or run directly:
+```
+cd views/desktop/character_builder
 python character_builder_app.py
 ```
-Or double-click `Launch Character Builder.bat`.
 
 ### What it covers
 
@@ -116,35 +118,35 @@ Or double-click `Launch Character Builder.bat`.
 
 ## AI Dungeon Master Setup
 
-The DM supports two free backends. Copy `dm_config.example.json` to `dm_config.json` and configure one:
+The DM supports two free backends. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure one:
 
-### Option A — Google Gemini (free cloud)
+### Option A — Ollama (free local, no internet required)
+Runs entirely on your machine. Requires 8 GB+ RAM.
+
+1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
+2. Pull the recommended model: `ollama pull dolphin-llama3`
+3. Edit `data/dm_config.json`:
+```json
+{
+  "backend": "ollama",
+  "model": "dolphin-llama3",
+  "api_key": ""
+}
+```
+
+Other models that work well: `llama3.1`, `mistral`, `gemma2`
+
+### Option B — Google Gemini (free cloud)
 No special hardware needed. Free tier: 1,500 requests/day.
 
 1. Go to **aistudio.google.com** and sign in with your Google account
 2. Click **Get API key** → **Create API key**
-3. Edit `dm_config.json`:
+3. Edit `data/dm_config.json`:
 ```json
 {
   "backend": "gemini",
   "model": "gemini-2.0-flash",
   "api_key": "your-api-key-here"
-}
-```
-
-### Option B — Ollama (free local, no internet required)
-Runs entirely on your machine. Requires 8 GB+ RAM.
-
-1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
-2. Pull a model:
-   - Standard: `ollama pull llama3.1`
-   - Uncensored (mature content): `ollama pull dolphin-mistral`
-3. Edit `dm_config.json`:
-```json
-{
-  "backend": "ollama",
-  "model": "llama3.1",
-  "api_key": ""
 }
 ```
 
@@ -154,14 +156,14 @@ Runs entirely on your machine. Requires 8 GB+ RAM.
 
 ## Core Modules
 
-### `character.py`
+### `models/character.py`
 Character data model used by both the builder and the game engine.
 - `empty_character()` — blank character dict
 - `save_character(char)` / `load_character(name)` / `list_characters()`
 - `modifier(score)` — D&D ability modifier formula
 - `proficiency_bonus(level)` — standard 5e proficiency progression
 
-### `dice.py`
+### `models/dice.py`
 Pure Python dice engine. No API calls.
 - Supports d4, d6, d8, d10, d12, d20, d100
 - `roll_dice("2d6+3")` — full notation parsing
@@ -170,16 +172,16 @@ Pure Python dice engine. No API calls.
 - `hit_die("d8", con_mod)` — short rest HP recovery
 - `death_save()` — includes nat1 double-failure per 5e RAW
 
-### `d20_roller.py`
+### `views/desktop/d20_roller.py`
 3D animated d20 roll window. Renders a proper icosahedron with perspective projection and gold shading. Each face displays its number (1–20, opposite faces sum to 21). Each roll value 1–20 has its own unique pre-computed animation that spins naturally and lands exactly on the correct face via a single smooth ease-out deceleration curve. Used for skill checks, initiative, and player attacks.
 
-### `game_state.py`
-JSON session persistence. Saves to `sessions/`. Keeps mid-game character state (current HP, spell slots used, conditions) separate from the permanent character sheet.
+### `models/game_state.py`
+JSON session persistence. Saves to `data/sessions/`. Keeps mid-game character state (current HP, spell slots used, conditions) separate from the permanent character sheet.
 - Scene history, story flags, transient HP/slots/conditions
 - Full combat state: initiative order, turn tracker, per-combatant HP and conditions
 - Long rest / short rest helpers
 
-### `combat.py`
+### `models/combat.py`
 Turn-based combat engine. Uses `dice.py` and `game_state.py`.
 - Initiative rolling for all combatants
 - Attack resolution with automatic condition-based advantage/disadvantage
@@ -187,7 +189,7 @@ Turn-based combat engine. Uses `dice.py` and `game_state.py`.
 - Condition tracking (Prone, Poisoned, Stunned, Frightened, etc.)
 - XP tallying from defeated enemies
 
-### `dm.py`
+### `models/dm.py`
 AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
 - Builds a system prompt from the character sheet for personalized narration
 - Maintains full session history for context continuity
@@ -195,10 +197,16 @@ AI Dungeon Master. Supports Ollama (local) and Google Gemini (cloud).
   - `[COMBAT: Goblin×2, Hobgoblin×1]` — triggers the combat engine
   - `[CHECK: Perception DC13]` — requests a skill check
   - `[SCENE: The Village Square]` — updates the current location
-- `from_config()` — loads backend settings from `dm_config.json`
+- `from_config()` — loads backend settings from `data/dm_config.json`
 
-### `game.py` *(in progress)*
-Main game interface. Full play loop including narration, skill checks, turn-based combat, death saves, and session save/resume. 3D d20 roll window pauses the game at every player roll.
+### `controllers/game_controller.py`
+Orchestrates model calls and returns plain dicts. Called identically by the Tkinter UI and future web API.
+- `setup_combat(session, char, enemy_specs, d20_initiative)` — builds initiative order
+- `process_attack(session, char, weapon_name, target_name, d20_value)` — resolves attack
+- `process_skill_check(char, skill, dc, d20_value)` — resolves skill check
+- `process_enemy_turn(session)` — runs one enemy action
+- `process_death_save(session)` — rolls and resolves a death save
+- `ENEMY_STATS` — stat blocks for 20 monster types
 
 ---
 
