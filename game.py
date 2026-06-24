@@ -246,12 +246,6 @@ class GameApp:
 
     def _startup_dialog(self):
         chars = list_characters()
-        if not chars:
-            messagebox.showerror(
-                "No Characters",
-                "No saved characters found.\nBuild a character first using the Character Builder.")
-            self.root.destroy()
-            return
 
         d = tk.Toplevel(self.root)
         d.title("Start Game")
@@ -260,8 +254,8 @@ class GameApp:
         d.resizable(False, False)
         self.root.update_idletasks()
         rx = self.root.winfo_x() + self.root.winfo_width()  // 2 - 220
-        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 180
-        d.geometry(f"440x360+{rx}+{ry}")
+        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 190
+        d.geometry(f"440x380+{rx}+{ry}")
 
         tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
         tk.Label(d, text="  ⚔  START ADVENTURE", font=FONT_HDR,
@@ -270,15 +264,24 @@ class GameApp:
         body = tk.Frame(d, bg=BG, padx=20, pady=10)
         body.pack(fill="both", expand=True)
 
-        tk.Label(body, text="Select Character:", font=FONT_SM,
-                 bg=BG, fg=DIM).pack(anchor="w")
-        char_var = tk.StringVar(value=chars[0])
-        char_menu = tk.OptionMenu(body, char_var, *chars)
+        # character row: label + dropdown + New button
+        char_row = tk.Frame(body, bg=BG)
+        char_row.pack(fill="x", pady=(0, 2))
+        tk.Label(char_row, text="Select Character:", font=FONT_SM,
+                 bg=BG, fg=DIM).pack(side="left")
+        tk.Button(char_row, text="+ New", font=FONT_SM, bg=BTN_BG, fg=ACCENT,
+                  relief="flat", bd=0, padx=6, pady=2,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=lambda: self._launch_builder(d, char_var,
+                                                       char_menu)).pack(side="right")
+
+        char_var  = tk.StringVar(value=chars[0] if chars else "")
+        char_menu = tk.OptionMenu(body, char_var, *(chars or ["—"]))
         char_menu.config(bg=INPUT_BG, fg=FG, font=FONT_BODY, relief="flat",
                          activebackground=ACCENT, activeforeground="#1a1a2e",
                          highlightthickness=0, bd=0, width=28)
         char_menu["menu"].config(bg=INPUT_BG, fg=FG, font=FONT_BODY)
-        char_menu.pack(fill="x", pady=(2,12))
+        char_menu.pack(fill="x", pady=(0, 12))
 
         mode_var = tk.StringVar(value="new")
         tk.Label(body, text="Session:", font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w")
@@ -304,7 +307,10 @@ class GameApp:
 
         def start():
             char_name = char_var.get()
-            mode      = mode_var.get()
+            if not char_name or char_name == "—":
+                err_lbl.config(text="No character selected. Create one with '+ New'.")
+                return
+            mode = mode_var.get()
             try:
                 self.char = load_character(char_name)
             except Exception as e:
@@ -339,6 +345,28 @@ class GameApp:
                   fg="#1a1a2e", relief="flat", bd=0, padx=12, pady=6,
                   activebackground="#e0c060", activeforeground="#1a1a2e",
                   command=start).pack(pady=4, fill="x")
+
+    def _launch_builder(self, dialog, char_var, char_menu):
+        """Launch character builder in background. Refresh dropdown when it closes."""
+        import subprocess
+        builder = Path(__file__).parent / "Character Builder" / "character_builder_app.py"
+
+        def _run():
+            subprocess.run([sys.executable, str(builder)],
+                           cwd=str(builder.parent))
+            dialog.after(0, lambda: self._refresh_char_dropdown(char_var, char_menu))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _refresh_char_dropdown(self, char_var, char_menu):
+        """Repopulate the character dropdown and select the newest character."""
+        chars = list_characters()
+        menu  = char_menu["menu"]
+        menu.delete(0, "end")
+        for c in chars:
+            menu.add_command(label=c, command=lambda v=c: char_var.set(v))
+        if chars:
+            char_var.set(chars[-1])   # newest character is last alphabetically
 
     def _start_adventure(self, new=True):
         self._char_var.set(
