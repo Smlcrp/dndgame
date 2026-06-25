@@ -335,34 +335,160 @@ class GameApp:
         n = name.lower()
         return n in self._RANGED_WEAPONS or "bow" in n or "crossbow" in n
 
+    def _get_attack_options(self):
+        import re as _re
+        import sys as _sys
+        from pathlib import Path as _Path
+        _cb = _Path(__file__).parent / "character_builder"
+        if str(_cb) not in _sys.path:
+            _sys.path.insert(0, str(_cb))
+        from dnd_data import WEAPONS as WPN_DATA
+
+        attacks = self.char.get("attacks", []) if self.char else []
+        options = []
+        light_melee = []
+
+        for atk in attacks:
+            name     = atk["name"]
+            bonus    = atk.get("attack_bonus", 0)
+            damage   = atk.get("damage", "—")
+            dmg_type = atk.get("damage_type", "")
+
+            wpn   = WPN_DATA.get(name, {})
+            props = wpn.get("props", [])
+            cat   = wpn.get("cat", "")
+
+            is_melee  = "Ranged" not in cat and not any("ammunition" in p for p in props)
+            has_light = "light" in props
+            has_reach = "reach" in props
+
+            # Parse versatile damage die (e.g. "versatile (1d10)")
+            vers_dmg = None
+            for p in props:
+                if p.startswith("versatile"):
+                    m = _re.search(r'\((.+?)\)', p)
+                    if m:
+                        die = m.group(1)
+                        mod = (_re.search(r'([+-]\d+)$', damage) or type('', (), {'group': lambda s, x: ''})()).group(1) if _re.search(r'([+-]\d+)$', damage) else ""
+                        vers_dmg = die + mod
+
+            # Parse thrown range (e.g. "thrown (20/60)")
+            thrown_range = None
+            for p in props:
+                if p.startswith("thrown"):
+                    m = _re.search(r'\((.+?)\)', p)
+                    if m:
+                        thrown_range = m.group(1)
+
+            # Parse ammo range for ranged weapons
+            ammo_range = None
+            for p in props:
+                if p.startswith("ammunition"):
+                    m = _re.search(r'\((.+?)\)', p)
+                    if m:
+                        ammo_range = m.group(1)
+
+            reach_note = " · reach 10ft" if has_reach else ""
+
+            # Primary option
+            if vers_dmg:
+                label = f"{name} (one-handed){reach_note}"
+            elif ammo_range:
+                label = f"{name} · range {ammo_range} ft"
+            else:
+                label = f"{name}{reach_note}"
+
+            options.append({
+                "label": label, "weapon": name, "bonus": bonus,
+                "damage": damage, "dmg_type": dmg_type,
+                "mode": "ranged" if ammo_range else "melee",
+            })
+
+            # Versatile two-handed option
+            if vers_dmg:
+                options.append({
+                    "label": f"{name} (two-handed){reach_note}",
+                    "weapon": name, "bonus": bonus,
+                    "damage": vers_dmg, "dmg_type": dmg_type,
+                    "mode": "melee_2h", "damage_override": vers_dmg,
+                })
+
+            # Thrown option (melee weapons that can be thrown)
+            if thrown_range and is_melee:
+                options.append({
+                    "label": f"{name} (thrown · {thrown_range} ft)",
+                    "weapon": name, "bonus": bonus,
+                    "damage": damage, "dmg_type": dmg_type,
+                    "mode": "thrown",
+                })
+
+            if has_light and is_melee:
+                light_melee.append(atk)
+
+        # Dual wielding: 2+ light melee weapons → off-hand bonus action
+        if len(light_melee) >= 2:
+            import re as _re2
+            off      = light_melee[1]
+            off_name = off["name"]
+            off_dmg  = off.get("damage", "—")
+            off_type = off.get("damage_type", "")
+            # PHB: no ability modifier on off-hand damage
+            die_m = _re2.match(r'(\d*d\d+)', off_dmg)
+            off_dmg_no_mod = die_m.group(1) if die_m else off_dmg
+            options.append({
+                "label": f"{off_name} (off-hand · bonus action)",
+                "weapon": off_name,
+                "bonus": off.get("attack_bonus", 0),
+                "damage": off_dmg_no_mod, "dmg_type": off_type,
+                "mode": "offhand", "damage_override": off_dmg_no_mod,
+                "note": "No ability modifier to damage (PHB two-weapon fighting rule)",
+            })
+
+        return options
+
     def _find_weapon_in_text(self, text):
+        options = self._get_attack_options()
         text_lower = text.lower()
-        attacks = self.char.get("attacks", [])
-        matches = [a for a in attacks if a["name"].lower() in text_lower]
-        if matches:
-            return max(matches, key=lambda a: len(a["name"]))
+
+        # First pass: mode-specific matches (more specific wins)
+        for opt in options:
+            if opt["weapon"].lower() not in text_lower:
+                continue
+            mode = opt.get("mode", "melee")
+            if mode == "melee_2h" and any(
+                    kw in text_lower for kw in ["two-handed", "two handed", "both hands", "two hand"]):
+                return opt
+            if mode == "thrown" and any(
+                    kw in text_lower for kw in ["throw", "thrown", "hurl", "toss", "fling"]):
+                return opt
+            if mode == "offhand" and any(
+                    kw in text_lower for kw in ["off-hand", "off hand", "offhand", "bonus action", "second attack"]):
+                return opt
+
+        # Second pass: default (melee or ranged)
+        for opt in options:
+            if opt["weapon"].lower() in text_lower and opt.get("mode") in ("melee", "ranged"):
+                return opt
+
         return None
 
     def _build_combat_input(self):
         for w in self._input_frame.winfo_children():
             w.destroy()
 
-        attacks = self.char.get("attacks", [])
-        uses    = self.char.get("feature_uses", {})
+        attack_opts = self._get_attack_options()
+        uses        = self.char.get("feature_uses", {}) if self.char else {}
 
         # ── Compact reference (one line each) ──────────────────────────────────
         ref = tk.Frame(self._input_frame, bg=PANEL)
         ref.pack(fill="x", padx=6, pady=(4, 2))
 
-        if attacks:
-            atk_parts = []
-            for atk in attacks:
-                name   = atk["name"]
-                bonus  = atk.get("attack_bonus", 0)
-                damage = atk.get("damage", "—")
-                suffix = " (ranged)" if self._is_ranged_weapon(name) else ""
-                atk_parts.append(f"{name} {bonus:+d} · {damage}{suffix}")
-            tk.Label(ref, text="⚔  " + "   |   ".join(atk_parts),
+        if attack_opts:
+            parts = []
+            for opt in attack_opts:
+                mode_tag = "  [bonus action]" if opt.get("mode") == "offhand" else ""
+                parts.append(f"{opt['label']} {opt['bonus']:+d} · {opt['damage']} {opt['dmg_type']}{mode_tag}")
+            tk.Label(ref, text="⚔  " + "   |   ".join(parts),
                      font=("Segoe UI", 8), bg=PANEL, fg=FG).pack(anchor="w")
         else:
             tk.Label(ref, text="No weapons equipped.",
@@ -406,9 +532,11 @@ class GameApp:
         self._combat_entry.delete(0, "end")
         self._set_input_enabled(False)
 
-        weapon = self._find_weapon_in_text(action)
-        if weapon:
-            self._do_player_attack(weapon["name"])
+        option = self._find_weapon_in_text(action)
+        if option:
+            self._do_player_attack(option["weapon"],
+                                   damage_override=option.get("damage_override"),
+                                   label=option["label"])
         else:
             # Non-attack action — display it and end the turn
             self._display(f"  You: {action}\n\n", "player")
@@ -770,7 +898,7 @@ class GameApp:
         else:
             self.root.after(800, self._do_enemy_turn)
 
-    def _do_player_attack(self, weapon_name):
+    def _do_player_attack(self, weapon_name, damage_override=None, label=None):
         living_enemies = [c for c in self.session["initiative_order"]
                           if not c["is_player"] and c["hp"] > 0]
         if not living_enemies:
@@ -786,14 +914,16 @@ class GameApp:
 
         attack_bonus = weapon.get("attack_bonus", 0)
         pre_roll     = dice.d20_check(modifier=attack_bonus)
+        display_name = label or weapon_name
 
-        self._display(f"── Attacking {target} with {weapon_name} ──\n"
+        self._display(f"── Attacking {target} with {display_name} ──\n"
                       f"  Attack bonus: {attack_bonus:+d}\n\n", "header")
         self._build_explore_input()
 
         def _after_roll():
             result = cb.player_attack(self.session, self.char, weapon_name, target,
-                                      d20_override=pre_roll["kept"])
+                                      d20_override=pre_roll["kept"],
+                                      damage_override=damage_override)
             self._display_attack_result(result)
             if not gs.enemies_alive(self.session):
                 self.root.after(600, lambda: self._end_combat(victory=True))
@@ -801,7 +931,7 @@ class GameApp:
                 self.root.after(600, lambda: (
                     cb.end_turn(self.session), self._next_turn()))
 
-        self._show_roll_button(f"d20 ({weapon_name})", pre_roll["kept"], _after_roll)
+        self._show_roll_button(f"d20 ({display_name})", pre_roll["kept"], _after_roll)
 
     def _do_enemy_turn(self):
         current = gs.current_combatant(self.session)

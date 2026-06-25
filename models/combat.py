@@ -129,7 +129,8 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
 # ── Player attack ──────────────────────────────────────────────────────────────
 
 def player_attack(session, character, weapon_name, target_name,
-                  advantage=False, disadvantage=False, d20_override=None):
+                  advantage=False, disadvantage=False, d20_override=None,
+                  damage_override=None):
     attacks = character.get("attacks", [])
     weapon  = next((a for a in attacks if a["name"].lower() == weapon_name.lower()), None)
     if not weapon:
@@ -137,7 +138,7 @@ def player_attack(session, character, weapon_name, target_name,
 
     attacker_name = character["name"] or "Player"
     attack_bonus  = weapon.get("attack_bonus", 0)
-    damage_note   = weapon["damage"]
+    damage_note   = damage_override if damage_override is not None else weapon["damage"]
 
     result = resolve_attack(session, attacker_name, target_name,
                             attack_bonus, damage_note, advantage, disadvantage,
