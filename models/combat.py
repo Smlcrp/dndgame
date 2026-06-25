@@ -77,7 +77,8 @@ def _get_combatant(session, name):
 
 
 def resolve_attack(session, attacker_name, target_name, attack_bonus,
-                   damage_notation, advantage=False, disadvantage=False, d20_override=None):
+                   damage_notation, advantage=False, disadvantage=False,
+                   d20_override=None, pre_damage=None):
     target = _get_combatant(session, target_name)
     if not target:
         return {"error": f"Target '{target_name}' not found in combat."}
@@ -116,8 +117,11 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
     }
 
     if hit:
-        dmg = (dice.critical_damage(damage_notation) if roll["nat20"]
-               else dice.damage(damage_notation))
+        if pre_damage is not None:
+            dmg = pre_damage
+        else:
+            dmg = (dice.critical_damage(damage_notation) if roll["nat20"]
+                   else dice.damage(damage_notation))
         result["damage"] = dmg
         new_hp = gs.apply_combat_damage(session, target_name, dmg["total"])
         result["new_hp"] = new_hp
@@ -130,7 +134,7 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
 
 def player_attack(session, character, weapon_name, target_name,
                   advantage=False, disadvantage=False, d20_override=None,
-                  damage_override=None):
+                  damage_override=None, pre_damage=None):
     attacks = character.get("attacks", [])
     weapon  = next((a for a in attacks if a["name"].lower() == weapon_name.lower()), None)
     if not weapon:
@@ -142,7 +146,7 @@ def player_attack(session, character, weapon_name, target_name,
 
     result = resolve_attack(session, attacker_name, target_name,
                             attack_bonus, damage_note, advantage, disadvantage,
-                            d20_override=d20_override)
+                            d20_override=d20_override, pre_damage=pre_damage)
     result["weapon"] = weapon_name
     return result
 
@@ -175,8 +179,8 @@ def enemy_attack(session, enemy_name, attack_index=0):
 
 # ── Death saves ────────────────────────────────────────────────────────────────
 
-def handle_death_save(session):
-    roll = dice.death_save()
+def handle_death_save(session, pre_roll=None):
+    roll = pre_roll if pre_roll is not None else dice.death_save()
     ds   = session["death_saves"]
 
     if roll["critical"]:

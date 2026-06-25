@@ -23,6 +23,7 @@ from controllers.game_controller import (
 )
 from models.progression import is_asi_level, get_subclass_trigger
 from views.desktop.d20_roller import D20RollerWindow
+from views.desktop.dice_roller import DiceRollerWindow
 
 # ── Theme ──────────────────────────────────────────────────────────────────────
 BG       = "#1a1a2e"
@@ -1006,18 +1007,19 @@ class GameApp:
                       f"  Attack bonus: {attack_bonus:+d}\n\n", "header")
         self._build_explore_input()
 
-        def _after_roll():
+        def _finish_attack(pre_dmg=None):
             result = cb.player_attack(self.session, self.char, weapon_name, target,
                                       d20_override=pre_roll["kept"],
-                                      damage_override=damage_override)
+                                      damage_override=damage_override,
+                                      pre_damage=pre_dmg)
             self._display_attack_result(result)
-
-            # Build context for DM narration
             base_action = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
             if result.get("hit"):
                 dmg    = result["damage"]["total"]
                 killed = result.get("killed", False)
-                outcome = f"Hit for {dmg} damage. {target} HP: {result['new_hp']}."
+                is_crit = result.get("critical", False)
+                prefix  = "CRITICAL HIT! " if is_crit else ""
+                outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
                 if killed:
                     outcome += f" {target} has been defeated!"
             else:
@@ -1032,7 +1034,52 @@ class GameApp:
 
             self._dm_call(dm_prompt, on_complete=_continue)
 
+        def _after_roll():
+            target_entry = next((c for c in self.session["initiative_order"]
+                                 if c["name"] == target), None)
+            target_ac = target_entry["ac"] if target_entry else 10
+            is_crit   = pre_roll["kept"] == 20
+            is_nat1   = pre_roll["kept"] == 1
+            will_hit  = is_crit or (not is_nat1 and pre_roll["total"] >= target_ac)
+
+            if not will_hit:
+                _finish_attack()
+                return
+
+            actual_notation = damage_override or weapon["damage"]
+            pre_dmg = (dice.critical_damage(actual_notation) if is_crit
+                       else dice.damage(actual_notation))
+            self._show_damage_roll(actual_notation, pre_dmg, is_crit,
+                                   on_done=lambda: _finish_attack(pre_dmg))
+
         self._show_roll_button(f"d20 ({display_name})", pre_roll["kept"], _after_roll)
+
+    def _show_damage_roll(self, notation, pre_dmg, is_crit, on_done):
+        """Animate damage dice (up to 2) sequentially, then call on_done."""
+        import re
+        m = re.match(r"(\d*)d(\d+)", notation.strip().lower())
+        if not m or int(m.group(2)) not in {4, 6, 8, 10, 12, 20}:
+            on_done()
+            return
+        sides      = int(m.group(2))
+        rolls      = pre_dmg["rolls"]
+        show_count = min(len(rolls), 2)   # cap at 2 to keep combat moving
+
+        def show_die(idx):
+            if idx >= show_count:
+                on_done()
+                return
+            if is_crit and idx == 0:
+                title = f"CRITICAL HIT! — d{sides}"
+            elif len(rolls) > 1:
+                title = f"Damage d{sides}  ({idx + 1}/{len(rolls)})"
+            else:
+                title = f"Damage d{sides}"
+            DiceRollerWindow(self.root, sides=sides, value=rolls[idx],
+                             on_confirm=lambda: show_die(idx + 1),
+                             title_override=title)
+
+        show_die(0)
 
     def _do_enemy_turn(self):
         current = gs.current_combatant(self.session)
@@ -1113,33 +1160,46 @@ class GameApp:
 
     def _handle_death_saves(self):
         self._display("── You are dying — Death Saving Throw! ──\n", "danger")
-        result = cb.handle_death_save(self.session)
-        if result["outcome"] == "revived":
-            self._display(f"  Rolled {result['roll']} — NATURAL 20! You stabilize at 1 HP!\n\n", "hit")
-            self.session["current_hp"] = 1
-            self._update_sidebar()
-            cb.end_turn(self.session)
-            self.root.after(800, self._next_turn)
-        elif result["outcome"] == "stable":
-            self._display(f"  Rolled {result['roll']} — 3 successes. You stabilize.\n\n", "system")
-            self._update_sidebar()
-            cb.end_turn(self.session)
-            self.root.after(800, self._next_turn)
-        elif result["outcome"] == "dead":
-            self._display(f"  Rolled {result['roll']} — 3 failures. You have died.\n\n", "danger")
-            self.state = "DEAD"
-            self._set_input_enabled(False)
-            self._dm_call("The player character has died. Narrate their death.")
-        else:
-            ds = result["death_saves"]
-            double = " (counts as 2 failures!)" if result["double_fail"] else ""
-            self._display(
-                f"  Rolled {result['roll']}{double} — "
-                f"Successes: {ds['successes']}  Failures: {ds['failures']}\n\n",
-                "system" if result["success"] else "danger")
-            self._update_sidebar()
-            cb.end_turn(self.session)
-            self.root.after(800, self._next_turn)
+        import random as _rand
+        raw = _rand.randint(1, 20)
+        pre_roll = {
+            "roll":        raw,
+            "success":     raw >= 10,
+            "critical":    raw == 20,
+            "double_fail": raw == 1,
+        }
+
+        def _after_save():
+            result = cb.handle_death_save(self.session, pre_roll=pre_roll)
+            if result["outcome"] == "revived":
+                self._display("  NATURAL 20! You stabilize at 1 HP!\n\n", "hit")
+                self.session["current_hp"] = 1
+                self._update_sidebar()
+                cb.end_turn(self.session)
+                self.root.after(800, self._next_turn)
+            elif result["outcome"] == "stable":
+                self._display("  3 successes — you stabilize.\n\n", "system")
+                self._update_sidebar()
+                cb.end_turn(self.session)
+                self.root.after(800, self._next_turn)
+            elif result["outcome"] == "dead":
+                self._display("  3 failures — you have died.\n\n", "danger")
+                self.state = "DEAD"
+                self._set_input_enabled(False)
+                self._dm_call("The player character has died. Narrate their death.")
+            else:
+                ds     = result["death_saves"]
+                double = " (counts as 2 failures!)" if result["double_fail"] else ""
+                self._display(
+                    f"  {double.strip() or 'Ongoing.'} "
+                    f"Successes: {ds['successes']}  Failures: {ds['failures']}\n\n",
+                    "system" if result["success"] else "danger")
+                self._update_sidebar()
+                cb.end_turn(self.session)
+                self.root.after(800, self._next_turn)
+
+        DiceRollerWindow(self.root, sides=20, value=raw, on_confirm=_after_save,
+                         title_override="DEATH SAVING THROW")
 
     # ── Skill checks ───────────────────────────────────────────────────────────
 
@@ -1562,16 +1622,27 @@ class GameApp:
                 n = max(1, min(int(dice_var.get()), available))
             except Exception:
                 n = 1
-            rolls = [random.randint(1, die_max) for _ in range(n)]
-            total_hp = sum(max(1, r + con_mod) for r in rolls)
-            result_lbl.config(text=f"Rolled {rolls}  →  +{total_hp} HP")
-            for w in btn_row.winfo_children():
-                w.destroy()
-            tk.Button(btn_row, text=f"Accept +{total_hp} HP",
-                      font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
-                      relief="flat", bd=0, padx=12, pady=6,
-                      activebackground="#e0c060", activeforeground="#1a1a2e",
-                      command=lambda: _apply(rolls)).pack(side="right")
+            pre_rolls = [random.randint(1, die_max) for _ in range(n)]
+
+            def show_die(idx):
+                if idx >= n:
+                    total_hp = sum(max(1, r + con_mod) for r in pre_rolls)
+                    result_lbl.config(text=f"Rolled {pre_rolls}  →  +{total_hp} HP")
+                    for w in btn_row.winfo_children():
+                        w.destroy()
+                    tk.Button(btn_row, text=f"Accept +{total_hp} HP",
+                              font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                              relief="flat", bd=0, padx=12, pady=6,
+                              activebackground="#e0c060", activeforeground="#1a1a2e",
+                              command=lambda: _apply(pre_rolls)).pack(side="right")
+                    return
+                title = (f"Hit Die {die_type}" if n == 1
+                         else f"Hit Die {die_type}  ({idx + 1}/{n})")
+                DiceRollerWindow(d, sides=die_max, value=pre_rolls[idx],
+                                 on_confirm=lambda: show_die(idx + 1),
+                                 title_override=title)
+
+            show_die(0)
 
         def _avg():
             try:
@@ -1777,18 +1848,23 @@ class GameApp:
                 _next_btn(cmd=_advance)
 
             def _roll():
-                import random
-                raw = random.randint(1, die_max)
+                import random as _rand
+                raw  = _rand.randint(1, die_max)
                 gain = max(1, raw + con_mod)
-                res_lbl.config(
-                    text=f"Rolled {raw} + {con_mod:+d} = {gain} HP")
-                for w in btn_frame.winfo_children():
-                    w.destroy()
-                tk.Button(btn_frame, text=f"Accept +{gain} HP",
-                          font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
-                          relief="flat", bd=0, padx=14, pady=6,
-                          activebackground="#e0c060", activeforeground="#1a1a2e",
-                          command=lambda: _apply(gain)).pack(side="right")
+
+                def _after_levelup_roll():
+                    res_lbl.config(text=f"Rolled {raw} + {con_mod:+d} = {gain} HP")
+                    for w in btn_frame.winfo_children():
+                        w.destroy()
+                    tk.Button(btn_frame, text=f"Accept +{gain} HP",
+                              font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                              relief="flat", bd=0, padx=14, pady=6,
+                              activebackground="#e0c060", activeforeground="#1a1a2e",
+                              command=lambda: _apply(gain)).pack(side="right")
+
+                DiceRollerWindow(d, sides=die_max, value=raw,
+                                 on_confirm=_after_levelup_roll,
+                                 title_override=f"Level Up — Roll {hit_die}")
 
             def _take_avg():
                 _apply(avg_hp)
