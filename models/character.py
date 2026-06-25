@@ -111,6 +111,7 @@ def empty_character() -> dict:
         "conditions": [],
 
         "inspiration": False,
+        "feature_uses": {},
 
         "personality_traits": "",
         "ideals":             "",
@@ -205,7 +206,10 @@ def load_character(name: str) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"No character named '{name}' found.")
     with open(path) as f:
-        return json.load(f)
+        char = json.load(f)
+    char.setdefault("feature_uses", {})
+    char.setdefault("inspiration", False)
+    return char
 
 
 # ── HP helpers ────────────────────────────────────────────────────────────────
