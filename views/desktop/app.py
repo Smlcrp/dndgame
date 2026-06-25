@@ -289,6 +289,9 @@ class GameApp:
         self._input_frame.pack(fill="x", padx=8, pady=6)
         self._build_explore_input()
 
+        self.root.bind("<Control-d>", self._open_dev_panel)
+        self._dev_panel = None
+
     def _build_explore_input(self):
         for w in self._input_frame.winfo_children():
             w.destroy()
@@ -1664,6 +1667,225 @@ class GameApp:
                 _step_spells()
 
         _show_step()
+
+    # ── DEV panel (Ctrl+D) ────────────────────────────────────────────────────
+
+    def _open_dev_panel(self, event=None):
+        if not self.char or not self.session:
+            return
+        if self._dev_panel and self._dev_panel.winfo_exists():
+            self._dev_panel.lift()
+            return
+
+        d = tk.Toplevel(self.root)
+        d.title("DEV")
+        d.configure(bg=BG)
+        d.resizable(False, False)
+        self.root.update_idletasks()
+        rx = self.root.winfo_x() + self.root.winfo_width() + 6
+        ry = self.root.winfo_y()
+        d.geometry(f"270x560+{rx}+{ry}")
+        self._dev_panel = d
+
+        def _sec(label):
+            tk.Label(d, text=label, font=("Segoe UI", 8, "bold"),
+                     bg=PANEL, fg=ACCENT, padx=8, pady=4).pack(
+                         fill="x", pady=(6, 0))
+            tk.Frame(d, bg=BTN_BG, height=1).pack(fill="x")
+
+        # ── Award XP ──────────────────────────────────────────────────────────
+        _sec("AWARD XP")
+        xp_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        xp_frame.pack(fill="x")
+        xp_var = tk.StringVar(value="100")
+        xp_entry = tk.Entry(xp_frame, textvariable=xp_var, width=8,
+                            bg=INPUT_BG, fg=FG, font=FONT_SM,
+                            relief="flat", insertbackground=FG)
+        xp_entry.pack(side="left", padx=(0, 6))
+
+        def _award():
+            try:
+                amt = int(xp_var.get())
+            except ValueError:
+                return
+            self._award_xp(amt)
+
+        tk.Button(xp_frame, text="Award XP", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=4,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=_award).pack(side="left")
+
+        # ── Jump to Level ──────────────────────────────────────────────────────
+        _sec("JUMP TO LEVEL")
+        lv_outer = tk.Frame(d, bg=BG, padx=8, pady=6)
+        lv_outer.pack(fill="x")
+
+        def _jump(target):
+            from models.progression import XP_THRESHOLDS
+            if target < 2 or target > 20:
+                return
+            prev_xp   = XP_THRESHOLDS[target - 2]
+            target_xp = XP_THRESHOLDS[target - 1]
+            self.char["experience"] = prev_xp
+            self.char["level"]      = target - 1
+            self._award_xp(target_xp - prev_xp)
+
+        row1 = tk.Frame(lv_outer, bg=BG)
+        row1.pack(anchor="w")
+        row2 = tk.Frame(lv_outer, bg=BG)
+        row2.pack(anchor="w", pady=(4, 0))
+
+        for lvl in range(2, 7):
+            tk.Button(row1, text=f"Lv{lvl}", font=("Segoe UI", 8),
+                      bg=BTN_BG, fg=FG, relief="flat", bd=0,
+                      padx=6, pady=4, width=4,
+                      activebackground=ACCENT, activeforeground="#1a1a2e",
+                      command=lambda l=lvl: _jump(l)).pack(side="left", padx=(0, 3))
+
+        for lvl in range(7, 12):
+            tk.Button(row2, text=f"Lv{lvl}", font=("Segoe UI", 8),
+                      bg=BTN_BG, fg=FG, relief="flat", bd=0,
+                      padx=6, pady=4, width=4,
+                      activebackground=ACCENT, activeforeground="#1a1a2e",
+                      command=lambda l=lvl: _jump(l)).pack(side="left", padx=(0, 3))
+
+        # ── Set HP ────────────────────────────────────────────────────────────
+        _sec("SET HP")
+        hp_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        hp_frame.pack(fill="x")
+        hp_var = tk.IntVar(value=self.char["hp"]["current"])
+        hp_spin = tk.Spinbox(hp_frame,
+                             from_=0, to=self.char["hp"]["max"],
+                             textvariable=hp_var, width=5,
+                             font=FONT_SM, bg=INPUT_BG, fg=FG,
+                             buttonbackground=BTN_BG, relief="flat",
+                             insertbackground=FG)
+        hp_spin.pack(side="left", padx=(0, 6))
+
+        def _set_hp():
+            try:
+                val = max(0, min(int(hp_var.get()), self.char["hp"]["max"]))
+            except ValueError:
+                return
+            self.char["hp"]["current"] = val
+            if self.session and self.session.get("current_hp") is not None:
+                self.session["current_hp"] = val
+            self._update_sidebar()
+            self._display(f"  [DEV] HP set to {val}/{self.char['hp']['max']}\n\n", "system")
+
+        tk.Button(hp_frame, text="Set HP", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=4,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=_set_hp).pack(side="left")
+
+        # ── Rest ──────────────────────────────────────────────────────────────
+        _sec("REST (INSTANT)")
+        rest_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        rest_frame.pack(fill="x")
+
+        def _dev_short_rest():
+            from controllers.game_controller import process_short_rest
+            hit_dice  = self.char.get("hit_dice", {})
+            available = max(0, hit_dice.get("total", 1) - hit_dice.get("used", 0))
+            if available == 0:
+                self._display("  [DEV] No hit dice remaining.\n\n", "system")
+                return
+            die_max = int(hit_dice.get("type", "d8").replace("d", ""))
+            rolls   = [die_max // 2 + 1]
+            result  = process_short_rest(self.session, self.char, 1, rolls)
+            self._display(
+                f"  [DEV] Short rest (avg). +{result['hp_recovered']} HP."
+                + (f"  Recharged: {', '.join(result['features_recharged'])}." if result["features_recharged"] else "")
+                + "\n\n", "system")
+            self._update_sidebar()
+
+        def _dev_long_rest():
+            from controllers.game_controller import process_long_rest
+            from models.character import save_character
+            result = process_long_rest(self.session, self.char)
+            save_character(self.char)
+            self._display(
+                f"  [DEV] Long rest. +{result['hp_recovered']} HP. "
+                + (f"Recharged: {', '.join(result['features_recharged'])}." if result["features_recharged"] else "")
+                + "\n\n", "system")
+            self._update_sidebar()
+
+        tk.Button(rest_frame, text="Short Rest", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=4,
+                  activebackground=BLUE, activeforeground=FG,
+                  command=_dev_short_rest).pack(side="left", padx=(0, 6))
+        tk.Button(rest_frame, text="Long Rest", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=4,
+                  activebackground=BLUE, activeforeground=FG,
+                  command=_dev_long_rest).pack(side="left")
+
+        # ── Conditions ────────────────────────────────────────────────────────
+        _sec("CONDITIONS")
+        cond_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        cond_frame.pack(fill="x")
+
+        CONDITIONS = [
+            "Blinded", "Charmed", "Deafened", "Exhaustion",
+            "Frightened", "Grappled", "Incapacitated", "Invisible",
+            "Paralyzed", "Petrified", "Poisoned", "Prone",
+            "Restrained", "Stunned", "Unconscious",
+        ]
+        cond_var = tk.StringVar(value=CONDITIONS[0])
+        cond_menu = tk.OptionMenu(cond_frame, cond_var, *CONDITIONS)
+        cond_menu.config(bg=BTN_BG, fg=FG, font=FONT_SM, relief="flat",
+                         activebackground=ACCENT, activeforeground="#1a1a2e",
+                         highlightthickness=0)
+        cond_menu["menu"].config(bg=BTN_BG, fg=FG, font=FONT_SM)
+        cond_menu.pack(side="left", padx=(0, 6))
+
+        def _add_cond():
+            c = cond_var.get()
+            if c not in self.char.get("conditions", []):
+                self.char.setdefault("conditions", []).append(c)
+                if self.session:
+                    gs.add_condition(self.session, c)
+                self._update_sidebar()
+                self._display(f"  [DEV] Condition added: {c}\n\n", "system")
+
+        def _clear_conds():
+            self.char["conditions"] = []
+            if self.session:
+                self.session["conditions"] = []
+            self._update_sidebar()
+            self._display("  [DEV] All conditions cleared.\n\n", "system")
+
+        tk.Button(cond_frame, text="Add", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=4,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=_add_cond).pack(side="left", padx=(0, 4))
+        tk.Button(cond_frame, text="Clear All", font=FONT_SM,
+                  bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=8, pady=4,
+                  command=_clear_conds).pack(side="left")
+
+        # ── Test Combat ───────────────────────────────────────────────────────
+        _sec("COMBAT")
+        cb_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        cb_frame.pack(fill="x")
+
+        QUICK_ENEMIES = ["Goblin", "Bandit", "Skeleton", "Orc", "Ogre"]
+        enemy_var = tk.StringVar(value="Goblin")
+        enemy_menu = tk.OptionMenu(cb_frame, enemy_var, *QUICK_ENEMIES)
+        enemy_menu.config(bg=BTN_BG, fg=FG, font=FONT_SM, relief="flat",
+                          activebackground=ACCENT, activeforeground="#1a1a2e",
+                          highlightthickness=0)
+        enemy_menu["menu"].config(bg=BTN_BG, fg=FG, font=FONT_SM)
+        enemy_menu.pack(fill="x", pady=(0, 4))
+
+        def _test_combat():
+            if self.state == "COMBAT":
+                self._display("  [DEV] Already in combat.\n\n", "system")
+                return
+            self._start_combat([{"name": enemy_var.get(), "count": 1}])
+
+        tk.Button(cb_frame, text="Start Test Combat", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=6,
+                  activebackground=RED, activeforeground=FG,
+                  command=_test_combat).pack(fill="x")
 
     def _save_and_quit(self):
         if self.session:
