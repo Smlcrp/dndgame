@@ -75,8 +75,11 @@ NARRATION RULES — READ CAREFULLY:
    Example: [COMBAT: Goblin×2, Hobgoblin×1]
 8. When the scene location changes, emit on its own line:
    [SCENE: Location Name]
-9. If this is the first message, open with a vivid scene that fits the character's background and class.
-10. Keep responses focused. One scene at a time."""
+9. When the player earns XP (completing an encounter, solving a puzzle, finishing a quest), emit on its own line:
+   [XP: N]
+   Example: [XP: 50] after defeating a goblin, [XP: 200] after completing a quest. Scale to difficulty.
+10. If this is the first message, open with a vivid scene that fits the character's background and class.
+11. Keep responses focused. One scene at a time."""
 
     def _messages_for_ollama(self, session, character, player_input):
         messages = [{"role": "system", "content": self._build_system_prompt(character)}]
@@ -131,7 +134,10 @@ NARRATION RULES — READ CAREFULLY:
         for m in re.finditer(r"\[SCENE:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
             events.append({"type": "scene_change", "location": m.group(1).strip()})
 
-        clean = re.sub(r"\[(CHECK|COMBAT|SCENE):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
+        for m in re.finditer(r"\[XP:\s*(\d+)\]", raw_text, re.IGNORECASE):
+            events.append({"type": "xp_award", "amount": int(m.group(1))})
+
+        clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
 
         return clean, events
