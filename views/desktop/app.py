@@ -117,6 +117,10 @@ class GameApp:
                  bg=PANEL, fg=ACCENT, padx=12).pack(side="left")
         tk.Label(hdr, textvariable=self._loc_var, font=FONT_BODY,
                  bg=PANEL, fg=DIM, padx=8).pack(side="left")
+        tk.Button(hdr, text="DEV", font=("Segoe UI", 8, "bold"),
+                  bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=8, pady=2,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=self._open_dev_panel).pack(side="right", padx=8)
 
         main = tk.Frame(self.root, bg=BG)
         main.pack(fill="both", expand=True)
@@ -289,7 +293,7 @@ class GameApp:
         self._input_frame.pack(fill="x", padx=8, pady=6)
         self._build_explore_input()
 
-        self.root.bind("<Control-d>", self._open_dev_panel)
+        self.root.bind_all("<F4>", self._open_dev_panel)
         self._dev_panel = None
 
     def _build_explore_input(self):
@@ -310,26 +314,125 @@ class GameApp:
                   command=self._send_action).pack(side="left", padx=4)
         self._input_entry.focus_set()
 
+    _RANGED_WEAPONS = {
+        "shortbow", "longbow", "hand crossbow", "light crossbow",
+        "heavy crossbow", "sling", "dart", "blowgun", "net",
+        "throwing hammer", "handaxe (thrown)", "javelin",
+    }
+    _COMBAT_FEATURES = {
+        "Second Wind":      "Bonus action — regain 1d10 + level HP",
+        "Action Surge":     "Take one additional action this turn",
+        "Rage":             "Bonus action — enter a rage",
+        "Wild Shape":       "Bonus action — transform into a beast",
+        "Ki Points":        "Spend for Flurry of Blows / Patient Defense / Step of the Wind",
+        "Bardic Inspiration": "Bonus action — grant an ally an inspiration die",
+        "Channel Divinity": "Turn Undead or domain effect",
+        "Lay on Hands":     "Action — heal from your HP pool",
+        "Sorcery Points":   "Spend to create spell slots or power Metamagic",
+    }
+
+    def _is_ranged_weapon(self, name):
+        n = name.lower()
+        return n in self._RANGED_WEAPONS or "bow" in n or "crossbow" in n
+
+    def _find_weapon_in_text(self, text):
+        text_lower = text.lower()
+        attacks = self.char.get("attacks", [])
+        matches = [a for a in attacks if a["name"].lower() in text_lower]
+        if matches:
+            return max(matches, key=lambda a: len(a["name"]))
+        return None
+
     def _build_combat_input(self):
         for w in self._input_frame.winfo_children():
             w.destroy()
-        tk.Label(self._input_frame, text="YOUR TURN — choose an attack:",
-                 font=FONT_SM, bg=PANEL, fg=ACCENT).pack(anchor="w", padx=4)
-        btn_row = tk.Frame(self._input_frame, bg=PANEL)
-        btn_row.pack(fill="x", padx=4, pady=4)
+
         attacks = self.char.get("attacks", [])
-        if not attacks:
-            tk.Label(btn_row, text="No attacks available.", font=FONT_SM,
-                     bg=PANEL, fg=DIM).pack(side="left")
+        uses    = self.char.get("feature_uses", {})
+
+        # ── Available attacks reference ────────────────────────────────────────
+        ref = tk.Frame(self._input_frame, bg=PANEL)
+        ref.pack(fill="x", padx=6, pady=(4, 0))
+
+        tk.Label(ref, text="AVAILABLE ATTACKS", font=("Segoe UI", 8, "bold"),
+                 bg=PANEL, fg=ACCENT).pack(anchor="w")
+
+        if attacks:
+            for atk in attacks:
+                name     = atk["name"]
+                bonus    = atk.get("attack_bonus", 0)
+                damage   = atk.get("damage", "—")
+                dmg_type = atk.get("damage_type", "")
+                ranged   = self._is_ranged_weapon(name)
+                note     = "  ·  ranged — disadvantage if enemy is adjacent" if ranged else ""
+                tk.Label(ref,
+                         text=f"  ⚔  {name}  {bonus:+d} to hit  ·  {damage} {dmg_type}{note}",
+                         font=FONT_SM, bg=PANEL, fg=FG).pack(anchor="w")
+        else:
+            tk.Label(ref, text="  No weapons equipped — type to describe your action.",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+
+        # ── Combat feature abilities ───────────────────────────────────────────
+        combat_uses = {k: v for k, v in uses.items() if k in self._COMBAT_FEATURES}
+        if combat_uses:
+            tk.Label(ref, text="", bg=PANEL).pack()
+            tk.Label(ref, text="ABILITIES", font=("Segoe UI", 8, "bold"),
+                     bg=PANEL, fg=ACCENT).pack(anchor="w")
+            for name, data in combat_uses.items():
+                current = data.get("current", 0)
+                max_u   = data.get("max", 1)
+                desc    = self._COMBAT_FEATURES.get(name, "")
+                if current > 0:
+                    tk.Label(ref,
+                             text=f"  ★  {name}  ({current}/{max_u})  ·  {desc}",
+                             font=FONT_SM, bg=PANEL, fg=FG).pack(anchor="w")
+                else:
+                    tk.Label(ref,
+                             text=f"  ✗  {name}  (0/{max_u}) — no charges remaining",
+                             font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+
+        # ── Separator + text input ─────────────────────────────────────────────
+        tk.Frame(self._input_frame, bg=BTN_BG, height=1).pack(
+            fill="x", padx=6, pady=(6, 4))
+
+        hint = tk.Label(self._input_frame,
+                        text='Type your action  (e.g. "attack the goblin with my longsword", "use second wind", "dodge")',
+                        font=("Segoe UI", 8), bg=PANEL, fg=DIM, wraplength=600, justify="left")
+        hint.pack(anchor="w", padx=6, pady=(0, 4))
+
+        row = tk.Frame(self._input_frame, bg=PANEL)
+        row.pack(fill="x", padx=6, pady=(0, 4))
+
+        self._combat_entry = tk.Entry(
+            row, bg=INPUT_BG, fg=FG, font=FONT_BODY,
+            relief="flat", insertbackground=FG)
+        self._combat_entry.pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=5)
+        self._combat_entry.bind("<Return>", lambda e: self._send_combat_action())
+        self._combat_entry.focus_set()
+
+        tk.Button(row, text="→", font=FONT_HDR,
+                  bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0, padx=12, pady=3,
+                  activebackground="#e0c060", activeforeground="#1a1a2e",
+                  command=self._send_combat_action).pack(side="right")
+
+    def _send_combat_action(self):
+        text = getattr(self, "_combat_entry", None)
+        if not text:
             return
-        for atk in attacks:
-            name = atk["name"]
-            tk.Button(
-                btn_row, text=name, font=FONT_SM, bg=BTN_BG, fg=FG,
-                relief="flat", bd=0, padx=8, pady=4,
-                activebackground=ACCENT, activeforeground="#1a1a2e",
-                command=lambda n=name: self._do_player_attack(n)
-            ).pack(side="left", padx=3)
+        action = self._combat_entry.get().strip()
+        if not action:
+            return
+        self._combat_entry.delete(0, "end")
+        self._set_input_enabled(False)
+
+        weapon = self._find_weapon_in_text(action)
+        if weapon:
+            self._do_player_attack(weapon["name"])
+        else:
+            # Non-attack action — display it and end the turn
+            self._display(f"  You: {action}\n\n", "player")
+            self._display("  Action resolved.\n\n", "system")
+            self.root.after(400, lambda: (cb.end_turn(self.session), self._next_turn()))
 
     # ── Startup ────────────────────────────────────────────────────────────────
 
@@ -1018,52 +1121,28 @@ class GameApp:
                      font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
             return
 
-        player_turn = self._is_player_turn()
-
         for atk in attacks:
-            name      = atk["name"]
-            bonus     = atk.get("attack_bonus", 0)
-            damage    = atk.get("damage", "—")
-            dmg_type  = atk.get("damage_type", "")
-            notes     = atk.get("notes", "")
-
-            if player_turn:
-                btn_bg = ACCENT
-                btn_fg = "#1a1a2e"
-                cursor = "hand2"
-                state  = "normal"
-                tip    = (f"{damage}  {dmg_type}\n{notes}" if notes
-                          else f"{damage}  {dmg_type}\nClick to attack")
-            else:
-                btn_bg = BTN_BG
-                btn_fg = DIM
-                cursor = "arrow"
-                state  = "disabled"
-                if self.state != "COMBAT":
-                    tip = f"{damage}  {dmg_type}\nOnly available during combat"
-                else:
-                    tip = f"{damage}  {dmg_type}\nWait for your turn"
+            name     = atk["name"]
+            bonus    = atk.get("attack_bonus", 0)
+            damage   = atk.get("damage", "—")
+            dmg_type = atk.get("damage_type", "")
+            notes    = atk.get("notes", "")
+            tip      = f"{damage}  {dmg_type}" + (f"\n{notes}" if notes else "")
 
             row = tk.Frame(self._attacks_frame, bg=PANEL)
             row.pack(fill="x", pady=2)
 
-            btn = tk.Button(
-                row, text=f"{name}  {bonus:+d}",
-                font=FONT_SM, bg=btn_bg, fg=btn_fg,
-                relief="flat", bd=0, padx=8, pady=5,
-                activebackground=ACCENT, activeforeground="#1a1a2e",
-                cursor=cursor, state=state, anchor="w",
-                command=lambda n=name: self._do_player_attack(n),
-            )
-            btn.pack(side="left", fill="x", expand=True)
+            name_lbl = tk.Label(row, text=f"{name}  {bonus:+d}",
+                                font=FONT_SM, bg=PANEL, fg=FG,
+                                anchor="w", padx=4, pady=3)
+            name_lbl.pack(side="left", fill="x", expand=True)
 
             dmg_lbl = tk.Label(row, text=damage,
-                               font=("Segoe UI", 8), bg=PANEL,
-                               fg=DIM if state == "disabled" else FG)
+                               font=("Segoe UI", 8), bg=PANEL, fg=DIM)
             dmg_lbl.pack(side="right", padx=6)
 
-            _Tooltip(btn,     lambda t=tip: t)
-            _Tooltip(dmg_lbl, lambda t=tip: t)
+            _Tooltip(name_lbl, lambda t=tip: t)
+            _Tooltip(dmg_lbl,  lambda t=tip: t)
 
     def _set_input_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
@@ -1671,7 +1750,16 @@ class GameApp:
     # ── DEV panel (Ctrl+D) ────────────────────────────────────────────────────
 
     def _open_dev_panel(self, event=None):
+        try:
+            self._open_dev_panel_inner()
+        except Exception as _e:
+            import traceback
+            tk.messagebox.showerror("DEV panel error", traceback.format_exc(), parent=self.root)
+        return "break"
+
+    def _open_dev_panel_inner(self):
         if not self.char or not self.session:
+            tk.messagebox.showinfo("DEV", "Start an adventure first.", parent=self.root)
             return
         if self._dev_panel and self._dev_panel.winfo_exists():
             self._dev_panel.lift()
@@ -1682,9 +1770,12 @@ class GameApp:
         d.configure(bg=BG)
         d.resizable(False, False)
         self.root.update_idletasks()
-        rx = self.root.winfo_x() + self.root.winfo_width() + 6
-        ry = self.root.winfo_y()
-        d.geometry(f"270x560+{rx}+{ry}")
+        pw, ph = 270, 560
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        rx = min(self.root.winfo_x() + self.root.winfo_width() + 6, sw - pw - 10)
+        ry = max(10, min(self.root.winfo_y(), sh - ph - 40))
+        d.geometry(f"{pw}x{ph}+{rx}+{ry}")
         self._dev_panel = d
 
         def _sec(label):
