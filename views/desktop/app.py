@@ -1007,32 +1007,28 @@ class GameApp:
                       f"  Attack bonus: {attack_bonus:+d}\n\n", "header")
         self._build_explore_input()
 
-        def _finish_attack(pre_dmg=None):
+        def _advance_turn():
+            if not gs.enemies_alive(self.session):
+                self.root.after(300, lambda: self._end_combat(victory=True))
+            else:
+                self.root.after(300, lambda: (cb.end_turn(self.session), self._next_turn()))
+
+        def _resolve_damage(pre_dmg):
+            """Called after damage dice are animated — apply damage and call DM."""
             result = cb.player_attack(self.session, self.char, weapon_name, target,
                                       d20_override=pre_roll["kept"],
                                       damage_override=damage_override,
                                       pre_damage=pre_dmg)
-            self._display_attack_result(result)
-            base_action = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
-            if result.get("hit"):
-                dmg    = result["damage"]["total"]
-                killed = result.get("killed", False)
-                is_crit = result.get("critical", False)
-                prefix  = "CRITICAL HIT! " if is_crit else ""
-                outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
-                if killed:
-                    outcome += f" {target} has been defeated!"
-            else:
-                outcome = "The attack misses."
-            dm_prompt = f"{base_action} [{outcome}]"
-
-            def _continue():
-                if not gs.enemies_alive(self.session):
-                    self.root.after(300, lambda: self._end_combat(victory=True))
-                else:
-                    self.root.after(300, lambda: (cb.end_turn(self.session), self._next_turn()))
-
-            self._dm_call(dm_prompt, on_complete=_continue)
+            dmg = result["damage"]["total"]
+            self._display(f"  Damage: {dmg} — {target} HP: {result['new_hp']}\n\n", "hit")
+            if result.get("killed"):
+                self._display(f"  ☠  {target} has fallen!\n\n", "danger")
+            base    = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
+            prefix  = "CRITICAL HIT! " if result.get("critical") else ""
+            outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
+            if result.get("killed"):
+                outcome += f" {target} has been defeated!"
+            self._dm_call(f"{base} [{outcome}]", on_complete=_advance_turn)
 
         def _after_roll():
             target_entry = next((c for c in self.session["initiative_order"]
@@ -1042,15 +1038,22 @@ class GameApp:
             is_nat1   = pre_roll["kept"] == 1
             will_hit  = is_crit or (not is_nat1 and pre_roll["total"] >= target_ac)
 
+            hit_word = "CRITICAL HIT!" if is_crit else "HIT!" if will_hit else "MISS"
+            self._display(
+                f"  Roll: {pre_roll['kept']} {attack_bonus:+d} = {pre_roll['total']}"
+                f" vs AC {target_ac} — {hit_word}\n\n",
+                "hit" if will_hit else "miss")
+
             if not will_hit:
-                _finish_attack()
+                base   = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
+                self._dm_call(f"{base} [The attack misses.]", on_complete=_advance_turn)
                 return
 
             actual_notation = damage_override or weapon["damage"]
             pre_dmg = (dice.critical_damage(actual_notation) if is_crit
                        else dice.damage(actual_notation))
-            self._show_damage_roll(actual_notation, pre_dmg, is_crit,
-                                   on_done=lambda: _finish_attack(pre_dmg))
+            self._show_damage_button(actual_notation, pre_dmg, is_crit,
+                                     on_done=lambda: _resolve_damage(pre_dmg))
 
         self._show_roll_button(f"d20 ({display_name})", pre_roll["kept"], _after_roll)
 
@@ -1452,6 +1455,32 @@ class GameApp:
         def _clicked():
             btn.config(state="disabled")
             D20RollerWindow(self.root, d20_value, on_confirm)
+        btn.config(command=_clicked)
+        self._narration.window_create("end", window=btn)
+        self._narration.insert("end", "\n\n")
+        self._narration.see("end")
+        self._narration.config(state="disabled")
+
+    def _show_damage_button(self, notation, pre_dmg, is_crit, on_done):
+        """Embed a Roll Damage button in the narration; clicking opens the die animation."""
+        import re
+        m     = re.match(r"(\d*)d(\d+)", notation.strip().lower())
+        sides = int(m.group(2)) if m else None
+        if sides not in {4, 6, 8, 10, 12, 20}:
+            on_done()
+            return
+        crit_tag = " — CRIT!" if is_crit else ""
+        self._narration.config(state="normal")
+        btn = tk.Button(
+            self._narration,
+            text=f"  Roll Damage (d{sides}){crit_tag}  ",
+            font=FONT_BODY, bg=ACCENT, fg="#1a1a2e",
+            relief="flat", bd=0, padx=4, pady=6,
+            activebackground="#e0c060", activeforeground="#1a1a2e",
+        )
+        def _clicked():
+            btn.config(state="disabled")
+            self._show_damage_roll(notation, pre_dmg, is_crit, on_done)
         btn.config(command=_clicked)
         self._narration.window_create("end", window=btn)
         self._narration.insert("end", "\n\n")
