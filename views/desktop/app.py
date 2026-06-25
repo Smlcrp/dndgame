@@ -564,6 +564,7 @@ class GameApp:
         self._set_input_enabled(False)
 
         self._display(f"  You: {action}\n\n", "player")
+        self._combat_last_action = action
 
         feature  = self._detect_feature_in_text(action)
         option   = self._find_weapon_in_text(action)
@@ -593,7 +594,10 @@ class GameApp:
 
         # Pure narrative / full-action feature (Lay on Hands, etc.)
         if feature:
-            self.root.after(400, lambda: (cb.end_turn(self.session), self._next_turn()))
+            def _end_feature_turn():
+                cb.end_turn(self.session)
+                self._next_turn()
+            self._dm_call(action, on_complete=_end_feature_turn)
             return
 
         # Nothing matched — give specific feedback
@@ -610,11 +614,12 @@ class GameApp:
                     self._build_combat_input()
                     return
         self._display(
-            "  No attack or ability matched. Type a weapon name to attack "
-            "(e.g. 'attack with greataxe'), or describe a narrative action "
-            "and press → to end your turn.\n\n",
+            "  No weapon or ability matched. Sending action to DM...\n\n",
             "system")
-        self._build_combat_input()
+        def _end_narrative_turn():
+            cb.end_turn(self.session)
+            self._next_turn()
+        self._dm_call(action, on_complete=_end_narrative_turn)
 
     # ── Startup ────────────────────────────────────────────────────────────────
 
@@ -894,21 +899,26 @@ class GameApp:
         self._display(f"> {action}\n\n", "player")
         self._dm_call(action)
 
-    def _dm_call(self, action):
+    def _dm_call(self, action, on_complete=None):
         self._display("DM is thinking...\n", "system")
         def _thread():
             try:
                 result = self.dm.respond(self.session, self.char, action)
-                self.root.after(0, lambda: self._handle_dm_response(result))
+                self.root.after(0, lambda: self._handle_dm_response(result, on_complete))
             except Exception as e:
                 msg = str(e) or repr(e)
-                self.root.after(0, lambda: self._handle_dm_error(msg))
+                self.root.after(0, lambda: self._handle_dm_error(msg, on_complete))
         threading.Thread(target=_thread, daemon=True).start()
 
-    def _handle_dm_response(self, result):
+    def _handle_dm_response(self, result, on_complete=None):
         self._erase_last_line()
         self._display(result["narration"] + "\n\n", "dm")
         self._loc_var.set(self.session.get("location", self.session.get("scene", "")[:40]))
+
+        if on_complete:
+            # Combat narration path — skip event processing, hand control back to combat
+            on_complete()
+            return
 
         pending_xp = 0
         for ev in result["events"]:
@@ -927,10 +937,13 @@ class GameApp:
 
         self._set_input_enabled(True)
 
-    def _handle_dm_error(self, msg):
+    def _handle_dm_error(self, msg, on_complete=None):
         self._erase_last_line()
         self._display(f"[DM Error: {msg}]\n\n", "danger")
-        self._set_input_enabled(True)
+        if on_complete:
+            on_complete()
+        else:
+            self._set_input_enabled(True)
 
     # ── Combat ─────────────────────────────────────────────────────────────────
 
@@ -998,11 +1011,26 @@ class GameApp:
                                       d20_override=pre_roll["kept"],
                                       damage_override=damage_override)
             self._display_attack_result(result)
-            if not gs.enemies_alive(self.session):
-                self.root.after(600, lambda: self._end_combat(victory=True))
+
+            # Build context for DM narration
+            base_action = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
+            if result.get("hit"):
+                dmg    = result["damage"]["total"]
+                killed = result.get("killed", False)
+                outcome = f"Hit for {dmg} damage. {target} HP: {result['new_hp']}."
+                if killed:
+                    outcome += f" {target} has been defeated!"
             else:
-                self.root.after(600, lambda: (
-                    cb.end_turn(self.session), self._next_turn()))
+                outcome = "The attack misses."
+            dm_prompt = f"{base_action} [{outcome}]"
+
+            def _continue():
+                if not gs.enemies_alive(self.session):
+                    self.root.after(300, lambda: self._end_combat(victory=True))
+                else:
+                    self.root.after(300, lambda: (cb.end_turn(self.session), self._next_turn()))
+
+            self._dm_call(dm_prompt, on_complete=_continue)
 
         self._show_roll_button(f"d20 ({display_name})", pre_roll["kept"], _after_roll)
 
@@ -1021,12 +1049,24 @@ class GameApp:
         self._display_attack_result(result)
         self._update_sidebar()
 
-        if self.session["current_hp"] <= 0:
-            self.root.after(600, self._handle_death_saves)
-            return
+        # Build DM narration context for enemy action
+        if result.get("hit"):
+            dmg     = result["damage"]["total"]
+            outcome = f"Hit {result['target']} for {dmg} damage. {result['target']} HP: {result['new_hp']}."
+        else:
+            outcome = f"The attack against {result.get('target', 'the player')} misses."
+        dm_prompt = f"[Enemy turn] {current['name']} attacks. {outcome}"
 
-        cb.end_turn(self.session)
-        self.root.after(600, self._next_turn)
+        at_zero = self.session["current_hp"] <= 0
+
+        def _after_enemy_dm():
+            if at_zero:
+                self._handle_death_saves()
+            else:
+                cb.end_turn(self.session)
+                self._next_turn()
+
+        self._dm_call(dm_prompt, on_complete=_after_enemy_dm)
 
     def _display_attack_result(self, result):
         if "error" in result:
