@@ -18,8 +18,10 @@ from controllers.game_controller import (
     process_skill_check,
     process_enemy_turn,
     process_death_save,
+    process_xp_award,
     SKILL_ABILITIES,
 )
+from models.progression import is_asi_level, get_subclass_trigger
 from views.desktop.d20_roller import D20RollerWindow
 
 # ── Theme ──────────────────────────────────────────────────────────────────────
@@ -583,6 +585,7 @@ class GameApp:
         self._display(result["narration"] + "\n\n", "dm")
         self._loc_var.set(self.session.get("location", self.session.get("scene", "")[:40]))
 
+        pending_xp = 0
         for ev in result["events"]:
             if ev["type"] == "combat_start":
                 self._start_combat(ev["enemies"])
@@ -590,6 +593,12 @@ class GameApp:
             elif ev["type"] == "skill_check":
                 self._handle_skill_check(ev["skill"], ev["dc"])
                 return
+            elif ev["type"] == "xp_award":
+                pending_xp += ev["amount"]
+
+        if pending_xp:
+            self._award_xp(pending_xp)
+            return
 
         self._set_input_enabled(True)
 
@@ -723,9 +732,13 @@ class GameApp:
         self._update_sidebar()
         self._build_explore_input()
         if victory:
-            self._display(f"── Victory! ({xp} XP earned) ──\n\n", "header")
-            self._set_input_enabled(False)
-            self._dm_call("The combat is over. We won. Describe the aftermath.")
+            self._display(f"── Victory! ──\n\n", "header")
+            if xp:
+                self._award_xp(xp, after=lambda: self._dm_call(
+                    "The combat is over. We won. Describe the aftermath."))
+            else:
+                self._set_input_enabled(False)
+                self._dm_call("The combat is over. We won. Describe the aftermath.")
         else:
             self._display("── Defeated ──\n\n", "danger")
             self._set_input_enabled(False)
@@ -1014,6 +1027,360 @@ class GameApp:
         self._narration.insert("end", "\n\n")
         self._narration.see("end")
         self._narration.config(state="disabled")
+
+    # ── XP & level-up ─────────────────────────────────────────────────────────
+
+    def _award_xp(self, amount, after=None):
+        result = process_xp_award(self.session, self.char, amount)
+        self._display(
+            f"  +{amount} XP  (Total: {result['total_xp']})\n\n", "system")
+        if result["leveled_up"]:
+            self._show_levelup_dialog(result, on_close=after or self._resume_after_levelup)
+        else:
+            xp_next = result["xp_to_next"]
+            self._display(
+                f"  {xp_next} XP to level {result['new_level'] + 1}\n\n", "system")
+            if after:
+                after()
+            else:
+                self._set_input_enabled(True)
+
+    def _resume_after_levelup(self):
+        self._set_input_enabled(True)
+
+    def _show_levelup_dialog(self, result, on_close=None):
+        from models.character import save_character
+        import sys as _sys
+        from pathlib import Path as _Path
+        _cb = _Path(__file__).parent / "character_builder"
+        if str(_cb) not in _sys.path:
+            _sys.path.insert(0, str(_cb))
+        from dnd_data import SUBCLASSES, CLASS_HIT_DICE
+
+        cls     = self.char.get("class", "")
+        new_lvl = result["new_level"]
+        features = result["new_features"]
+        con_mod  = modifier(self.char.get("abilities", {}).get("constitution", 10))
+        hit_die  = self.char.get("hit_dice", {}).get("type", "d8")
+        die_max  = int(hit_die.replace("d", ""))
+        avg_hp   = max(1, die_max // 2 + 1 + con_mod)
+
+        needs_subclass = (
+            get_subclass_trigger(cls) == new_lvl
+            and not self.char.get("subclass", "").strip()
+        )
+        needs_asi    = is_asi_level(cls, new_lvl)
+        has_spells   = self.char.get("spellcasting", {}).get("enabled", False)
+
+        steps = ["features", "hp"]
+        if needs_subclass:
+            steps.append("subclass")
+        if needs_asi:
+            steps.append("asi")
+        if has_spells:
+            steps.append("spells")
+
+        d = tk.Toplevel(self.root)
+        d.title(f"Level Up — Level {new_lvl}")
+        d.configure(bg=BG)
+        d.grab_set()
+        d.resizable(False, False)
+        self.root.update_idletasks()
+        rx = self.root.winfo_x() + self.root.winfo_width()  // 2 - 210
+        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 220
+        d.geometry(f"420x440+{rx}+{ry}")
+
+        tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
+        hdr_lbl = tk.Label(d, text=f"  ⬆  LEVEL UP — Level {new_lvl}",
+                           font=FONT_HDR, bg=PANEL, fg=ACCENT, pady=8)
+        hdr_lbl.pack(fill="x")
+
+        body      = tk.Frame(d, bg=BG, padx=20, pady=12)
+        body.pack(fill="both", expand=True)
+        btn_frame = tk.Frame(d, bg=BG, padx=20, pady=8)
+        btn_frame.pack(fill="x")
+
+        step_idx = [0]
+
+        def _clear():
+            for w in body.winfo_children():
+                w.destroy()
+            for w in btn_frame.winfo_children():
+                w.destroy()
+
+        def _next_btn(label="Next →", cmd=None):
+            tk.Button(btn_frame, text=label, font=FONT_SM,
+                      bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0,
+                      padx=14, pady=6,
+                      activebackground="#e0c060", activeforeground="#1a1a2e",
+                      command=cmd).pack(side="right")
+
+        def _advance():
+            step_idx[0] += 1
+            if step_idx[0] >= len(steps):
+                _finish()
+            else:
+                _show_step()
+
+        def _finish():
+            save_character(self.char)
+            self._update_sidebar()
+            self._char_var.set(
+                f"{self.char.get('name','')}  —  "
+                f"{self.char.get('race','')} {self.char.get('class','')} "
+                f"Lv.{self.char.get('level',1)}")
+            d.destroy()
+            self._display(f"── Character saved at Level {new_lvl} ──\n\n", "system")
+            if on_close:
+                on_close()
+
+        # ── Step: features ─────────────────────────────────────────────────────
+        def _step_features():
+            tk.Label(body, text=f"You have reached Level {new_lvl}!",
+                     font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+            if features:
+                tk.Label(body, text="New class features:",
+                         font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+                for feat in features:
+                    tk.Label(body, text=f"  •  {feat}", font=FONT_BODY,
+                             bg=BG, fg=FG, wraplength=360,
+                             justify="left").pack(anchor="w")
+            else:
+                tk.Label(body, text="No new class features at this level.",
+                         font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w")
+            upcoming = []
+            if needs_subclass:
+                upcoming.append("Choose your subclass")
+            if needs_asi:
+                upcoming.append("Ability Score Improvement")
+            if upcoming:
+                tk.Label(body, text="", bg=BG).pack()
+                for u in upcoming:
+                    tk.Label(body, text=f"  ★  {u}",
+                             font=FONT_SM, bg=BG, fg=ACCENT).pack(anchor="w")
+            _next_btn(cmd=_advance)
+
+        # ── Step: hp roll ──────────────────────────────────────────────────────
+        def _step_hp():
+            tk.Label(body, text="Roll for HP",
+                     font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+            tk.Label(body,
+                     text=f"Hit die: {hit_die}   CON modifier: {con_mod:+d}   Average: {avg_hp}",
+                     font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 10))
+
+            result_var = tk.StringVar(value="")
+            rolled     = [False]
+
+            res_lbl = tk.Label(body, text="", font=("Segoe UI", 22, "bold"),
+                               bg=BG, fg=ACCENT)
+            res_lbl.pack(pady=8)
+
+            def _apply(hp_gain):
+                self.char["hp"]["max"]     += hp_gain
+                self.char["hp"]["current"] += hp_gain
+                if self.session:
+                    self.session["current_hp"] = (
+                        (self.session.get("current_hp") or 0) + hp_gain)
+                rolled[0] = True
+                res_lbl.config(text=f"+{hp_gain} HP")
+                for w in btn_frame.winfo_children():
+                    w.destroy()
+                _next_btn(cmd=_advance)
+
+            def _roll():
+                import random
+                raw = random.randint(1, die_max)
+                gain = max(1, raw + con_mod)
+                res_lbl.config(
+                    text=f"Rolled {raw} + {con_mod:+d} = {gain} HP")
+                for w in btn_frame.winfo_children():
+                    w.destroy()
+                tk.Button(btn_frame, text=f"Accept +{gain} HP",
+                          font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                          relief="flat", bd=0, padx=14, pady=6,
+                          activebackground="#e0c060", activeforeground="#1a1a2e",
+                          command=lambda: _apply(gain)).pack(side="right")
+
+            def _take_avg():
+                _apply(avg_hp)
+
+            row = tk.Frame(body, bg=BG)
+            row.pack()
+            tk.Button(row, text=f"Roll {hit_die}", font=FONT_BODY,
+                      bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=12, pady=8,
+                      activebackground=ACCENT, activeforeground="#1a1a2e",
+                      command=_roll).pack(side="left", padx=(0, 8))
+            tk.Button(row, text=f"Take Average ({avg_hp})", font=FONT_SM,
+                      bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=12, pady=8,
+                      activebackground=BTN_BG, activeforeground=FG,
+                      command=_take_avg).pack(side="left")
+
+        # ── Step: subclass ─────────────────────────────────────────────────────
+        def _step_subclass():
+            tk.Label(body, text="Choose Your Subclass",
+                     font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+            tk.Label(body, text=f"Select a {cls} subclass:",
+                     font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+
+            options = SUBCLASSES.get(cls, [])
+            lf = tk.Frame(body, bg=INPUT_BG)
+            lf.pack(fill="both", expand=True)
+            sb2 = tk.Scrollbar(lf, bg=BG, troughcolor=INPUT_BG)
+            sb2.pack(side="right", fill="y")
+            lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
+                            selectbackground=ACCENT, selectforeground="#1a1a2e",
+                            relief="flat", bd=0, activestyle="none",
+                            exportselection=False,
+                            yscrollcommand=sb2.set, height=6)
+            sb2.config(command=lb.yview)
+            lb.pack(fill="both", expand=True, padx=4, pady=4)
+            for opt in options:
+                lb.insert("end", opt)
+            if options:
+                lb.select_set(0)
+
+            err = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
+            err.pack(anchor="w")
+
+            def _confirm_subclass():
+                sel = lb.curselection()
+                if not sel:
+                    err.config(text="Please choose a subclass.")
+                    return
+                self.char["subclass"] = lb.get(sel[0])
+                _advance()
+
+            _next_btn("Confirm →", _confirm_subclass)
+
+        # ── Step: ASI ──────────────────────────────────────────────────────────
+        def _step_asi():
+            tk.Label(body, text="Ability Score Improvement",
+                     font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+
+            ability_names = [
+                "Strength", "Dexterity", "Constitution",
+                "Intelligence", "Wisdom", "Charisma",
+            ]
+            ability_keys = [
+                "strength", "dexterity", "constitution",
+                "intelligence", "wisdom", "charisma",
+            ]
+
+            mode_var = tk.StringVar(value="plus2")
+
+            mode_frame = tk.Frame(body, bg=BG)
+            mode_frame.pack(anchor="w", pady=(0, 10))
+            tk.Radiobutton(mode_frame, text="+2 to one ability",
+                           variable=mode_var, value="plus2",
+                           bg=BG, fg=FG, selectcolor=BTN_BG,
+                           activebackground=BG, font=FONT_SM,
+                           command=lambda: _refresh_asi()).pack(side="left", padx=(0, 16))
+            tk.Radiobutton(mode_frame, text="+1 to two abilities",
+                           variable=mode_var, value="plus1each",
+                           bg=BG, fg=FG, selectcolor=BTN_BG,
+                           activebackground=BG, font=FONT_SM,
+                           command=lambda: _refresh_asi()).pack(side="left")
+
+            pick_frame = tk.Frame(body, bg=BG)
+            pick_frame.pack(anchor="w", pady=(0, 6))
+
+            err = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
+            err.pack(anchor="w")
+
+            var1 = tk.StringVar(value=ability_names[0])
+            var2 = tk.StringVar(value=ability_names[1])
+
+            def _refresh_asi():
+                for w in pick_frame.winfo_children():
+                    w.destroy()
+                if mode_var.get() == "plus2":
+                    tk.Label(pick_frame, text="+2  ", font=FONT_BODY,
+                             bg=BG, fg=ACCENT).pack(side="left")
+                    tk.OptionMenu(pick_frame, var1, *ability_names).pack(side="left")
+                    pick_frame.winfo_children()[-1].config(
+                        bg=BTN_BG, fg=FG, relief="flat",
+                        activebackground=ACCENT, activeforeground="#1a1a2e",
+                        font=FONT_SM, highlightthickness=0)
+                else:
+                    tk.Label(pick_frame, text="+1  ", font=FONT_BODY,
+                             bg=BG, fg=ACCENT).pack(side="left")
+                    tk.OptionMenu(pick_frame, var1, *ability_names).pack(side="left")
+                    pick_frame.winfo_children()[-1].config(
+                        bg=BTN_BG, fg=FG, relief="flat",
+                        activebackground=ACCENT, activeforeground="#1a1a2e",
+                        font=FONT_SM, highlightthickness=0)
+                    tk.Label(pick_frame, text="   +1  ", font=FONT_BODY,
+                             bg=BG, fg=ACCENT).pack(side="left")
+                    tk.OptionMenu(pick_frame, var2, *ability_names).pack(side="left")
+                    pick_frame.winfo_children()[-1].config(
+                        bg=BTN_BG, fg=FG, relief="flat",
+                        activebackground=ACCENT, activeforeground="#1a1a2e",
+                        font=FONT_SM, highlightthickness=0)
+
+            _refresh_asi()
+
+            def _confirm_asi():
+                err.config(text="")
+                ab = self.char.get("abilities", {})
+                if mode_var.get() == "plus2":
+                    key = ability_keys[ability_names.index(var1.get())]
+                    if ab.get(key, 10) >= 20:
+                        err.config(text=f"{var1.get()} is already at maximum (20).")
+                        return
+                    ab[key] = min(20, ab.get(key, 10) + 2)
+                else:
+                    k1 = ability_keys[ability_names.index(var1.get())]
+                    k2 = ability_keys[ability_names.index(var2.get())]
+                    if k1 == k2:
+                        err.config(text="Choose two different abilities.")
+                        return
+                    if ab.get(k1, 10) >= 20 and ab.get(k2, 10) >= 20:
+                        err.config(text="Both abilities are already at maximum (20).")
+                        return
+                    ab[k1] = min(20, ab.get(k1, 10) + 1)
+                    ab[k2] = min(20, ab.get(k2, 10) + 1)
+                _advance()
+
+            _next_btn("Confirm →", _confirm_asi)
+
+        # ── Step: spells ───────────────────────────────────────────────────────
+        def _step_spells():
+            tk.Label(body, text="Spellcasting",
+                     font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
+            sc = self.char.get("spellcasting", {})
+            slots = sc.get("slots", {})
+            new_slots = [
+                f"Level {lvl}: {data['total']} slots"
+                for lvl, data in slots.items()
+                if data["total"] > 0
+            ]
+            if new_slots:
+                tk.Label(body, text="Current spell slots:",
+                         font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+                for line in new_slots:
+                    tk.Label(body, text=f"  {line}", font=FONT_SM,
+                             bg=BG, fg=FG).pack(anchor="w")
+            tk.Label(body, text="",  bg=BG).pack()
+            tk.Label(body,
+                     text="To add new spells or cantrips, use the\nCharacter Builder (Main Menu → New Adventure → Create Character).",
+                     font=FONT_SM, bg=BG, fg=DIM, justify="left").pack(anchor="w")
+            _next_btn("Done", _advance)
+
+        def _show_step():
+            _clear()
+            step = steps[step_idx[0]]
+            if step == "features":
+                _step_features()
+            elif step == "hp":
+                _step_hp()
+            elif step == "subclass":
+                _step_subclass()
+            elif step == "asi":
+                _step_asi()
+            elif step == "spells":
+                _step_spells()
+
+        _show_step()
 
     def _save_and_quit(self):
         if self.session:
