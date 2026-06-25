@@ -1086,10 +1086,7 @@ class GameApp:
         d.grab_set()
 
         tk.Label(d, text="Where does your story begin?",
-                 font=FONT_BODY, bg=BG, fg=ACCENT).pack(padx=20, pady=(18, 4))
-        tk.Label(d,
-                 text='e.g. "Tavern"  ·  "Village square"  ·  "High Priest\'s office in the Church of the Light"',
-                 font=FONT_SM, bg=BG, fg="#888899").pack(padx=20, pady=(0, 12))
+                 font=FONT_BODY, bg=BG, fg=ACCENT).pack(padx=20, pady=(18, 12))
 
         loc_var = tk.StringVar()
         entry = tk.Entry(d, textvariable=loc_var, font=FONT_BODY,
