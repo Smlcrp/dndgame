@@ -505,6 +505,38 @@ if self.state in ("COMBAT", "DEAD"):
 
 ---
 
+## Features Added
+
+### Spell Combat Support
+
+Full in-combat spellcasting added across the model, controller, and view layers.
+
+**New file — `models/spells.py`:**
+- `SPELLS` dict with ~60 combat spells (cantrips through level 9), each carrying: `level`, `delivery` (`"attack"` / `"save"` / `"auto"`), `save_ability`, `damage`, `damage_type`, `upcast_per_level`, `cantrip_scale`, `on_hit_effect`, `concentration`.
+- `cantrip_damage_notation(base, player_level)` — scales die count at player levels 5/11/17.
+- `upcast_damage_notation(base, upcast_per_level, extra_levels)` — adds dice for upcasting.
+- `spell_damage_notation(spell_name, spell_data, slot_level, player_level)` — unified notation helper.
+- `get_combat_spells(char)` — returns castable spells (known/prepared and having open slots) sorted by level then name.
+
+**`models/combat.py` — three new functions:**
+- `player_cast_attack_spell` — reuses `resolve_attack` with the character's spell attack bonus; supports d20/damage override for the animated roll flow.
+- `player_cast_save_spell` — enemy makes an unmodified d20 roll vs spell save DC; applies half damage on a save; returns save roll, saved flag, damage, and new HP.
+- `player_cast_auto_spell` — always hits; Magic Missile special-cased (`3 + (slot_level - 1)` missiles, each 1d4+1 force).
+
+**`controllers/game_controller.py` — two new functions:**
+- `process_spell_cast(session, char, spell_name, target_name, slot_level, ...)` — dispatches to the correct `player_cast_*` function by delivery type. Slot consumption is the caller's responsibility.
+- `get_available_combat_spells(char)` — thin wrapper around `models.spells.get_combat_spells`.
+
+**`views/desktop/app.py` — UI additions:**
+- `_open_spell_picker()` — modal dialog listing available spells (grouped by level with header rows), a slot-level selector for leveled spells, and a Cast button.
+- `_do_player_spell(spell_name, spell_data, slot_level, target_name)` — consumes the slot, then branches on delivery type:
+  - *Attack:* shows animated d20 roller → on hit shows damage roller → resolves and prompts DM.
+  - *Save:* resolves immediately, displays save roll / result / damage, prompts DM.
+  - *Auto:* resolves immediately, displays damage/effect, prompts DM.
+- `✦ Spells` button added to the combat input row; only visible when the character has spellcasting enabled and at least one castable combat spell.
+
+---
+
 ## Repository
 
 ```

@@ -242,6 +242,32 @@ def process_long_rest(session, char):
     }
 
 
+def process_spell_cast(session, char, spell_name, target_name, slot_level,
+                       d20_override=None, pre_damage=None):
+    """Resolve a spell. Does NOT consume slots — caller must do that first.
+    Returns a result dict from the appropriate combat.player_cast_* function.
+    """
+    from models.spells import SPELLS
+    spell_data = SPELLS.get(spell_name)
+    if not spell_data:
+        return {"error": f"No combat data for '{spell_name}'."}
+    delivery = spell_data.get("delivery", "auto")
+    if delivery == "attack":
+        return cb.player_cast_attack_spell(session, char, spell_name, spell_data,
+                                           target_name, slot_level,
+                                           d20_override=d20_override, pre_damage=pre_damage)
+    if delivery == "save":
+        return cb.player_cast_save_spell(session, char, spell_name, spell_data,
+                                          target_name, slot_level)
+    return cb.player_cast_auto_spell(session, char, spell_name, spell_data,
+                                      target_name, slot_level)
+
+
+def get_available_combat_spells(char):
+    from models.spells import get_combat_spells
+    return get_combat_spells(char)
+
+
 def start_adventure(session, char):
     """Generate and store a fresh adventure in the session. Returns the adventure dict."""
     adv = generate_adventure(char)

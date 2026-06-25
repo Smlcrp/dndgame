@@ -217,6 +217,96 @@ def end_turn(session):
     return None
 
 
+# ── Spell casting ─────────────────────────────────────────────────────────────
+
+def player_cast_attack_spell(session, character, spell_name, spell_data,
+                              target_name, slot_level,
+                              d20_override=None, pre_damage=None):
+    from models.spells import spell_damage_notation
+    sc           = character.get("spellcasting", {})
+    atk_bonus    = sc.get("attack_bonus", 0)
+    player_level = character.get("level", 1)
+    dmg_note     = spell_damage_notation(spell_name, spell_data, slot_level, player_level)
+    attacker     = character.get("name") or "Player"
+    result = resolve_attack(session, attacker, target_name,
+                            atk_bonus, dmg_note,
+                            d20_override=d20_override, pre_damage=pre_damage)
+    result["spell"]      = spell_name
+    result["slot_level"] = slot_level
+    return result
+
+
+def player_cast_save_spell(session, character, spell_name, spell_data,
+                            target_name, slot_level):
+    from models.spells import spell_damage_notation
+    sc           = character.get("spellcasting", {})
+    save_dc      = sc.get("spell_save_dc", 8)
+    player_level = character.get("level", 1)
+    dmg_note     = spell_damage_notation(spell_name, spell_data, slot_level, player_level)
+    has_damage   = dmg_note not in ("0", "", "—")
+
+    save_roll = dice.roll(20)
+    saved     = save_roll >= save_dc
+
+    dmg_result = None
+    new_hp     = None
+    killed     = False
+    if has_damage:
+        raw = dice.damage(dmg_note)
+        total = max(0, raw["total"] // 2) if saved else raw["total"]
+        dmg_result = {**raw, "total": total, "saved": saved}
+        if total > 0:
+            new_hp = gs.apply_combat_damage(session, target_name, total)
+            killed = new_hp is not None and new_hp <= 0
+
+    target = _get_combatant(session, target_name)
+    return {
+        "spell":        spell_name,
+        "slot_level":   slot_level,
+        "save_ability": spell_data.get("save_ability", ""),
+        "save_dc":      save_dc,
+        "save_roll":    save_roll,
+        "saved":        saved,
+        "damage":       dmg_result,
+        "new_hp":       new_hp if new_hp is not None else (target["hp"] if target else 0),
+        "killed":       killed,
+        "effect":       spell_data.get("on_hit_effect") if not saved else None,
+    }
+
+
+def player_cast_auto_spell(session, character, spell_name, spell_data,
+                            target_name, slot_level):
+    from models.spells import spell_damage_notation
+    player_level = character.get("level", 1)
+    dmg_note     = spell_damage_notation(spell_name, spell_data, slot_level, player_level)
+    has_damage   = dmg_note not in ("0", "", "—")
+
+    dmg_result = None
+    new_hp     = None
+    killed     = False
+    if has_damage:
+        if spell_name == "Magic Missile":
+            num_missiles = 3 + max(0, slot_level - 1)
+            total = sum(dice.roll(4) + 1 for _ in range(num_missiles))
+            dmg_result = {"total": total, "missiles": num_missiles}
+        else:
+            dmg_result = dice.damage(dmg_note)
+        target = _get_combatant(session, target_name)
+        if target and dmg_result["total"] > 0:
+            new_hp = gs.apply_combat_damage(session, target_name, dmg_result["total"])
+            killed = new_hp <= 0
+
+    target = _get_combatant(session, target_name)
+    return {
+        "spell":      spell_name,
+        "slot_level": slot_level,
+        "damage":     dmg_result,
+        "new_hp":     new_hp if new_hp is not None else (target["hp"] if target else 0),
+        "killed":     killed,
+        "effect":     spell_data.get("on_hit_effect"),
+    }
+
+
 # ── Summary ────────────────────────────────────────────────────────────────────
 
 def combat_summary(session):

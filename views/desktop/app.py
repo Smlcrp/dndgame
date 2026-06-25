@@ -21,6 +21,8 @@ from controllers.game_controller import (
     process_xp_award,
     start_adventure,
     advance_beat as gc_advance_beat,
+    process_spell_cast,
+    get_available_combat_spells,
     SKILL_ABILITIES,
 )
 from models.progression import is_asi_level, get_subclass_trigger
@@ -530,6 +532,13 @@ class GameApp:
                   bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0, padx=12, pady=3,
                   activebackground="#e0c060", activeforeground="#1a1a2e",
                   command=self._send_combat_action).pack(side="right")
+
+        sc = self.char.get("spellcasting", {}) if self.char else {}
+        if sc.get("enabled", False) and get_available_combat_spells(self.char):
+            tk.Button(row, text="✦ Spells", font=FONT_SM,
+                      bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
+                      activebackground=ACCENT, activeforeground="#1a1a2e",
+                      command=self._open_spell_picker).pack(side="right", padx=(0, 4))
 
     # Bonus-action features that don't consume the attack action
     _BONUS_ACTION_FEATURES = {
@@ -1290,6 +1299,270 @@ class GameApp:
                                      on_done=lambda: _resolve_damage(pre_dmg))
 
         self._show_roll_button(f"d20 ({display_name})", pre_roll["kept"], _after_roll)
+
+    # ── Spell combat ───────────────────────────────────────────────────────────
+
+    def _open_spell_picker(self):
+        from models.spells import spell_damage_notation
+        living = [c for c in self.session["initiative_order"]
+                  if not c["is_player"] and c["hp"] > 0]
+        if not living:
+            return
+        target_name = living[0]["name"]
+        available   = get_available_combat_spells(self.char)
+        if not available:
+            self._display("  No combat spells available.\n\n", "system")
+            return
+
+        d = tk.Toplevel(self.root)
+        d.title("Cast a Spell")
+        d.configure(bg=BG)
+        d.resizable(False, False)
+        d.grab_set()
+
+        tk.Label(d, text=f"Cast a Spell  →  {target_name}",
+                 font=FONT_HDR, bg=BG, fg=ACCENT).pack(padx=16, pady=(12, 4), anchor="w")
+
+        lf = tk.Frame(d, bg=BG)
+        lf.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+        sb = tk.Scrollbar(lf, orient="vertical", bg=PANEL, troughcolor=INPUT_BG)
+        sb.pack(side="right", fill="y")
+        lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_SM,
+                        selectbackground=BTN_BG, selectforeground=ACCENT,
+                        relief="flat", bd=0, exportselection=False,
+                        yscrollcommand=sb.set, width=54,
+                        height=min(16, len(available) + len({s["level"] for s in available}) + 1))
+        lb.pack(side="left", fill="both", expand=True)
+        sb.config(command=lb.yview)
+
+        ICON = {"attack": "⚔", "save": "⊕", "auto": "★"}
+        spell_map = {}
+        cur_level = -1
+        idx = 0
+        for entry in available:
+            if entry["level"] != cur_level:
+                header = "CANTRIPS" if entry["level"] == 0 else f"LEVEL {entry['level']}"
+                lb.insert("end", f"   — {header} —")
+                lb.itemconfig(idx, fg=ACCENT, selectbackground=BG, selectforeground=ACCENT)
+                spell_map[idx] = None
+                idx += 1
+                cur_level = entry["level"]
+            sp        = entry["spell"]
+            plvl      = self.char.get("level", 1)
+            note      = spell_damage_notation(entry["name"], sp, entry["level"] or 1, plvl)
+            dmg_str   = f"  {note} {sp['damage_type']}" if note not in ("0","","—") else ""
+            slots_str = f"  [{entry['available_slots']} slots]" if entry["level"] > 0 else ""
+            icon      = ICON.get(sp["delivery"], "·")
+            lb.insert("end", f"   {icon}  {entry['name']:<26}{dmg_str}{slots_str}")
+            spell_map[idx] = entry
+            idx += 1
+
+        slot_frame = tk.Frame(d, bg=BG)
+        slot_frame.pack(fill="x", padx=12, pady=(0, 2))
+        slot_var    = tk.IntVar(value=0)
+        selected    = [None]
+
+        def _rebuild_slots(entry):
+            for w in slot_frame.winfo_children():
+                w.destroy()
+            if not entry or entry["level"] == 0:
+                return
+            tk.Label(slot_frame, text="Slot level:", font=FONT_SM,
+                     bg=BG, fg=DIM).pack(side="left", padx=(0, 6))
+            sc_slots = self.char.get("spellcasting", {}).get("slots", {})
+            for lvl in entry.get("slot_options", []):
+                avail = sc_slots.get(str(lvl), {})
+                cnt   = avail.get("total", 0) - avail.get("used", 0)
+                tk.Button(slot_frame, text=f"{lvl}  ({cnt})", font=FONT_SM,
+                          bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=3,
+                          activebackground=ACCENT, activeforeground="#1a1a2e",
+                          command=lambda l=lvl: slot_var.set(l)).pack(side="left", padx=2)
+            if entry.get("slot_options"):
+                slot_var.set(entry["slot_options"][0])
+
+        err = tk.Label(d, text="", font=FONT_SM, bg=BG, fg=RED)
+        err.pack()
+
+        def _on_select(_evt=None):
+            sel = lb.curselection()
+            if not sel:
+                return
+            entry = spell_map.get(sel[0])
+            selected[0] = entry
+            _rebuild_slots(entry)
+            err.config(text="")
+        lb.bind("<<ListboxSelect>>", _on_select)
+
+        br = tk.Frame(d, bg=BG)
+        br.pack(fill="x", padx=12, pady=(4, 14))
+
+        def _cast():
+            entry = selected[0]
+            if not entry:
+                err.config(text="Select a spell first.")
+                return
+            lvl = slot_var.get() if entry["level"] > 0 else 0
+            if entry["level"] > 0 and lvl < entry["level"]:
+                err.config(text="Select a slot level.")
+                return
+            d.destroy()
+            self._do_player_spell(entry["name"], entry["spell"], lvl, target_name)
+
+        tk.Button(br, text="Cast", font=FONT_SM,
+                  bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0,
+                  padx=14, pady=6, activebackground=FG,
+                  command=_cast).pack(side="left")
+        tk.Button(br, text="Cancel", font=FONT_SM,
+                  bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=14, pady=6,
+                  command=d.destroy).pack(side="left", padx=8)
+
+        d.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width()  - d.winfo_width())  // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - d.winfo_height()) // 2
+        d.geometry(f"+{x}+{y}")
+
+    def _do_player_spell(self, spell_name, spell_data, slot_level, target_name):
+        import re as _re
+        from models.character import use_spell_slot
+        from models.spells import spell_damage_notation
+
+        level = spell_data.get("level", 0)
+        if level > 0:
+            try:
+                use_spell_slot(self.char, slot_level)
+            except ValueError as e:
+                self._display(f"  {e}\n\n", "danger")
+                self._set_input_enabled(True)
+                return
+
+        delivery     = spell_data.get("delivery", "auto")
+        player_level = self.char.get("level", 1)
+        dmg_note     = spell_damage_notation(spell_name, spell_data, slot_level, player_level)
+        has_damage   = dmg_note not in ("0", "", "—")
+        sc           = self.char.get("spellcasting", {})
+        atk_bonus    = sc.get("attack_bonus", 0)
+        save_dc      = sc.get("spell_save_dc", 8)
+        slot_str     = f" (slot {slot_level})" if level > 0 else ""
+
+        self._display(f"── Casting {spell_name}{slot_str} → {target_name} ──\n\n", "header")
+        self._build_explore_input()
+        self._update_sidebar()
+
+        def _advance_turn():
+            if not gs.enemies_alive(self.session):
+                self.root.after(300, lambda: self._end_combat(victory=True))
+            else:
+                self.root.after(300, lambda: (cb.end_turn(self.session), self._next_turn()))
+
+        if delivery == "attack":
+            pre_roll = dice.d20_check(modifier=atk_bonus)
+
+            def _resolve_spell_damage(pre_dmg):
+                result = process_spell_cast(self.session, self.char, spell_name,
+                                            target_name, slot_level,
+                                            d20_override=pre_roll["kept"], pre_damage=pre_dmg)
+                dmg = (result.get("damage") or {}).get("total", 0)
+                self._display(f"  Damage: {dmg} {spell_data['damage_type']} — "
+                              f"{target_name} HP: {result['new_hp']}\n\n", "hit")
+                if result.get("killed"):
+                    self._display(f"  ☠  {target_name} has fallen!\n\n", "danger")
+                if spell_data.get("on_hit_effect"):
+                    self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
+                crit_tag = "CRITICAL HIT! " if result.get("critical") else ""
+                self._dm_call(
+                    f"{crit_tag}I cast {spell_name} and hit {target_name} for {dmg} "
+                    f"{spell_data['damage_type']} damage. HP remaining: {result['new_hp']}."
+                    + (" They have fallen!" if result.get("killed") else ""),
+                    on_complete=_advance_turn)
+
+            def _after_spell_roll():
+                target_c  = next((c for c in self.session["initiative_order"]
+                                  if c["name"] == target_name), None)
+                target_ac = target_c["ac"] if target_c else 10
+                total     = pre_roll["kept"] + atk_bonus
+                nat20     = pre_roll["kept"] == 20
+                nat1      = pre_roll["kept"] == 1
+                hit       = nat20 or (not nat1 and total >= target_ac)
+
+                if not hit:
+                    self._display(f"  Miss — {pre_roll['kept']} + {atk_bonus:+d} = "
+                                  f"{total} vs AC {target_ac}\n\n", "danger")
+                    self._dm_call(f"I cast {spell_name} but missed {target_name}.",
+                                  on_complete=_advance_turn)
+                    return
+
+                crit = nat20
+                self._display(f"  {'CRIT! ' if crit else ''}Hit — {pre_roll['kept']} + "
+                              f"{atk_bonus:+d} = {total} vs AC {target_ac}\n\n", "hit")
+
+                if has_damage:
+                    m = _re.match(r'(\d*)d(\d+)', dmg_note)
+                    if m and int(m.group(2)) in {4, 6, 8, 10, 12, 20}:
+                        pre_dmg = (dice.critical_damage(dmg_note) if crit
+                                   else dice.damage(dmg_note))
+                        self._show_damage_button(dmg_note, pre_dmg, crit,
+                                                 lambda: _resolve_spell_damage(pre_dmg))
+                        return
+                pre_dmg = dice.critical_damage(dmg_note) if crit else dice.damage(dmg_note)
+                _resolve_spell_damage(pre_dmg)
+
+            self._show_roll_button(f"{spell_name} {atk_bonus:+d}", pre_roll["kept"],
+                                   _after_spell_roll)
+
+        elif delivery == "save":
+            result = process_spell_cast(self.session, self.char, spell_name,
+                                        target_name, slot_level)
+            save_ab  = (spell_data.get("save_ability") or "").upper()
+            saved_s  = "saved (half damage)" if result["saved"] else "failed the save"
+            dmg      = result.get("damage") or {}
+            dmg_tot  = dmg.get("total", 0)
+
+            self._display(f"  {target_name} {save_ab} save vs DC {save_dc}: "
+                          f"{result['save_roll']} — {saved_s}\n", "system")
+            if has_damage:
+                self._display(f"  Damage: {dmg_tot} {spell_data['damage_type']} — "
+                              f"{target_name} HP: {result['new_hp']}\n\n", "hit")
+            else:
+                self._display("\n", "system")
+            if result.get("killed"):
+                self._display(f"  ☠  {target_name} has fallen!\n\n", "danger")
+            if not result["saved"] and spell_data.get("on_hit_effect"):
+                self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
+
+            dm_verb = "saved and took half damage" if result["saved"] else "failed their save"
+            self._dm_call(
+                f"I cast {spell_name}. {target_name} {dm_verb}."
+                + (f" They took {dmg_tot} {spell_data['damage_type']} damage."
+                   f" HP remaining: {result['new_hp']}." if dmg_tot else "")
+                + (" They have fallen!" if result.get("killed") else ""),
+                on_complete=_advance_turn)
+
+        else:  # auto
+            result  = process_spell_cast(self.session, self.char, spell_name,
+                                         target_name, slot_level)
+            dmg     = result.get("damage") or {}
+            dmg_tot = dmg.get("total", 0)
+            if dmg_tot:
+                if spell_name == "Magic Missile":
+                    n = dmg.get("missiles", 3)
+                    self._display(f"  {n} missiles — {dmg_tot} force damage — "
+                                  f"{target_name} HP: {result['new_hp']}\n\n", "hit")
+                else:
+                    self._display(f"  {dmg_tot} {spell_data['damage_type']} damage — "
+                                  f"{target_name} HP: {result['new_hp']}\n\n", "hit")
+                if result.get("killed"):
+                    self._display(f"  ☠  {target_name} has fallen!\n\n", "danger")
+            elif spell_data.get("on_hit_effect"):
+                self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
+
+            self._dm_call(
+                f"I cast {spell_name}"
+                + (f" for {dmg_tot} {spell_data['damage_type']} damage" if dmg_tot else "")
+                + (f". Effect: {spell_data['on_hit_effect']}" if not dmg_tot
+                   and spell_data.get("on_hit_effect") else "")
+                + (f". {target_name} HP: {result['new_hp']}." if dmg_tot else ".")
+                + (" They have fallen!" if result.get("killed") else ""),
+                on_complete=_advance_turn)
 
     def _show_damage_roll(self, notation, pre_dmg, is_crit, on_done):
         """Animate damage dice (up to 2) sequentially, then call on_done."""
