@@ -290,12 +290,15 @@ def reset_to_level1(char: dict) -> dict:
     Keeps identity (race, class, abilities, proficiencies, equipment, personality).
     Resets XP, level, HP, hit dice, conditions, feature uses, and spell slot usage.
     """
-    from models.progression import CLASS_FEATURE_CHARGES, current_max_uses
+    from models.progression import CLASS_FEATURE_CHARGES, current_max_uses, SUBCLASS_TRIGGER_LEVELS
 
     cls     = char.get("class", "")
     con_mod = modifier(char["abilities"]["constitution"])
     die_str = char.get("hit_dice", {}).get("type", "d8")
     die_max = int(die_str.lstrip("d"))
+
+    if SUBCLASS_TRIGGER_LEVELS.get(cls, 3) > 1:
+        char["subclass"] = ""
 
     char["level"]      = 1
     char["experience"] = 0
