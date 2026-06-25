@@ -8,7 +8,7 @@ _root = Path(__file__).parent.parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from models.character import load_character, list_characters, modifier, proficiency_bonus, reset_to_level1
+from models.character import load_character, save_character, list_characters, modifier, proficiency_bonus, reset_to_level1
 import models.game_state as gs
 import models.combat as cb
 import models.dm as dm_module
@@ -786,6 +786,7 @@ class GameApp:
                 ):
                     return
             reset_to_level1(self.char)
+            save_character(self.char)
             self._launch_new_adventure(d)
 
         tk.Button(btn_row, text="+ New Character", font=FONT_SM, bg=BTN_BG,
