@@ -8,7 +8,7 @@ _root = Path(__file__).parent.parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from models.character import load_character, list_characters, modifier, proficiency_bonus
+from models.character import load_character, list_characters, modifier, proficiency_bonus, reset_to_level1
 import models.game_state as gs
 import models.combat as cb
 import models.dm as dm_module
@@ -767,6 +767,7 @@ class GameApp:
             except Exception as e:
                 self._dlg_err.config(text=f"Could not load character: {e}")
                 return
+            reset_to_level1(self.char)
             try:
                 self.dm = dm_module.from_config()
             except Exception as e:

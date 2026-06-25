@@ -282,6 +282,48 @@ def long_rest(char: dict) -> dict:
     return char
 
 
+# ── Adventure reset ───────────────────────────────────────────────────────────
+
+def reset_to_level1(char: dict) -> dict:
+    """Strip all accumulated adventure progress, returning char to level 1 state.
+
+    Keeps identity (race, class, abilities, proficiencies, equipment, personality).
+    Resets XP, level, HP, hit dice, conditions, feature uses, and spell slot usage.
+    """
+    from models.progression import CLASS_FEATURE_CHARGES, current_max_uses
+
+    cls     = char.get("class", "")
+    con_mod = modifier(char["abilities"]["constitution"])
+    die_str = char.get("hit_dice", {}).get("type", "d8")
+    die_max = int(die_str.lstrip("d"))
+
+    char["level"]      = 1
+    char["experience"] = 0
+
+    hp1 = max(1, die_max + con_mod)
+    char["hp"]["max"]     = hp1
+    char["hp"]["current"] = hp1
+    char["hp"]["temp"]    = 0
+
+    char["hit_dice"]["total"] = 1
+    char["hit_dice"]["used"]  = 0
+
+    char["conditions"]   = []
+    char["inspiration"]  = False
+    char["death_saves"]  = {"successes": 0, "failures": 0}
+
+    for slot in char.get("spellcasting", {}).get("slots", {}).values():
+        slot["used"] = 0
+
+    char["feature_uses"] = {}
+    for name, info in CLASS_FEATURE_CHARGES.get(cls, {}).items():
+        if info.get("min_level", 1) <= 1:
+            max_uses = current_max_uses(name, cls, 1, char)
+            char["feature_uses"][name] = {"current": max_uses, "max": max_uses}
+
+    return char
+
+
 # ── Display ───────────────────────────────────────────────────────────────────
 
 def summary(char: dict) -> str:
