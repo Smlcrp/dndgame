@@ -1077,21 +1077,63 @@ class GameApp:
 
         self._set_input_enabled(True)
 
-    def _enter_story_mode(self):
+    def _ask_starting_location(self, on_confirm):
+        """Modal dialog that asks the player where their story begins, then calls on_confirm(location)."""
+        d = tk.Toplevel(self.root)
+        d.title("Story Mode")
+        d.resizable(False, False)
+        d.configure(bg=BG)
+        d.grab_set()
+
+        tk.Label(d, text="Where does your story begin?",
+                 font=FONT_BODY, bg=BG, fg=ACCENT).pack(padx=20, pady=(18, 4))
+        tk.Label(d,
+                 text='e.g. "Tavern"  ·  "Village square"  ·  "High Priest\'s office in the Church of the Light"',
+                 font=FONT_SM, bg=BG, fg="#888899").pack(padx=20, pady=(0, 12))
+
+        loc_var = tk.StringVar()
+        entry = tk.Entry(d, textvariable=loc_var, font=FONT_BODY,
+                         bg=INPUT_BG, fg=FG, insertbackground=FG,
+                         relief="flat", bd=0)
+        entry.pack(fill="x", padx=20, pady=(0, 14), ipady=6)
+        entry.focus_set()
+
+        err_lbl = tk.Label(d, text="", font=FONT_SM, bg=BG, fg="#cc4444")
+        err_lbl.pack()
+
+        def _confirm():
+            loc = loc_var.get().strip()
+            if not loc:
+                err_lbl.config(text="Enter a starting location.")
+                return
+            d.destroy()
+            on_confirm(loc)
+
+        tk.Button(d, text="Begin Story", font=FONT_SM,
+                  bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0,
+                  padx=14, pady=6, activebackground=FG,
+                  command=_confirm).pack(pady=(0, 18))
+
+        entry.bind("<Return>", lambda _e: _confirm())
+
+        d.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width()  - d.winfo_width())  // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - d.winfo_height()) // 2
+        d.geometry(f"+{x}+{y}")
+
+    def _enter_story_mode(self, location):
         self._story_mode = True
         self._story_mode_label.pack(side="right", padx=(0, 4))
         self._set_input_enabled(False)
         self._display("── Story Mode ──\n\n", "header")
         opening = (
-            "Story Mode begins. Transition the scene: the character's journey has "
-            "brought them to a small, secluded village nestled in a quiet valley. "
-            "As they enter, they notice the village is populated entirely by women — "
-            "farmers tending fields, craftswomen at their stalls, merchants haggling, "
-            "and elders seated in the shade. The character stands at the village entrance, "
-            "taking in the scene and deciding what to do next. "
-            "Describe the village vividly — sights, sounds, smells. "
-            "Do not emit any [COMBAT:], [CHECK:], or [XP:] tags. "
-            "This is a purely narrative scene."
+            f"Story Mode begins. Set the opening scene: the character finds themselves at "
+            f"{location}. "
+            "Describe this location vividly — sights, sounds, smells, the people or atmosphere "
+            "present. Make it feel alive and specific to where they are. "
+            "End with the character taking stock of their surroundings, ready to act. "
+            "Do not emit any [COMBAT:], [CHECK:], or [XP:] tags yet. "
+            "This is a purely narrative opening scene."
         )
         self._dm_call(opening)
 
@@ -2526,7 +2568,7 @@ class GameApp:
                                   "system")
                     return
                 story_btn.config(text="Exit Story Mode", bg=ACCENT, fg="#1a1a2e")
-                self._enter_story_mode()
+                self._ask_starting_location(self._enter_story_mode)
 
         story_btn.config(command=_toggle_story)
 
