@@ -772,6 +772,19 @@ class GameApp:
             except Exception as e:
                 self._dlg_err.config(text=f"Could not load character: {e}")
                 return
+            has_progress = self.char.get("level", 1) > 1 or self.char.get("experience", 0) > 0
+            if has_progress:
+                level = self.char.get("level", 1)
+                cls   = self.char.get("class", "")
+                xp    = self.char.get("experience", 0)
+                if not messagebox.askyesno(
+                    "Overwrite Progress?",
+                    f"{char_name} has saved progress (Lv {level} {cls}, {xp} XP).\n\n"
+                    f"Starting a New Adventure will permanently delete this progress.\n\n"
+                    f"Proceed?",
+                    parent=d,
+                ):
+                    return
             reset_to_level1(self.char)
             self._launch_new_adventure(d)
 
