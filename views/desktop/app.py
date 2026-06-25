@@ -2231,7 +2231,7 @@ class GameApp:
         d.configure(bg=BG)
         d.resizable(False, False)
         self.root.update_idletasks()
-        pw, ph = 270, 560
+        pw, ph = 270, 660
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         rx = min(self.root.winfo_x() + self.root.winfo_width() + 6, sw - pw - 10)
