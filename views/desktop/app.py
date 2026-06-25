@@ -688,8 +688,13 @@ class GameApp:
 
         self._btn_large(self._dlg_body,
                         "⚔  New Adventure",
-                        "Create or select a character and start a new session.",
+                        "Select a character and start fresh at Level 1.",
                         lambda: self._show_character_page(d))
+
+        self._btn_large(self._dlg_body,
+                        "↗  Next Adventure",
+                        "Continue a leveled character into a brand-new story.",
+                        lambda: self._show_next_adventure_page(d))
 
         self._btn_large(self._dlg_body,
                         "↩  Resume Session",
@@ -768,16 +773,7 @@ class GameApp:
                 self._dlg_err.config(text=f"Could not load character: {e}")
                 return
             reset_to_level1(self.char)
-            try:
-                self.dm = dm_module.from_config()
-            except Exception as e:
-                self._dlg_err.config(text=f"DM config error: {e}")
-                return
-            self.session = gs.empty_session(character_name=char_name,
-                                            session_name=char_name)
-            gs.init_hp(self.session, self.char)
-            d.destroy()
-            self._start_adventure(new=True)
+            self._launch_new_adventure(d)
 
         tk.Button(btn_row, text="+ New Character", font=FONT_SM, bg=BTN_BG,
                   fg=ACCENT, relief="flat", bd=0, padx=8, pady=5,
@@ -791,6 +787,90 @@ class GameApp:
                   relief="flat", bd=0, padx=8, pady=5,
                   activebackground=BTN_BG, activeforeground=FG,
                   command=lambda: self._show_mode_page(d)).pack(side="right", padx=(4, 0))
+        tk.Button(btn_row, text="Begin →", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                  relief="flat", bd=0, padx=12, pady=5,
+                  activebackground="#e0c060", activeforeground="#1a1a2e",
+                  command=begin).pack(side="right")
+
+    def _launch_new_adventure(self, d):
+        try:
+            self.dm = dm_module.from_config()
+        except Exception as e:
+            self._dlg_err.config(text=f"DM config error: {e}")
+            return
+        char_name = self.char["name"]
+        self.session = gs.empty_session(character_name=char_name,
+                                        session_name=char_name)
+        gs.init_hp(self.session, self.char)
+        d.destroy()
+        self._start_adventure(new=True)
+
+    # ── Page 2c: Next Adventure (leveled characters only) ─────────────────────
+
+    def _show_next_adventure_page(self, d):
+        self._clear_body()
+        self._dlg_title.config(text="  ↗  NEXT ADVENTURE")
+
+        # Load every character and keep only those with stored progress
+        chars = []
+        for name in list_characters():
+            try:
+                c = load_character(name)
+                if c.get("level", 1) > 1 or c.get("experience", 0) > 0:
+                    chars.append(c)
+            except Exception:
+                pass
+
+        if not chars:
+            tk.Label(self._dlg_body,
+                     text="No characters with saved progress yet.",
+                     font=FONT_BODY, bg=BG, fg=DIM).pack(pady=(20, 6))
+            tk.Label(self._dlg_body,
+                     text="Play a New Adventure first to earn XP and level up.",
+                     font=FONT_SM, bg=BG, fg=DIM).pack()
+            tk.Button(self._dlg_body, text="← Back", font=FONT_SM, bg=BTN_BG,
+                      fg=DIM, relief="flat", bd=0, padx=8, pady=5,
+                      activebackground=BTN_BG, activeforeground=FG,
+                      command=lambda: self._show_mode_page(d)).pack(pady=12)
+            return
+
+        tk.Label(self._dlg_body, text="Choose a character to carry forward:",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+
+        lf = tk.Frame(self._dlg_body, bg=INPUT_BG)
+        lf.pack(fill="both", expand=True)
+        sb = tk.Scrollbar(lf, bg=BG, troughcolor=INPUT_BG)
+        sb.pack(side="right", fill="y")
+        char_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_BODY,
+                             selectbackground=ACCENT, selectforeground="#1a1a2e",
+                             relief="flat", bd=0, activestyle="none",
+                             exportselection=False,
+                             yscrollcommand=sb.set, height=7)
+        sb.config(command=char_lb.yview)
+        char_lb.pack(fill="both", expand=True, padx=4, pady=4)
+
+        for c in chars:
+            level = c.get("level", 1)
+            cls   = c.get("class", "")
+            xp    = c.get("experience", 0)
+            char_lb.insert("end", f"{c['name']}  ·  Lv {level} {cls}  ({xp} XP)")
+        char_lb.select_set(0)
+
+        btn_row = tk.Frame(self._dlg_body, bg=BG)
+        btn_row.pack(fill="x", pady=(8, 0))
+
+        def begin():
+            sel = char_lb.curselection()
+            if not sel:
+                self._dlg_err.config(text="Select a character first.")
+                return
+            self.char = chars[sel[0]]
+            self._launch_new_adventure(d)
+
+        tk.Button(btn_row, text="← Back", font=FONT_SM, bg=BTN_BG, fg=DIM,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=FG,
+                  command=lambda: self._show_mode_page(d)).pack(side="left")
         tk.Button(btn_row, text="Begin →", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
                   relief="flat", bd=0, padx=12, pady=5,
                   activebackground="#e0c060", activeforeground="#1a1a2e",
