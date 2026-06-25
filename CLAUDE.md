@@ -365,6 +365,69 @@ Build full D&D 5e character progression. Execute in three committed phases so co
 
 ---
 
+### NEXT — Actions Reference Panel + DM-Driven Action Parsing
+
+Replace the current compact attack/feature text block above the combat input bar with an "⚔ Actions" button that opens a read-only reference panel. All mechanical actions are still triggered through the player's typed dialogue — the DM parses natural language to determine what action and bonus action are being used.
+
+#### Reference panel (`_open_action_panel()`)
+A `Toplevel` modal with two sections — ACTIONS and BONUS ACTIONS. Nothing is clickable; it is a quick-reference card only.
+
+- **ACTIONS:** weapon attacks (+ versatile/thrown variants), "✦ Cast a Spell" (if spellcasting enabled + slots available), Dash, Dodge, Disengage, Hide
+- **BONUS ACTIONS:** off-hand attack (if dual-wielding light melee), class features marked as bonus actions (Rage, Second Wind, Wild Shape, Bardic Inspiration, Ki Points, Channel Divinity, etc.)
+- Unavailable entries are greyed out. Hovering shows a small floating tooltip explaining why: e.g. "Stunned — cannot take actions", "0 / 2 charges remaining", "No castable combat spells available"
+- Tooltip implementation: `Toplevel(overrideredirect=True)` shown on `<Enter>`, hidden on `<Leave>`
+
+#### Input row change
+Remove the compact reference block (the two-line `ref` frame in `_build_combat_input` that lists weapons and feature charges as text). Replace with:
+
+`[⚔ Actions]  [text entry — expands to fill]  [✦ Spells]  [→]`
+
+The "⚔ Actions" button sits on the left edge; everything else stays on the right.
+
+#### DM-driven action parsing (core change)
+Extend `models/dm.py` — `_build_system_prompt()` gains a combat block when `session.get("in_combat")` is True:
+
+```
+COMBAT ACTION TAGS — Embed the appropriate tag on its own line when the player takes an action:
+  [ACTION: attack=ExactWeaponName]
+  [ACTION: attack=ExactWeaponName, mode=twohanded]
+  [ACTION: attack=ExactWeaponName, mode=thrown]
+  [ACTION: spell=ExactSpellName, slot=N]   ← pick lowest available slot if player did not specify
+  [ACTION: feature=ExactFeatureName]
+  [ACTION: dodge]  [ACTION: dash]  [ACTION: disengage]  [ACTION: hide]
+
+  Bonus actions:
+  [BONUS: attack=ExactWeaponName]
+  [BONUS: feature=ExactFeatureName]
+
+Available weapons: {live list injected at call time}
+Available spells:  {live list with slot counts injected at call time}
+Available features: {live list with charge counts injected at call time}
+```
+
+Extend `_parse_events()` in `dm.py` to extract `action_taken` and `bonus_action_taken` from these tags and return them as events.
+
+#### `_send_combat_action()` new flow
+1. Build enriched context string (available weapons/spells/features) and send player text to DM
+2. Display DM narration
+3. Parse returned events for `action_taken` / `bonus_action_taken`
+4. Dispatch:
+   - `attack=X` → `_do_player_attack(X, mode=...)` (d20 + damage roll flow)
+   - `spell=X, slot=N` → consume slot then `_do_player_spell(X, slot=N, target)` flow
+   - `feature=X` → `_apply_combat_feature(X)`
+   - `dodge/dash/disengage/hide` → end turn (DM already narrated it)
+   - `[BONUS: ...]` → process before or after main action depending on type
+5. Fallback: if no action tags in DM response, fall back to current client-side regex matching (`_find_weapon_in_text`, `_detect_feature_in_text`); if still no match, treat as narrative turn and end turn
+
+#### Slot targeting for spells
+If `[ACTION: spell=X]` arrives without a slot number and the spell requires a slot, present the slot-level picker (same one used in `_open_spell_picker`) before resolving the spell. For cantrips, no picker needed.
+
+#### Files to change
+- `models/dm.py` — extend `_build_system_prompt()` (combat block), extend `_parse_events()`
+- `views/desktop/app.py` — remove `ref` frame from `_build_combat_input`, add Actions button, new `_open_action_panel()` method, update `_send_combat_action()` dispatch logic
+
+---
+
 ## Project Roadmap
 
 ### Stage 1 — Game Mechanics (current focus)
