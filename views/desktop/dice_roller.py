@@ -219,20 +219,41 @@ def _face_color(sides, brightness):
 
 # ── Animation ─────────────────────────────────────────────────────────────────
 
-def _build_animation(face_normal, face_idx):
-    """Pre-compute 100 eased frames that tumble to land on the given face."""
-    rng = random.Random(face_idx * 137 + 42)
-    rx_t, ry_t = _target_angles(face_normal)
-    # Non-integer multiples ensure the fractional part puts the die on a
-    # different starting face (integer multiples would be ≡ 0 mod 2π).
-    extra_rx  = rng.uniform(2.3, 3.7)
-    extra_ry  = rng.uniform(2.3, 3.7)
-    exp_rx    = rng.uniform(2.6, 3.4)
-    exp_ry    = rng.uniform(2.6, 3.4)
-    rx_start  = rx_t - extra_rx * 2 * math.pi
-    ry_start  = ry_t - extra_ry * 2 * math.pi
-    total     = 100
-    frames    = []
+def _front_face(rx, ry, normals):
+    """Return the index of the face most directly facing the camera at (rx, ry)."""
+    mat = _rot_mat(rx, ry)
+    rn  = [_mv(mat, n) for n in normals]
+    return max(range(len(normals)), key=lambda i: rn[i][2])
+
+
+def _build_animation(normals, target_fi):
+    """Pre-compute 100 eased frames that tumble to land on face `target_fi`.
+
+    Retries the starting-angle draw until the frame[0] orientation shows a
+    face that is genuinely different from the target face.
+    """
+    rng = random.Random(target_fi * 137 + 42)
+    rx_t, ry_t = _target_angles(normals[target_fi])
+    exp_rx = rng.uniform(2.6, 3.4)
+    exp_ry = rng.uniform(2.6, 3.4)
+
+    extra_rx = extra_ry = None
+    for _ in range(200):
+        ex = rng.uniform(2.1, 3.9)
+        ey = rng.uniform(2.1, 3.9)
+        rx_s = rx_t - ex * 2 * math.pi
+        ry_s = ry_t - ey * 2 * math.pi
+        if _front_face(rx_s, ry_s, normals) != target_fi:
+            extra_rx, extra_ry = ex, ey
+            break
+
+    if extra_rx is None:          # extreme fallback — add a half-turn offset
+        extra_rx, extra_ry = 2.5, 2.7
+
+    rx_start = rx_t - extra_rx * 2 * math.pi
+    ry_start = ry_t - extra_ry * 2 * math.pi
+    total    = 100
+    frames   = []
     for i in range(total):
         t      = i / (total - 1)
         ease_x = 1.0 - (1.0 - t) ** exp_rx
@@ -280,7 +301,7 @@ class DiceRollerWindow:
             target_fi = nums.index(value)
         except ValueError:
             target_fi = 0
-        self._anim = _build_animation(self._normals[target_fi], target_fi)
+        self._anim = _build_animation(self._normals, target_fi)
         self._rx, self._ry = self._anim[0]
 
         title = title_override or f"ROLL D{sides}"

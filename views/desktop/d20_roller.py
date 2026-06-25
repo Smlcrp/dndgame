@@ -59,13 +59,36 @@ def _angle_diff(a, b):
     return d
 
 
+def _front_face_d20(rx, ry):
+    """Return the face index most directly facing the camera at (rx, ry).
+    Inlines the rotation to avoid a forward-reference to _rot_mat."""
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    m = ((cy, 0, sy), (sx*sy, cx, -sx*cy), (-cx*sy, sx, cx*cy))
+    def _z(n):
+        return m[2][0]*n[0] + m[2][1]*n[1] + m[2][2]*n[2]
+    return max(range(len(FACE_NORMALS)), key=lambda i: _z(FACE_NORMALS[i]))
+
+
 def _generate_animation(face_idx, seed):
-    rng = random.Random(seed)
+    rng    = random.Random(seed)
     rx_t, ry_t = _face_target_angles(face_idx)
-    extra_rx = rng.uniform(2.3, 3.7)
-    extra_ry = rng.uniform(2.3, 3.7)
     exp_rx = rng.uniform(2.6, 3.4)
     exp_ry = rng.uniform(2.6, 3.4)
+
+    extra_rx = extra_ry = None
+    for _ in range(200):
+        ex = rng.uniform(2.1, 3.9)
+        ey = rng.uniform(2.1, 3.9)
+        rx_s = rx_t - ex * 2 * math.pi
+        ry_s = ry_t - ey * 2 * math.pi
+        if _front_face_d20(rx_s, ry_s) != face_idx:
+            extra_rx, extra_ry = ex, ey
+            break
+
+    if extra_rx is None:
+        extra_rx, extra_ry = 2.5, 2.7
+
     rx_start = rx_t - extra_rx * 2 * math.pi
     ry_start = ry_t - extra_ry * 2 * math.pi
     total = 100
