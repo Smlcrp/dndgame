@@ -8,6 +8,11 @@ from models import dice
 from models import game_state as gs
 from models import combat as cb
 from models.character import modifier, proficiency_bonus
+from models.progression import (
+    level_from_xp, xp_for_level, xp_to_next_level,
+    features_gained_at, feature_charges_gained_at,
+    current_max_uses, recharges_on_short_rest,
+)
 
 # ── Enemy data ─────────────────────────────────────────────────────────────────
 
@@ -170,3 +175,108 @@ def process_death_save(session):
     Returns the combat.handle_death_save result dict.
     """
     return cb.handle_death_save(session)
+
+
+def process_xp_award(session, char, amount):
+    """Add XP to character, detect level-up, return result dict."""
+    old_xp    = char.get("experience", 0)
+    old_level = char.get("level", 1)
+    new_xp    = old_xp + amount
+    new_level = min(20, level_from_xp(new_xp))
+
+    char["experience"] = new_xp
+    leveled_up = new_level > old_level
+
+    if leveled_up:
+        char["level"] = new_level
+        new_features  = features_gained_at(char["class"], new_level)
+        new_charges   = feature_charges_gained_at(char["class"], new_level)
+        # Backfill any feature charges from prior levels not yet in feature_uses
+        for lvl in range(1, new_level + 1):
+            for charge in feature_charges_gained_at(char["class"], lvl):
+                name = charge["name"]
+                if name not in char["feature_uses"]:
+                    max_uses = current_max_uses(name, char["class"], new_level, char)
+                    char["feature_uses"][name] = {"current": max_uses, "max": max_uses}
+        # Update scaling on existing features (e.g. Rage going from 2→3 uses at level 9)
+        for name in list(char["feature_uses"].keys()):
+            max_uses = current_max_uses(name, char["class"], new_level, char)
+            existing = char["feature_uses"][name]
+            existing["max"] = max_uses
+            existing["current"] = min(existing["current"], max_uses)
+    else:
+        new_features = []
+        new_charges  = []
+
+    return {
+        "xp_gained":    amount,
+        "total_xp":     new_xp,
+        "leveled_up":   leveled_up,
+        "old_level":    old_level,
+        "new_level":    new_level,
+        "new_features": new_features,
+        "new_charges":  new_charges,
+        "xp_to_next":   xp_to_next_level(new_xp, new_level),
+    }
+
+
+def process_short_rest(session, char, dice_spent, rolls):
+    """Resolve a short rest: spend hit dice, recharge short-rest features.
+    rolls — list of raw die results (e.g. [5, 3] for two d8s rolled).
+    Returns result dict with hp_recovered and features_recharged.
+    """
+    from models.character import short_rest as char_short_rest
+    old_hp = char["hp"]["current"]
+    char_short_rest(char, dice_spent, rolls)
+    hp_recovered = char["hp"]["current"] - old_hp
+
+    recharged = []
+    cls   = char.get("class", "")
+    level = char.get("level", 1)
+    for name, uses in char.get("feature_uses", {}).items():
+        if recharges_on_short_rest(name, cls, level):
+            max_uses = current_max_uses(name, cls, level, char)
+            char["feature_uses"][name] = {"current": max_uses, "max": max_uses}
+            recharged.append(name)
+
+    if session.get("current_hp") is not None:
+        session["current_hp"] = char["hp"]["current"]
+        session["hit_dice_spent"] = char["hit_dice"]["used"]
+
+    return {
+        "dice_spent":         dice_spent,
+        "hp_recovered":       hp_recovered,
+        "features_recharged": recharged,
+    }
+
+
+def process_long_rest(session, char):
+    """Resolve a long rest: restore HP, spell slots, and all features.
+    Returns result dict with hp_recovered, slots_recovered, features_recharged.
+    """
+    from models.character import long_rest as char_long_rest
+    old_hp = char["hp"]["current"]
+    char_long_rest(char)
+    hp_recovered = char["hp"]["current"] - old_hp
+
+    recharged = []
+    cls   = char.get("class", "")
+    level = char.get("level", 1)
+    for name in list(char.get("feature_uses", {}).keys()):
+        max_uses = current_max_uses(name, cls, level, char)
+        char["feature_uses"][name] = {"current": max_uses, "max": max_uses}
+        recharged.append(name)
+
+    slots_recovered = {
+        lvl: data["total"]
+        for lvl, data in char.get("spellcasting", {}).get("slots", {}).items()
+        if data["total"] > 0
+    }
+
+    gs.long_rest(session, char)
+
+    return {
+        "hp_recovered":       hp_recovered,
+        "slots_recovered":    slots_recovered,
+        "features_recharged": recharged,
+    }
