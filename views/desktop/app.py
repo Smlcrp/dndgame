@@ -522,6 +522,37 @@ class GameApp:
                   activebackground="#e0c060", activeforeground="#1a1a2e",
                   command=self._send_combat_action).pack(side="right")
 
+    # Bonus-action features that don't consume the attack action
+    _BONUS_ACTION_FEATURES = {
+        "Rage", "Second Wind", "Wild Shape", "Bardic Inspiration",
+        "Ki Points", "Channel Divinity",
+    }
+
+    def _detect_feature_in_text(self, text):
+        text_lower = text.lower()
+        uses = self.char.get("feature_uses", {}) if self.char else {}
+        for name in uses:
+            if name.lower() in text_lower:
+                return name
+        return None
+
+    def _apply_combat_feature(self, name):
+        uses = self.char.get("feature_uses", {})
+        if name not in uses:
+            return False
+        data = uses[name]
+        if data["current"] <= 0:
+            self._display(
+                f"  {name}: no charges remaining ({data['current']}/{data['max']}).\n\n",
+                "danger")
+            return False
+        data["current"] -= 1
+        self._display(
+            f"  {name} activated! ({data['current']}/{data['max']} remaining)\n\n",
+            "system")
+        self._refresh_features()
+        return True
+
     def _send_combat_action(self):
         text = getattr(self, "_combat_entry", None)
         if not text:
@@ -532,16 +563,58 @@ class GameApp:
         self._combat_entry.delete(0, "end")
         self._set_input_enabled(False)
 
-        option = self._find_weapon_in_text(action)
+        self._display(f"  You: {action}\n\n", "player")
+
+        feature  = self._detect_feature_in_text(action)
+        option   = self._find_weapon_in_text(action)
+        is_bonus = feature in self._BONUS_ACTION_FEATURES if feature else False
+
+        # Apply feature if found
+        if feature:
+            feat_ok = self._apply_combat_feature(feature)
+            if not feat_ok:
+                # Out of charges — re-enable input so player can choose again
+                self._build_combat_input()
+                return
+
+        # Try weapon attack
         if option:
             self._do_player_attack(option["weapon"],
                                    damage_override=option.get("damage_override"),
                                    label=option["label"])
-        else:
-            # Non-attack action — display it and end the turn
-            self._display(f"  You: {action}\n\n", "player")
-            self._display("  Action resolved.\n\n", "system")
+            return
+
+        # Feature was used (bonus action) but no weapon attack found — let player attack
+        if feature and is_bonus:
+            self._display(
+                f"  Bonus action used. Now choose your attack action.\n\n", "system")
+            self._build_combat_input()
+            return
+
+        # Pure narrative / full-action feature (Lay on Hands, etc.)
+        if feature:
             self.root.after(400, lambda: (cb.end_turn(self.session), self._next_turn()))
+            return
+
+        # Nothing matched — give specific feedback
+        thrown_words = {"throw", "thrown", "hurl", "toss", "fling", "chuck"}
+        if any(w in action.lower() for w in thrown_words):
+            weapons = self.char.get("attacks", []) if self.char else []
+            for atk in weapons:
+                if atk["name"].lower() in action.lower():
+                    self._display(
+                        f"  {atk['name']} has no Thrown property — "
+                        f"it can't be thrown as a ranged attack. "
+                        f"Make a melee attack instead, or type your action.\n\n",
+                        "danger")
+                    self._build_combat_input()
+                    return
+        self._display(
+            "  No attack or ability matched. Type a weapon name to attack "
+            "(e.g. 'attack with greataxe'), or describe a narrative action "
+            "and press → to end your turn.\n\n",
+            "system")
+        self._build_combat_input()
 
     # ── Startup ────────────────────────────────────────────────────────────────
 
