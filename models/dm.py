@@ -13,7 +13,7 @@ from models.character import modifier
 from models.enemies import enemy_list_for_dm
 
 OLLAMA_URL           = "http://localhost:11434/api/chat"
-DEFAULT_OLLAMA_MODEL = "llama3.1"
+DEFAULT_OLLAMA_MODEL = "hermes-3-llama-3.1:8b-q4_K_M"
 _DEFAULT_CONFIG      = Path(__file__).parent.parent / "data" / "dm_config.json"
 
 import requests
