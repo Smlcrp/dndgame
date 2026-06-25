@@ -2560,12 +2560,14 @@ class GameApp:
                 self._exit_story_mode()
                 story_btn.config(text="Enter Story Mode", bg=BTN_BG, fg=FG)
             else:
-                if self.state == "COMBAT":
-                    self._display("  [DEV] Cannot enter Story Mode during combat.\n\n",
+                if self.state in ("COMBAT", "DEAD"):
+                    self._display("  [DEV] Cannot enter Story Mode in current state.\n\n",
                                   "system")
                     return
-                story_btn.config(text="Exit Story Mode", bg=ACCENT, fg="#1a1a2e")
-                self._ask_starting_location(self._enter_story_mode)
+                def _on_confirmed(location):
+                    story_btn.config(text="Exit Story Mode", bg=ACCENT, fg="#1a1a2e")
+                    self._enter_story_mode(location)
+                self._ask_starting_location(_on_confirmed)
 
         story_btn.config(command=_toggle_story)
 

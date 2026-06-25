@@ -470,6 +470,41 @@ def _class_features():
 
 ---
 
+### 12. Story Mode DEV button desyncs when location dialog is closed without confirming
+
+**Where:** `views/desktop/app.py` → `_toggle_story()` closure in DEV panel.
+
+**Symptom:** If the player opened the "Where does your story begin?" dialog and then closed it by clicking the window X button (without submitting a location), the DEV panel button immediately changed to "Exit Story Mode" (ACCENT highlight) even though Story Mode was never actually entered. The next click of the button would silently re-open the location dialog without resetting to "Enter Story Mode", leaving the button state permanently desynced.
+
+**Root cause:** `story_btn.config(text="Exit Story Mode", ...)` fired unconditionally before `_ask_starting_location` was called. `_ask_starting_location` binds no `WM_DELETE_WINDOW` handler, so closing the dialog via the X button destroys the window without calling `on_confirm` — `_enter_story_mode` is never called, `self._story_mode` stays `False`, but the button already shows the active state.
+
+**Fix:** Moved `story_btn.config(...)` inside the `on_confirm` callback so the button only updates after the player actually submits a location:
+```python
+def _on_confirmed(location):
+    story_btn.config(text="Exit Story Mode", bg=ACCENT, fg="#1a1a2e")
+    self._enter_story_mode(location)
+self._ask_starting_location(_on_confirmed)
+```
+
+---
+
+### 13. Story Mode can be entered while player is dead, producing an active-looking but non-functional input
+
+**Where:** `views/desktop/app.py` → `_toggle_story()` closure in DEV panel.
+
+**Symptom:** If the player died (`self.state == "DEAD"`), the DEV panel's Story Mode guard only blocked the `"COMBAT"` state. Entering Story Mode while dead would pack the Story Mode badge, fire the DM opening call, and re-enable the text input field — making the UI look fully active. However, `_send_action` guards against all non-`"EXPLORING"` states, so every message the player typed was silently dropped with no feedback.
+
+**Root cause:** The guard condition was `if self.state == "COMBAT"` instead of checking all invalid states.
+
+**Fix:** Expanded the guard to block both combat and dead states:
+```python
+if self.state in ("COMBAT", "DEAD"):
+    self._display("  [DEV] Cannot enter Story Mode in current state.\n\n", "system")
+    return
+```
+
+---
+
 ## Repository
 
 ```
