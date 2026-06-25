@@ -8,19 +8,21 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 
 | Module | Status | Description |
 |---|---|---|
-| `models/character.py` | ✅ Complete | Character data model, save/load |
+| `models/character.py` | ✅ Complete | Character data model, save/load, level 1 reset |
 | `models/dice.py` | ✅ Complete | Dice rolling engine |
 | `models/game_state.py` | ✅ Complete | Session persistence and combat state |
 | `models/combat.py` | ✅ Complete | Turn-based combat engine |
 | `models/dm.py` | ✅ Complete | AI Dungeon Master (Ollama) |
-| `controllers/game_controller.py` | ✅ Complete | Game logic — combat, skills, enemies |
+| `models/progression.py` | ✅ Complete | XP thresholds, level-up logic, feature charges |
+| `controllers/game_controller.py` | ✅ Complete | Game logic — combat, skills, XP, rests, enemies |
 | `views/desktop/d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
+| `views/desktop/dice_roller.py` | ✅ Complete | 3D animated roller for d4/d6/d8/d10/d12/d20 |
 | `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
 | `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
-| `models/progression.py` | 🔜 Next | XP thresholds, level-up logic, feature charges |
+| `models/enemies.py` | 🔜 Next | Comprehensive SRD enemy list CR 0–30 |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** Full D&D 5e character progression — XP tracking, level-up dialog (HP roll, ASI/Feat, subclass, spell selection), feature charge tracking, short/long rest UI, and a dev test panel for simulating level-ups.
+> **Next milestone:** Comprehensive D&D 5e enemy roster (`models/enemies.py`) covering CR 0–30 with accurate SRD stats, followed by DM adventure structure improvements (story arc awareness, villain/antagonist, three-pillar balance).
 
 ---
 
@@ -33,7 +35,7 @@ python main.py
 
 ### Main Menu
 
-Choose **New Adventure** to pick a character and begin, or **Resume Session** to continue from where you left off.
+Choose **New Adventure** to pick a character and begin at Level 1, **Next Adventure** to carry a leveled character into a brand-new story, or **Resume Session** to continue a saved session mid-story.
 
 <img src="docs/screenshots/01_startup.png" alt="Main menu — New Adventure or Resume Session" width="280"/>
 

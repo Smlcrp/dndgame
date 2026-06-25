@@ -31,6 +31,7 @@ dndgame/
 │   │   ├── __init__.py
 │   │   ├── app.py            # GameApp — pure UI, calls controller
 │   │   ├── d20_roller.py     # 3D animated d20 roll window
+│   │   ├── dice_roller.py    # 3D animated roller for d4/d6/d8/d10/d12/d20
 │   │   └── character_builder/
 │   │       ├── __init__.py
 │   │       ├── character_builder_app.py
@@ -209,7 +210,113 @@ Main game interface. `GameApp` class.
 
 ---
 
-### NEXT SESSION — Character Progression & Leveling System
+### ✅ DONE — Adventure Progress System (completed)
+- `reset_to_level1(char)` in `models/character.py` — strips XP/level/HP/conditions/feature uses back to level 1. Clears subclass for classes whose trigger > 1. Saves to disk immediately on New Adventure.
+- Main menu now has three modes: **New Adventure** (reset to Lv1), **Next Adventure** (carry existing progress into a fresh story — only shown when characters with level > 1 or XP > 0 exist), **Resume Session** (mid-session save).
+- Warning dialog if New Adventure would overwrite stored progress.
+- `_launch_new_adventure(d)` helper shared between both new-adventure flows.
+
+---
+
+### ✅ DONE — Animated Dice for All Die Types (completed)
+- `views/desktop/dice_roller.py` — generic 3D animated roller for d4, d6, d8, d10, d12, d20.
+- `_build_animation(normals, target_fi)` — verify-and-retry loop guarantees frame[0] orientation shows a different face than the landing face. Same fix applied to `d20_roller.py` via `_front_face_d20()`. All die types, all values pass diagnostic.
+- Used for: damage rolls, death saving throws, hit dice (short rest + level-up).
+- Attack/damage split into two explicit player actions with a "Roll Damage" button embedded in narration via `window_create`.
+
+---
+
+### ✅ DONE — Character Progression (Phase 1 complete)
+- `models/progression.py` — XP thresholds, ASI levels, subclass triggers, CLASS_FEATURE_CHARGES, `level_from_xp`, `feature_charges_gained_at`, `current_max_uses`, `recharges_on_short_rest`.
+- `models/character.py` — `feature_uses`, `inspiration` fields; `reset_to_level1()`.
+- `controllers/game_controller.py` — `process_xp_award`, `process_short_rest`, `process_long_rest`.
+- Level-up dialog (multi-step Toplevel): new features → HP roll (animated hit die) → subclass picker → ASI/Feat.
+- XP award events from DM `[XP: N]` handled in `_handle_dm_response`.
+- Short rest: hit-dice spending dialog with animated die rolls.
+- Long rest: one-click with confirmation.
+
+**Remaining (Phases 2 & 3 not yet built):**
+- Phase 2: XP bar in sidebar, feature charges display (`[●●○] Action Surge`), Inspiration toggle, Short/Long Rest sidebar buttons.
+- Phase 3: Ctrl+D DEV panel (award XP, quick level jump, set HP, add conditions, test combat).
+
+---
+
+### 🔜 NEXT SESSION — DM Enemy List (START HERE)
+
+**Context:** We researched what makes a great D&D 5e campaign (three pillars: Combat/Exploration/Social; adventure structure; villain design). We decided the immediate next DM improvement is building a comprehensive enemy list so the DM can spawn appropriate enemies at all CR levels.
+
+**What was planned:**
+
+Create `models/enemies.py` — a comprehensive dictionary of all major SRD monsters from CR 0 to CR 30. Each entry needs:
+```python
+{
+    "cr": 0.25,           # challenge rating as float (1/8 → 0.125, 1/4 → 0.25, 1/2 → 0.5)
+    "xp": 50,             # XP reward (see CR_XP table below)
+    "type": "Humanoid",   # creature type
+    "size": "Small",
+    "alignment": "neutral evil",
+    "hp": 7,              # average HP
+    "ac": 15,
+    "initiative_mod": 2,  # DEX modifier
+    "attacks": [
+        {"name": "Scimitar", "bonus": 4, "damage": "1d6+2", "damage_type": "slashing"}
+    ],
+    "special_abilities": ["Nimble Escape: can Disengage or Hide as bonus action"],
+    "resistances": [],
+    "immunities": [],
+    "condition_immunities": [],
+    "desc": "Brief flavor text for DM narration.",
+    "tags": ["humanoid", "goblinoid", "cave", "forest"],
+}
+```
+
+**CR → XP table:**
+```
+0→10, 1/8→25, 1/4→50, 1/2→100, 1→200, 2→450, 3→700, 4→1100, 5→1800,
+6→2300, 7→2900, 8→3900, 9→5000, 10→5900, 11→7200, 12→8400, 13→10000,
+14→11500, 15→13000, 16→15000, 17→18000, 18→20000, 19→22000, 20→25000,
+21→33000, 22→41000, 23→50000, 24→62000, 30→155000
+```
+
+**Enemy tiers to cover (use SRD sources to verify stats):**
+- CR 0–1: Rat, Spider, Bat, Stirge, Kobold, Twig Blight, Bandit, Guard, Cultist, Giant Rat, Goblin, Skeleton, Zombie, Wolf, Needle Blight, Winged Kobold, Orc, Hobgoblin, Scout, Thug, Shadow, Gnoll, Lizardfolk, Vine Blight, Bugbear, Dire Wolf, Ghoul, Specter, Giant Spider, Imp, Harpy, Death Dog, Yuan-ti Pureblood
+- CR 2–4: Ogre, Bandit Captain, Cult Fanatic, Ghast, Gargoyle, Gelatinous Cube, Sea Hag, Wererat, Mimic, Priest, Ettercap, Ochre Jelly, Green Hag, Will-o'-Wisp, Azer, Knight, Veteran, Minotaur, Owlbear, Wight, Hell Hound, Werewolf, Manticore, Mummy, Phase Spider, Winter Wolf, Bugbear Chief, Bearded Devil, Ettin, Banshee, Ghost, Succubus/Incubus, Couatl, Red Dragon Wyrmling, Wereboar, Weretiger
+- CR 5–8: Troll, Hill Giant, Flesh Golem, Vampire Spawn, Wraith, Gladiator, Earth/Fire/Air/Water Elemental, Werebear, Revenant, Salamander, Xorn, Roper, Mage, Medusa, Wyvern, Invisible Stalker, Drider, Young White Dragon, Oni, Otyugh, Stone Giant, Shield Guardian, Young Black Dragon, Young Copper Dragon, Yuan-ti Abomination, Frost Giant, Assassin, Hydra, Mind Flayer, Night Hag, Cloaker, Hezrou, Chain Devil, Gorgon
+- CR 9–12: Abominable Yeti, Fire Giant, Clay Golem, Cloud Giant, Glabrezu, Nycaloth, Young Green Dragon, Young Blue Dragon, Stone Golem, Aboleth, Young Red Dragon, Young Silver Dragon, Deva, Adult White Dragon, Behir, Djinni, Efreeti, Horned Devil, Roc, Gynosphinx, Adult Black Dragon, Archmage, Erinyes, Nalfeshnee
+- CR 13–17: Storm Giant, Adult Copper Dragon, Vampire, Ultroloth, Adult Green Dragon, Adult Bronze Dragon, Death Knight, Adult Blue Dragon, Adult Silver Dragon, Purple Worm, Androsphinx, Adult Red Dragon, Adult Gold Dragon, Iron Golem, Marilith, Dragon Turtle
+- CR 18–30: Ancient White Dragon, Ancient Brass Dragon, Balor, Ancient Black Dragon, Ancient Copper Dragon, Pit Fiend, Lich, Ancient Green Dragon, Ancient Bronze Dragon, Ancient Blue Dragon, Ancient Silver Dragon, Ancient Gold Dragon, Ancient Red Dragon, Tarrasque
+
+**SRD reference sources for accurate stats:**
+- https://5thsrd.org/gamemaster_rules/monster_indexes/monsters_by_cr/
+- https://dnd5e.info/monsters/monsters-by-challenge/
+
+**After building the enemy list:**
+1. Update `game_controller.py` to import `ENEMIES` from `models/enemies.py` instead of using the inline `ENEMY_STATS` dict.
+2. Add `enemy_list_for_dm()` function to `models/enemies.py` that returns a compact tiered string for the DM system prompt.
+3. Update `dm.py` system prompt to include the compact enemy list so the DM knows what names to use in `[COMBAT:]` tags.
+
+---
+
+### 🔜 AFTER ENEMY LIST — DM Adventure Structure
+
+**Context from DMG research:** The current DM has no concept of story arc — it narrates indefinitely with no structure. The DMG defines adventures as having: a hook → rising tension → climax → resolution.
+
+**Plan:**
+- Give the DM a structured adventure outline at session start (hook + antagonist + 3 escalating beats + climax goal).
+- The DM should track which beat it's on and escalate toward the climax.
+- Introduce a named antagonist early (villain with a plan already in motion).
+- Balance the three pillars: combat, exploration (discovery/mystery), social (named NPCs).
+- Adventures should feel like a story with a beginning, middle, and end — not an infinite sandbox.
+
+**Implementation approach (to be designed):**
+- New `session["adventure"]` dict: `{hook, antagonist, beats: [str×3], climax, current_beat: 0}`
+- `dm.py` `_build_system_prompt` includes the adventure outline.
+- New `[BEAT]` or `[CLIMAX]` tags the DM can emit to advance the story arc.
+- XP awards tied to beat completion, not just combat.
+
+---
+
+### NEXT NEXT — Character Progression (Phase 2 & 3)
 
 Build full D&D 5e character progression. Execute in three committed phases so context limits don't lose work.
 
