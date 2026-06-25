@@ -294,8 +294,14 @@ class GameApp:
         self._input_frame.pack(fill="x", padx=8, pady=6)
         self._build_explore_input()
 
+        self._story_mode_label = tk.Label(
+            hdr, text="  ◆ STORY MODE  ",
+            font=("Segoe UI", 8, "bold"),
+            bg=ACCENT, fg="#1a1a2e", padx=6, pady=2)
+
         self.root.bind_all("<F4>", self._open_dev_panel)
-        self._dev_panel = None
+        self._dev_panel   = None
+        self._story_mode  = False
 
     def _build_explore_input(self):
         for w in self._input_frame.winfo_children():
@@ -1016,6 +1022,10 @@ class GameApp:
             on_complete()
             return
 
+        if self._story_mode:
+            self._set_input_enabled(True)
+            return
+
         pending_xp = 0
         for ev in result["events"]:
             if ev["type"] == "combat_start":
@@ -1031,6 +1041,33 @@ class GameApp:
             self._award_xp(pending_xp)
             return
 
+        self._set_input_enabled(True)
+
+    def _enter_story_mode(self):
+        self._story_mode = True
+        self._story_mode_label.pack(side="right", padx=(0, 4))
+        self._set_input_enabled(False)
+        self._display("── Story Mode ──\n\n", "header")
+        opening = (
+            "Story Mode begins. Transition the scene: the character's journey has "
+            "brought them to a small, secluded village nestled in a quiet valley. "
+            "As they enter, they notice the village is populated entirely by women — "
+            "farmers tending fields, craftswomen at their stalls, merchants haggling, "
+            "and elders seated in the shade. The character stands at the village entrance, "
+            "taking in the scene and deciding what to do next. "
+            "Describe the village vividly — sights, sounds, smells. "
+            "Do not emit any [COMBAT:], [CHECK:], or [XP:] tags. "
+            "This is a purely narrative scene."
+        )
+        self._dm_call(opening)
+
+    def _exit_story_mode(self):
+        self._story_mode = False
+        try:
+            self._story_mode_label.pack_forget()
+        except Exception:
+            pass
+        self._display("── Story Mode ended ──\n\n", "header")
         self._set_input_enabled(True)
 
     def _handle_dm_error(self, msg, on_complete=None):
@@ -2401,6 +2438,34 @@ class GameApp:
                   bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=6,
                   activebackground=RED, activeforeground=FG,
                   command=_test_combat).pack(fill="x")
+
+        # ── Story Mode ────────────────────────────────────────────────────────
+        _sec("STORY MODE")
+        story_frame = tk.Frame(d, bg=BG, padx=8, pady=6)
+        story_frame.pack(fill="x")
+
+        _s_text = "Exit Story Mode" if self._story_mode else "Enter Story Mode"
+        _s_bg   = ACCENT if self._story_mode else BTN_BG
+        _s_fg   = "#1a1a2e" if self._story_mode else FG
+        story_btn = tk.Button(story_frame, text=_s_text, font=FONT_SM,
+                              bg=_s_bg, fg=_s_fg, relief="flat", bd=0,
+                              padx=10, pady=6,
+                              activebackground=ACCENT, activeforeground="#1a1a2e")
+        story_btn.pack(fill="x")
+
+        def _toggle_story():
+            if self._story_mode:
+                self._exit_story_mode()
+                story_btn.config(text="Enter Story Mode", bg=BTN_BG, fg=FG)
+            else:
+                if self.state == "COMBAT":
+                    self._display("  [DEV] Cannot enter Story Mode during combat.\n\n",
+                                  "system")
+                    return
+                story_btn.config(text="Exit Story Mode", bg=ACCENT, fg="#1a1a2e")
+                self._enter_story_mode()
+
+        story_btn.config(command=_toggle_story)
 
     def _save_and_quit(self):
         if self.session:

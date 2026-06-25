@@ -19,10 +19,10 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `views/desktop/dice_roller.py` | ✅ Complete | 3D animated roller for d4/d6/d8/d10/d12/d20 |
 | `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
 | `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
-| `models/enemies.py` | 🔜 Next | Comprehensive SRD enemy list CR 0–30 |
+| `models/enemies.py` | ✅ Complete | Comprehensive SRD enemy list CR 0–30 (~160 monsters) |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** Comprehensive D&D 5e enemy roster (`models/enemies.py`) covering CR 0–30 with accurate SRD stats, followed by DM adventure structure improvements (story arc awareness, villain/antagonist, three-pillar balance).
+> **Next milestone:** DM adventure structure improvements (story arc awareness, villain/antagonist, three-pillar balance) and Character Progression Phase 2 & 3.
 
 ---
 
@@ -73,6 +73,20 @@ The sidebar combat tracker with HP bars for all combatants:
 - Enemy turns resolve automatically with narrated outcomes
 - Death saves trigger automatically when the player reaches 0 HP
 - Sessions save on quit and resume mid-combat
+
+---
+
+### Story Mode
+
+The **DEV panel** (press **F4** during a session, or click the DEV button in the header) includes a **Story Mode** toggle. When activated:
+
+- The DM opens a purely narrative scene — no combat, no skill checks, no dice rolls.
+- All game mechanics (XP awards, combat triggers, skill check prompts) are suppressed for the duration.
+- A gold **◆ STORY MODE** badge appears in the header while active.
+- Type responses as normal; the DM narrates back without engaging any game systems.
+- Click **Exit Story Mode** in the DEV panel to return to normal play.
+
+Story Mode is useful for exploring social scenarios, lore conversations, and narrative interludes where rolling dice would break the mood.
 
 ---
 

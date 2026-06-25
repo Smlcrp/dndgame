@@ -241,63 +241,34 @@ Main game interface. `GameApp` class.
 
 ---
 
-### 🔜 NEXT SESSION — DM Enemy List (START HERE)
+### ✅ DONE — SRD Enemy List (models/enemies.py)
 
-**Context:** We researched what makes a great D&D 5e campaign (three pillars: Combat/Exploration/Social; adventure structure; villain design). We decided the immediate next DM improvement is building a comprehensive enemy list so the DM can spawn appropriate enemies at all CR levels.
+`models/enemies.py` — ~160 monsters from CR 0 to CR 30. Compact `_e()` / `_atk()` helpers keep the file readable. Key exports:
+- `ENEMIES` — dict keyed by display name (what DM writes in `[COMBAT:]` tags)
+- `by_cr(cr)` / `by_cr_range(min, max)` — filter by CR
+- `appropriate_for_level(player_level)` — returns `(min_cr, max_cr)` tuple
+- `enemy_list_for_dm(player_level)` — compact tiered string injected into DM system prompt
 
-**What was planned:**
+`game_controller.py` imports `ENEMIES` from this module. `dm.py` injects `enemy_list_for_dm(level)` at the end of its system prompt. `data/dm_config.json` (gitignored) sets the Ollama model.
 
-Create `models/enemies.py` — a comprehensive dictionary of all major SRD monsters from CR 0 to CR 30. Each entry needs:
-```python
-{
-    "cr": 0.25,           # challenge rating as float (1/8 → 0.125, 1/4 → 0.25, 1/2 → 0.5)
-    "xp": 50,             # XP reward (see CR_XP table below)
-    "type": "Humanoid",   # creature type
-    "size": "Small",
-    "alignment": "neutral evil",
-    "hp": 7,              # average HP
-    "ac": 15,
-    "initiative_mod": 2,  # DEX modifier
-    "attacks": [
-        {"name": "Scimitar", "bonus": 4, "damage": "1d6+2", "damage_type": "slashing"}
-    ],
-    "special_abilities": ["Nimble Escape: can Disengage or Hide as bonus action"],
-    "resistances": [],
-    "immunities": [],
-    "condition_immunities": [],
-    "desc": "Brief flavor text for DM narration.",
-    "tags": ["humanoid", "goblinoid", "cave", "forest"],
-}
-```
-
-**CR → XP table:**
-```
-0→10, 1/8→25, 1/4→50, 1/2→100, 1→200, 2→450, 3→700, 4→1100, 5→1800,
-6→2300, 7→2900, 8→3900, 9→5000, 10→5900, 11→7200, 12→8400, 13→10000,
-14→11500, 15→13000, 16→15000, 17→18000, 18→20000, 19→22000, 20→25000,
-21→33000, 22→41000, 23→50000, 24→62000, 30→155000
-```
-
-**Enemy tiers to cover (use SRD sources to verify stats):**
-- CR 0–1: Rat, Spider, Bat, Stirge, Kobold, Twig Blight, Bandit, Guard, Cultist, Giant Rat, Goblin, Skeleton, Zombie, Wolf, Needle Blight, Winged Kobold, Orc, Hobgoblin, Scout, Thug, Shadow, Gnoll, Lizardfolk, Vine Blight, Bugbear, Dire Wolf, Ghoul, Specter, Giant Spider, Imp, Harpy, Death Dog, Yuan-ti Pureblood
-- CR 2–4: Ogre, Bandit Captain, Cult Fanatic, Ghast, Gargoyle, Gelatinous Cube, Sea Hag, Wererat, Mimic, Priest, Ettercap, Ochre Jelly, Green Hag, Will-o'-Wisp, Azer, Knight, Veteran, Minotaur, Owlbear, Wight, Hell Hound, Werewolf, Manticore, Mummy, Phase Spider, Winter Wolf, Bugbear Chief, Bearded Devil, Ettin, Banshee, Ghost, Succubus/Incubus, Couatl, Red Dragon Wyrmling, Wereboar, Weretiger
-- CR 5–8: Troll, Hill Giant, Flesh Golem, Vampire Spawn, Wraith, Gladiator, Earth/Fire/Air/Water Elemental, Werebear, Revenant, Salamander, Xorn, Roper, Mage, Medusa, Wyvern, Invisible Stalker, Drider, Young White Dragon, Oni, Otyugh, Stone Giant, Shield Guardian, Young Black Dragon, Young Copper Dragon, Yuan-ti Abomination, Frost Giant, Assassin, Hydra, Mind Flayer, Night Hag, Cloaker, Hezrou, Chain Devil, Gorgon
-- CR 9–12: Abominable Yeti, Fire Giant, Clay Golem, Cloud Giant, Glabrezu, Nycaloth, Young Green Dragon, Young Blue Dragon, Stone Golem, Aboleth, Young Red Dragon, Young Silver Dragon, Deva, Adult White Dragon, Behir, Djinni, Efreeti, Horned Devil, Roc, Gynosphinx, Adult Black Dragon, Archmage, Erinyes, Nalfeshnee
-- CR 13–17: Storm Giant, Adult Copper Dragon, Vampire, Ultroloth, Adult Green Dragon, Adult Bronze Dragon, Death Knight, Adult Blue Dragon, Adult Silver Dragon, Purple Worm, Androsphinx, Adult Red Dragon, Adult Gold Dragon, Iron Golem, Marilith, Dragon Turtle
-- CR 18–30: Ancient White Dragon, Ancient Brass Dragon, Balor, Ancient Black Dragon, Ancient Copper Dragon, Pit Fiend, Lich, Ancient Green Dragon, Ancient Bronze Dragon, Ancient Blue Dragon, Ancient Silver Dragon, Ancient Gold Dragon, Ancient Red Dragon, Tarrasque
-
-**SRD reference sources for accurate stats:**
-- https://5thsrd.org/gamemaster_rules/monster_indexes/monsters_by_cr/
-- https://dnd5e.info/monsters/monsters-by-challenge/
-
-**After building the enemy list:**
-1. Update `game_controller.py` to import `ENEMIES` from `models/enemies.py` instead of using the inline `ENEMY_STATS` dict.
-2. Add `enemy_list_for_dm()` function to `models/enemies.py` that returns a compact tiered string for the DM system prompt.
-3. Update `dm.py` system prompt to include the compact enemy list so the DM knows what names to use in `[COMBAT:]` tags.
+**Current default model:** `hermes-3-llama-3.1:8b-q4_K_M`
 
 ---
 
-### 🔜 AFTER ENEMY LIST — DM Adventure Structure
+### ✅ DONE — Story Mode (DEV panel button)
+
+A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in header). When active:
+- The DM opens a scene in a small village populated entirely by women, starting with the character deciding what to do next.
+- All D&D game mechanics are suspended: no `[COMBAT:]`, `[CHECK:]`, or `[XP:]` events are processed — pure narrative only.
+- A gold **◆ STORY MODE** badge appears in the header.
+- The player types responses normally; the DM narrates back without triggering any game systems.
+- Clicking **Exit Story Mode** in the DEV panel restores normal play.
+
+**Implementation:** `self._story_mode` flag on `GameApp`. `_handle_dm_response` skips all event processing when `True`. `_enter_story_mode()` sets the flag, shows the header badge, and sends the opening prompt to the DM. `_exit_story_mode()` clears flag and badge.
+
+---
+
+### 🔜 NEXT — DM Adventure Structure
 
 **Context from DMG research:** The current DM has no concept of story arc — it narrates indefinitely with no structure. The DMG defines adventures as having: a hook → rising tension → climax → resolution.
 
