@@ -169,13 +169,19 @@ CLASS_FEATURE_CHARGES = {
 
 # Reference to CLASS_FEATURES from dnd_data — imported lazily to avoid circular deps
 def _class_features():
-    import sys
-    from pathlib import Path
-    _cb = Path(__file__).parent.parent / "views" / "desktop" / "character_builder"
-    if str(_cb) not in sys.path:
-        sys.path.insert(0, str(_cb))
-    from dnd_data import CLASS_FEATURES
-    return CLASS_FEATURES
+    try:
+        import sys
+        from pathlib import Path
+        _cb = Path(__file__).parent.parent / "views" / "desktop" / "character_builder"
+        if str(_cb) not in sys.path:
+            sys.path.insert(0, str(_cb))
+        from dnd_data import CLASS_FEATURES
+        return CLASS_FEATURES
+    except Exception as _e:
+        import sys as _sys
+        print(f"WARNING: could not load CLASS_FEATURES from dnd_data: {_e}",
+              file=_sys.stderr)
+        return {}
 
 
 # ── Helper functions ───────────────────────────────────────────────────────────

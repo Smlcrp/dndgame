@@ -123,12 +123,9 @@ def long_rest(session, character):
     session["stable"]           = False
 
 
-def short_rest(session, hp_gained):
+def short_rest(session, hp_gained, max_hp):
     session["hit_dice_spent"] += 1
-    session["current_hp"] = min(
-        session["current_hp"] + hp_gained,
-        session.get("_max_hp_cache", session["current_hp"] + hp_gained)
-    )
+    session["current_hp"] = min(session["current_hp"] + hp_gained, max_hp)
 
 
 # ── Combat state ───────────────────────────────────────────────────────────────

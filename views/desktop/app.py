@@ -977,15 +977,23 @@ class GameApp:
             f"Lv.{self.char.get('level',1)}")
         self._loc_var.set(self.session.get("location", "Unknown"))
         self._update_sidebar()
-        self.state = "EXPLORING"
+        self.state = "COMBAT" if self.session.get("in_combat") else "EXPLORING"
 
         if not new and self.session.get("history"):
-            self._display("── Resuming session ──\n\n", "header")
-            for entry in self.session["history"][-6:]:
-                tag = "player" if entry["role"] == "player" else "dm"
-                prefix = "> " if tag == "player" else ""
-                self._display(prefix + entry["text"] + "\n\n", tag)
-            self._set_input_enabled(True)
+            if self.session.get("in_combat"):
+                self._display("── Resuming — combat in progress ──\n\n", "header")
+                for entry in self.session["history"][-3:]:
+                    tag = "player" if entry["role"] == "player" else "dm"
+                    prefix = "> " if tag == "player" else ""
+                    self._display(prefix + entry["text"] + "\n\n", tag)
+                self._next_turn()
+            else:
+                self._display("── Resuming session ──\n\n", "header")
+                for entry in self.session["history"][-6:]:
+                    tag = "player" if entry["role"] == "player" else "dm"
+                    prefix = "> " if tag == "player" else ""
+                    self._display(prefix + entry["text"] + "\n\n", tag)
+                self._set_input_enabled(True)
         else:
             self._display("── Adventure begins ──\n\n", "header")
             self._set_input_enabled(False)
@@ -1052,6 +1060,10 @@ class GameApp:
 
         if climax_done:
             self._display("── The final confrontation is at hand ──\n\n", "header")
+            adv = self.session.get("adventure") or {}
+            if adv.get("current_beat", 0) < 4:
+                adv["current_beat"] = 4
+                pending_xp += adv.get("climax_xp", 0)
 
         if beat_done:
             pending_xp += self._advance_beat()
@@ -1153,11 +1165,16 @@ class GameApp:
         if not gs.enemies_alive(self.session):
             self._end_combat(victory=True)
             return
-        if self.session["current_hp"] <= 0:
-            self._handle_death_saves()
-            return
 
         if current["is_player"]:
+            if self.session["current_hp"] <= 0:
+                if self.session.get("stable"):
+                    self._display("  You are stabilized — waiting for aid.\n\n", "system")
+                    cb.end_turn(self.session)
+                    self.root.after(800, self._next_turn)
+                else:
+                    self._handle_death_saves()
+                return
             self._display(f"── Round {self.session['round']} — Your turn ──\n\n", "header")
             self._build_combat_input()
         else:
@@ -1285,14 +1302,9 @@ class GameApp:
             outcome = f"The attack against {result.get('target', 'the player')} misses."
         dm_prompt = f"[Enemy turn] {current['name']} attacks. {outcome}"
 
-        at_zero = self.session["current_hp"] <= 0
-
         def _after_enemy_dm():
-            if at_zero:
-                self._handle_death_saves()
-            else:
-                cb.end_turn(self.session)
-                self._next_turn()
+            cb.end_turn(self.session)
+            self._next_turn()
 
         self._dm_call(dm_prompt, on_complete=_after_enemy_dm)
 
@@ -1812,6 +1824,7 @@ class GameApp:
 
         def _apply(rolls):
             from controllers.game_controller import process_short_rest
+            from models.character import save_character as _save_char
             try:
                 n = max(1, min(int(dice_var.get()), available))
             except Exception:
@@ -1822,6 +1835,7 @@ class GameApp:
                 lines.append(f"  Recharged: {', '.join(result['features_recharged'])}.")
             self._display("\n".join(lines) + "\n\n", "system")
             self._update_sidebar()
+            _save_char(self.char)
             d.destroy()
 
         def _roll():
@@ -2383,6 +2397,7 @@ class GameApp:
 
         def _dev_short_rest():
             from controllers.game_controller import process_short_rest
+            from models.character import save_character as _save_char
             hit_dice  = self.char.get("hit_dice", {})
             available = max(0, hit_dice.get("total", 1) - hit_dice.get("used", 0))
             if available == 0:
@@ -2396,6 +2411,7 @@ class GameApp:
                 + (f"  Recharged: {', '.join(result['features_recharged'])}." if result["features_recharged"] else "")
                 + "\n\n", "system")
             self._update_sidebar()
+            _save_char(self.char)
 
         def _dev_long_rest():
             from controllers.game_controller import process_long_rest
@@ -2440,8 +2456,9 @@ class GameApp:
             c = cond_var.get()
             if c not in self.char.get("conditions", []):
                 self.char.setdefault("conditions", []).append(c)
-                if self.session:
-                    gs.add_condition(self.session, c)
+                if self.session and self.session.get("in_combat"):
+                    player_name = self.char.get("name") or "Player"
+                    gs.add_condition(self.session, player_name, c)
                 self._update_sidebar()
                 self._display(f"  [DEV] Condition added: {c}\n\n", "system")
 

@@ -333,6 +333,143 @@ def init_hp(session, character):
 
 ---
 
+### 4. DEV panel `Add Condition` crashes with `TypeError` when player is in combat
+
+**Where:** `views/desktop/app.py` → DEV panel `_add_cond()` closure.
+
+**Symptom:** Clicking **Add Condition** in the DEV panel during a combat encounter raises `TypeError: add_condition() missing 1 required positional argument: 'condition'`. The DEV panel closes but the condition is not applied to the combat combatant.
+
+**Root cause:** `gs.add_condition(session, combatant_name, condition)` requires three arguments. The call was `gs.add_condition(self.session, c)` — `combatant_name` was omitted, shifting `condition` into the wrong parameter slot.
+
+**Fix:** Pass the player's name as `combatant_name`, and guard the call to only fire when actually in combat:
+```python
+if self.session and self.session.get("in_combat"):
+    gs.add_condition(self.session, self.char.get("name") or "Player", c)
+```
+
+---
+
+### 5. Death saves trigger on every combatant's turn; `stable` flag never checked
+
+**Where:** `views/desktop/app.py` → `_next_turn()`.
+
+**Symptom:** When the player is at 0 HP in combat, `_handle_death_saves()` fires not just on the player's own turn but also on every enemy turn. A player at 0 HP could accumulate multiple death save failures per round, leading to instant death against any multi-turn enemy. Additionally, a stabilised player (3 successes) would continue being prompted for death saves.
+
+**Root cause:** The `if self.session["current_hp"] <= 0` guard was outside the `if current["is_player"]` branch, so it triggered regardless of whose turn `_next_turn` was processing.
+
+**Fix:** Moved the death save check inside the player-turn branch, and added a `stable` guard so stabilised players skip the roll and simply wait out the combat round:
+```python
+if current["is_player"]:
+    if self.session["current_hp"] <= 0:
+        if self.session.get("stable"):
+            # wait for aid — pass turn
+        else:
+            self._handle_death_saves()
+        return
+```
+
+---
+
+### 6. Enemy turn fires a second death save via `at_zero` path in `_do_enemy_turn`
+
+**Where:** `views/desktop/app.py` → `_do_enemy_turn()` → `_after_enemy_dm()`.
+
+**Symptom:** When an enemy attack dropped the player to 0 HP, `_after_enemy_dm` checked `at_zero` and called `_handle_death_saves()` immediately on the enemy's turn — before control returned to `_next_turn`. This, combined with Bug 5, meant the player could make two death save rolls per enemy turn.
+
+**Root cause:** `at_zero` was set to `self.session["current_hp"] <= 0` before the DM narration call, and `_after_enemy_dm` used it as a trigger. Death save management should be centralised in `_next_turn`.
+
+**Fix:** Removed the `at_zero` variable and simplified `_after_enemy_dm` to always call `cb.end_turn` → `_next_turn`. The corrected `_next_turn` (Bug 5 fix) handles death saves exclusively on the player's own turn.
+
+---
+
+### 7. Resume-into-combat sets state to `EXPLORING`, combat UI never rebuilds
+
+**Where:** `views/desktop/app.py` → `_start_adventure()` resume path.
+
+**Symptom:** If the game was saved mid-combat and resumed, `self.state` was always set to `"EXPLORING"`. The combat attack buttons were never shown, the player could not act, and the initiative state machine was left in an inconsistent state.
+
+**Root cause:** `self.state = "EXPLORING"` was unconditional. The session's `in_combat` flag was ignored.
+
+**Fix:** Set state from the session flag, and take separate resume paths for combat vs. exploration:
+```python
+self.state = "COMBAT" if self.session.get("in_combat") else "EXPLORING"
+if self.session.get("in_combat"):
+    self._next_turn()   # rebuilds correct combat input for current combatant
+```
+
+---
+
+### 8. `[CLIMAX]` event: `climax_xp` (800 XP) never awarded; `current_beat` stuck at 3
+
+**Where:** `views/desktop/app.py` → `_handle_dm_response()`.
+
+**Symptom:** When the DM emitted `[CLIMAX]`, the story banner displayed but no XP was awarded and `adventure["current_beat"]` stayed at 3 rather than advancing to 4. The adventure structure was permanently desynchronised.
+
+**Root cause:** The `climax_done` branch only displayed the header text. It never called `gc_advance_beat` nor added `climax_xp` to `pending_xp`.
+
+**Fix:**
+```python
+if climax_done:
+    self._display("── The final confrontation is at hand ──\n\n", "header")
+    adv = self.session.get("adventure") or {}
+    if adv.get("current_beat", 0) < 4:
+        adv["current_beat"] = 4
+        pending_xp += adv.get("climax_xp", 0)
+```
+
+---
+
+### 9. Short rest hit dice changes not persisted to disk
+
+**Where:** `views/desktop/app.py` → `_show_short_rest_dialog()._apply()` and `_dev_short_rest()`.
+
+**Symptom:** After spending hit dice on a short rest, the `hit_dice.used` count was updated in memory but `save_character` was never called. If the game was quit and resumed, all spent hit dice were reset — players could effectively take unlimited short rests across sessions.
+
+**Root cause:** Both the dialog `_apply` closure and the DEV panel `_dev_short_rest` called `_update_sidebar()` after the rest but omitted `save_character(self.char)`. The long rest path correctly calls `save_character`, but the short rest path did not.
+
+**Fix:** Added `save_character(self.char)` at the end of both `_apply` and `_dev_short_rest`.
+
+---
+
+### 10. `gs.short_rest` HP cap is a no-op — `_max_hp_cache` never set
+
+**Where:** `models/game_state.py` → `short_rest()`.
+
+**Symptom:** `short_rest()` attempted to cap HP recovery at `_max_hp_cache`, but that key was never written anywhere in the codebase. The `dict.get` fallback resolved to `current_hp + hp_gained`, making the `min()` always return `current_hp + hp_gained` with no upper bound.
+
+**Root cause:** A refactor removed `_max_hp_cache` from the session initialiser but left the reference in `short_rest()`. Because `process_short_rest` in `game_controller.py` calls `char_short_rest` directly (which does cap correctly against `hp["max"]`), `gs.short_rest` became effectively dead code — but still wrong.
+
+**Fix:** Replaced the `_max_hp_cache` lookup with an explicit `max_hp` parameter:
+```python
+def short_rest(session, hp_gained, max_hp):
+    session["hit_dice_spent"] += 1
+    session["current_hp"] = min(session["current_hp"] + hp_gained, max_hp)
+```
+
+---
+
+### 11. `features_gained_at` import failure swallowed silently by Tkinter
+
+**Where:** `models/progression.py` → `_class_features()`.
+
+**Symptom:** If `dnd_data.py` (in the character builder view) failed to import for any reason, `features_gained_at` would raise an `ImportError`. Because `process_xp_award` calls this inside a Tkinter after-callback, the exception was silently swallowed — the level-up dialog would show "Levelled up!" but grant no class features. No error appeared in the UI.
+
+**Root cause:** `_class_features()` crossed an MVC boundary (model importing from view layer) with no error handling. Any failure propagated as an unhandled exception through Tkinter's callback mechanism.
+
+**Fix:** Wrapped the import in a `try/except` that prints a stderr warning and returns `{}` as a safe fallback, so the level-up path degrades gracefully rather than silently:
+```python
+def _class_features():
+    try:
+        ...
+        from dnd_data import CLASS_FEATURES
+        return CLASS_FEATURES
+    except Exception as _e:
+        print(f"WARNING: could not load CLASS_FEATURES: {_e}", file=sys.stderr)
+        return {}
+```
+
+---
+
 ## Repository
 
 ```
