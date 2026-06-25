@@ -350,55 +350,36 @@ class GameApp:
         attacks = self.char.get("attacks", [])
         uses    = self.char.get("feature_uses", {})
 
-        # ── Available attacks reference ────────────────────────────────────────
+        # ── Compact reference (one line each) ──────────────────────────────────
         ref = tk.Frame(self._input_frame, bg=PANEL)
-        ref.pack(fill="x", padx=6, pady=(4, 0))
-
-        tk.Label(ref, text="AVAILABLE ATTACKS", font=("Segoe UI", 8, "bold"),
-                 bg=PANEL, fg=ACCENT).pack(anchor="w")
+        ref.pack(fill="x", padx=6, pady=(4, 2))
 
         if attacks:
+            atk_parts = []
             for atk in attacks:
-                name     = atk["name"]
-                bonus    = atk.get("attack_bonus", 0)
-                damage   = atk.get("damage", "—")
-                dmg_type = atk.get("damage_type", "")
-                ranged   = self._is_ranged_weapon(name)
-                note     = "  ·  ranged — disadvantage if enemy is adjacent" if ranged else ""
-                tk.Label(ref,
-                         text=f"  ⚔  {name}  {bonus:+d} to hit  ·  {damage} {dmg_type}{note}",
-                         font=FONT_SM, bg=PANEL, fg=FG).pack(anchor="w")
+                name   = atk["name"]
+                bonus  = atk.get("attack_bonus", 0)
+                damage = atk.get("damage", "—")
+                suffix = " (ranged)" if self._is_ranged_weapon(name) else ""
+                atk_parts.append(f"{name} {bonus:+d} · {damage}{suffix}")
+            tk.Label(ref, text="⚔  " + "   |   ".join(atk_parts),
+                     font=("Segoe UI", 8), bg=PANEL, fg=FG).pack(anchor="w")
         else:
-            tk.Label(ref, text="  No weapons equipped — type to describe your action.",
-                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+            tk.Label(ref, text="No weapons equipped.",
+                     font=("Segoe UI", 8), bg=PANEL, fg=DIM).pack(anchor="w")
 
-        # ── Combat feature abilities ───────────────────────────────────────────
         combat_uses = {k: v for k, v in uses.items() if k in self._COMBAT_FEATURES}
         if combat_uses:
-            tk.Label(ref, text="", bg=PANEL).pack()
-            tk.Label(ref, text="ABILITIES", font=("Segoe UI", 8, "bold"),
-                     bg=PANEL, fg=ACCENT).pack(anchor="w")
+            ab_parts = []
             for name, data in combat_uses.items():
                 current = data.get("current", 0)
                 max_u   = data.get("max", 1)
-                desc    = self._COMBAT_FEATURES.get(name, "")
                 if current > 0:
-                    tk.Label(ref,
-                             text=f"  ★  {name}  ({current}/{max_u})  ·  {desc}",
-                             font=FONT_SM, bg=PANEL, fg=FG).pack(anchor="w")
+                    ab_parts.append(f"{name} ({current}/{max_u})")
                 else:
-                    tk.Label(ref,
-                             text=f"  ✗  {name}  (0/{max_u}) — no charges remaining",
-                             font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
-
-        # ── Separator + text input ─────────────────────────────────────────────
-        tk.Frame(self._input_frame, bg=BTN_BG, height=1).pack(
-            fill="x", padx=6, pady=(6, 4))
-
-        hint = tk.Label(self._input_frame,
-                        text='Type your action  (e.g. "attack the goblin with my longsword", "use second wind", "dodge")',
-                        font=("Segoe UI", 8), bg=PANEL, fg=DIM, wraplength=600, justify="left")
-        hint.pack(anchor="w", padx=6, pady=(0, 4))
+                    ab_parts.append(f"{name} (0/{max_u} — spent)")
+            tk.Label(ref, text="★  " + "   |   ".join(ab_parts),
+                     font=("Segoe UI", 8), bg=PANEL, fg=DIM).pack(anchor="w")
 
         row = tk.Frame(self._input_frame, bg=PANEL)
         row.pack(fill="x", padx=6, pady=(0, 4))
