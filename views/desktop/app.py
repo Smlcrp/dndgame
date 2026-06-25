@@ -197,7 +197,24 @@ class GameApp:
         self._cond_label = tk.Label(
             self._sb_inner, text="Conditions: —", font=FONT_SM,
             bg=PANEL, fg=DIM, wraplength=285, justify="left")
-        self._cond_label.pack(anchor="w", padx=10, pady=(0,4))
+        self._cond_label.pack(anchor="w", padx=10, pady=(0,2))
+
+        # Inspiration toggle
+        self._insp_btn = tk.Button(
+            self._sb_inner, text="✦  Inspiration",
+            font=FONT_SM, relief="flat", bd=0, padx=8, pady=3,
+            bg=BTN_BG, fg=DIM,
+            activebackground=ACCENT, activeforeground="#1a1a2e",
+            command=self._toggle_inspiration)
+        self._insp_btn.pack(anchor="w", padx=10, pady=(0,4))
+
+        # XP bar
+        self._xp_label = tk.Label(
+            self._sb_inner, text="XP: —", font=FONT_SM, bg=PANEL, fg=DIM)
+        self._xp_label.pack(anchor="w", padx=10)
+        self._xp_bar_canvas = tk.Canvas(
+            self._sb_inner, bg=PANEL, height=6, highlightthickness=0)
+        self._xp_bar_canvas.pack(fill="x", padx=10, pady=(2,6))
 
         # ABILITIES
         _sec("ABILITIES")
@@ -231,14 +248,34 @@ class GameApp:
         self._attacks_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._attacks_frame.pack(fill="x", padx=6, pady=(0,4))
 
+        # FEATURES
+        _sec("FEATURES")
+        self._features_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._features_frame.pack(fill="x", padx=6, pady=(0,4))
+
         # COMBAT ORDER
         _sec("COMBAT")
         self._combat_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._combat_frame.pack(fill="x", padx=6)
 
+        # REST
+        _sec("REST")
+        rest_row = tk.Frame(self._sb_inner, bg=PANEL)
+        rest_row.pack(fill="x", padx=6, pady=(0,8))
+        tk.Button(rest_row, text="Short Rest", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=self._show_short_rest_dialog).pack(
+                      side="left", fill="x", expand=True, padx=(0,3))
+        tk.Button(rest_row, text="Long Rest", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BLUE, activeforeground=FG,
+                  command=self._do_long_rest).pack(
+                      side="left", fill="x", expand=True, padx=(3,0))
+
         # Save & Quit
         tk.Frame(self._sb_inner, bg=BTN_BG, height=1).pack(
-            fill="x", padx=10, pady=(12,4))
+            fill="x", padx=10, pady=(4,4))
         tk.Button(self._sb_inner, text="Save & Quit", font=FONT_SM,
                   bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=8, pady=4,
                   activebackground=ACCENT, activeforeground="#1a1a2e",
@@ -867,6 +904,30 @@ class GameApp:
         self._cond_label.config(
             text="Conditions: " + (", ".join(conds) if conds else "—"))
 
+        # Inspiration
+        insp = self.char.get("inspiration", False)
+        self._insp_btn.config(
+            bg=ACCENT if insp else BTN_BG,
+            fg="#1a1a2e" if insp else DIM)
+
+        # XP bar
+        from models.progression import xp_for_level, XP_THRESHOLDS
+        xp      = self.char.get("experience", 0)
+        xp_cur  = xp_for_level(lvl)
+        xp_next = XP_THRESHOLDS[lvl] if lvl < 20 else XP_THRESHOLDS[19]
+        if lvl >= 20:
+            self._xp_label.config(text=f"XP: {xp}  (Max Level)")
+            ratio_xp = 1.0
+        else:
+            self._xp_label.config(
+                text=f"XP: {xp} / {xp_next}  (Lv {lvl}→{lvl+1})")
+            ratio_xp = max(0.0, min(1.0, (xp - xp_cur) / max(1, xp_next - xp_cur)))
+        self._xp_bar_canvas.delete("all")
+        bw2 = self._xp_bar_canvas.winfo_width() or 260
+        self._xp_bar_canvas.create_rectangle(0, 0, bw2, 6, fill=BTN_BG, outline="")
+        self._xp_bar_canvas.create_rectangle(
+            0, 0, int(bw2 * ratio_xp), 6, fill=ACCENT, outline="")
+
         # Abilities
         for key, lbl in self._ab_labels.items():
             score = ab.get(key, 10)
@@ -912,6 +973,9 @@ class GameApp:
 
         # Attacks (state-aware)
         self._refresh_attacks()
+
+        # Feature charges
+        self._refresh_features()
 
         # Combat order
         for w in self._combat_frame.winfo_children():
@@ -1027,6 +1091,225 @@ class GameApp:
         self._narration.insert("end", "\n\n")
         self._narration.see("end")
         self._narration.config(state="disabled")
+
+    # ── Inspiration & features ────────────────────────────────────────────────
+
+    def _toggle_inspiration(self):
+        if not self.char:
+            return
+        self.char["inspiration"] = not self.char.get("inspiration", False)
+        insp = self.char["inspiration"]
+        self._insp_btn.config(
+            bg=ACCENT if insp else BTN_BG,
+            fg="#1a1a2e" if insp else DIM)
+
+    def _refresh_features(self):
+        for w in self._features_frame.winfo_children():
+            w.destroy()
+        if not self.char:
+            return
+        uses = self.char.get("feature_uses", {})
+        if not uses:
+            tk.Label(self._features_frame, text="—",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
+            return
+
+        for name, data in uses.items():
+            current = data.get("current", 0)
+            max_u   = data.get("max", 1)
+
+            row = tk.Frame(self._features_frame, bg=PANEL)
+            row.pack(fill="x", pady=2)
+
+            # Pip display (≤10) or numeric (>10)
+            if max_u <= 10:
+                pips = "●" * current + "○" * (max_u - current)
+                pip_fg = ACCENT if current > 0 else DIM
+                pip_lbl = tk.Label(row, text=pips, font=("Segoe UI", 9),
+                                   bg=PANEL, fg=pip_fg)
+                pip_lbl.pack(side="left", padx=(4, 4))
+            else:
+                pip_lbl = tk.Label(row, text=f"{current}/{max_u}",
+                                   font=FONT_SM, bg=PANEL,
+                                   fg=ACCENT if current > 0 else DIM)
+                pip_lbl.pack(side="left", padx=(4, 4))
+
+            tk.Label(row, text=name, font=FONT_SM, bg=PANEL,
+                     fg=FG if current > 0 else DIM,
+                     wraplength=150, anchor="w").pack(side="left", fill="x", expand=True)
+
+            if current > 0:
+                use_btn = tk.Button(
+                    row, text="Use", font=("Segoe UI", 8),
+                    bg=BTN_BG, fg=FG, relief="flat", bd=0,
+                    padx=6, pady=2,
+                    activebackground=ACCENT, activeforeground="#1a1a2e",
+                    command=lambda n=name: self._use_feature(n))
+                use_btn.pack(side="right", padx=4)
+
+    def _use_feature(self, name):
+        if not self.char:
+            return
+        uses = self.char.get("feature_uses", {})
+        if name not in uses or uses[name]["current"] <= 0:
+            return
+        uses[name]["current"] -= 1
+        self._display(f"  Used {name}. ({uses[name]['current']}/{uses[name]['max']} remaining)\n\n",
+                      "system")
+        self._refresh_features()
+
+    # ── Rest dialogs ──────────────────────────────────────────────────────────
+
+    def _show_short_rest_dialog(self):
+        if not self.char:
+            return
+        import random
+        hit_dice  = self.char.get("hit_dice", {})
+        total     = hit_dice.get("total", 1)
+        used      = hit_dice.get("used", 0)
+        available = max(0, total - used)
+        die_type  = hit_dice.get("type", "d8")
+        die_max   = int(die_type.replace("d", ""))
+        con_mod   = modifier(self.char.get("abilities", {}).get("constitution", 10))
+        max_hp    = self.char["hp"]["max"]
+        cur_hp    = self.char["hp"]["current"]
+        hp_missing = max_hp - cur_hp
+
+        d = tk.Toplevel(self.root)
+        d.title("Short Rest")
+        d.configure(bg=BG)
+        d.grab_set()
+        d.resizable(False, False)
+        self.root.update_idletasks()
+        rx = self.root.winfo_x() + self.root.winfo_width()  // 2 - 175
+        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 140
+        d.geometry(f"350x280+{rx}+{ry}")
+
+        tk.Frame(d, bg=BLUE, height=4).pack(fill="x")
+        tk.Label(d, text="  Short Rest", font=FONT_HDR,
+                 bg=PANEL, fg=FG, pady=8).pack(fill="x")
+
+        body = tk.Frame(d, bg=BG, padx=16, pady=12)
+        body.pack(fill="both", expand=True)
+
+        tk.Label(body,
+                 text=f"HP: {cur_hp}/{max_hp}   Hit dice: {available}/{total} {die_type} available",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w")
+        tk.Label(body, text="", bg=BG).pack()
+
+        if available == 0:
+            tk.Label(body, text="No hit dice remaining.", font=FONT_SM,
+                     bg=BG, fg=DIM).pack(anchor="w")
+            tk.Button(body, text="Close", font=FONT_SM, bg=BTN_BG, fg=FG,
+                      relief="flat", bd=0, padx=12, pady=6,
+                      command=d.destroy).pack(anchor="e", pady=8)
+            return
+
+        row = tk.Frame(body, bg=BG)
+        row.pack(anchor="w")
+        tk.Label(row, text="Spend ", font=FONT_SM, bg=BG, fg=FG).pack(side="left")
+        dice_var = tk.IntVar(value=1)
+        tk.Spinbox(row, from_=1, to=available, textvariable=dice_var,
+                   width=3, font=FONT_SM, bg=INPUT_BG, fg=FG,
+                   buttonbackground=BTN_BG, relief="flat",
+                   insertbackground=FG).pack(side="left", padx=4)
+        tk.Label(row, text=f"{die_type} hit dice", font=FONT_SM,
+                 bg=BG, fg=FG).pack(side="left")
+
+        avg_per_die = max(1, die_max // 2 + 1 + con_mod)
+        est_lbl = tk.Label(body, font=FONT_SM, bg=BG, fg=DIM)
+        est_lbl.pack(anchor="w", pady=(4, 0))
+        result_lbl = tk.Label(body, text="", font=("Segoe UI", 13, "bold"),
+                              bg=BG, fg=ACCENT)
+        result_lbl.pack(pady=(4, 0))
+
+        btn_row = tk.Frame(body, bg=BG)
+        btn_row.pack(fill="x", pady=(8, 0))
+
+        def _update_est(*_):
+            try:
+                n = max(1, min(int(dice_var.get()), available))
+            except Exception:
+                n = 1
+            est = min(hp_missing, n * avg_per_die)
+            est_lbl.config(text=f"Expected recovery: ~{est} HP")
+
+        dice_var.trace_add("write", _update_est)
+        _update_est()
+
+        def _apply(rolls):
+            from controllers.game_controller import process_short_rest
+            try:
+                n = max(1, min(int(dice_var.get()), available))
+            except Exception:
+                n = 1
+            result = process_short_rest(self.session, self.char, n, rolls[:n])
+            lines = [f"  Short rest: spent {n} {die_type}, recovered {result['hp_recovered']} HP."]
+            if result["features_recharged"]:
+                lines.append(f"  Recharged: {', '.join(result['features_recharged'])}.")
+            self._display("\n".join(lines) + "\n\n", "system")
+            self._update_sidebar()
+            d.destroy()
+
+        def _roll():
+            try:
+                n = max(1, min(int(dice_var.get()), available))
+            except Exception:
+                n = 1
+            rolls = [random.randint(1, die_max) for _ in range(n)]
+            total_hp = sum(max(1, r + con_mod) for r in rolls)
+            result_lbl.config(text=f"Rolled {rolls}  →  +{total_hp} HP")
+            for w in btn_row.winfo_children():
+                w.destroy()
+            tk.Button(btn_row, text=f"Accept +{total_hp} HP",
+                      font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                      relief="flat", bd=0, padx=12, pady=6,
+                      activebackground="#e0c060", activeforeground="#1a1a2e",
+                      command=lambda: _apply(rolls)).pack(side="right")
+
+        def _avg():
+            try:
+                n = max(1, min(int(dice_var.get()), available))
+            except Exception:
+                n = 1
+            _apply([die_max // 2 + 1] * n)
+
+        tk.Button(btn_row, text="Roll Dice", font=FONT_SM,
+                  bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=10, pady=6,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=_roll).pack(side="left", padx=(0, 6))
+        tk.Button(btn_row, text="Take Average", font=FONT_SM,
+                  bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=10, pady=6,
+                  command=_avg).pack(side="left")
+        tk.Button(btn_row, text="Cancel", font=FONT_SM,
+                  bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=10, pady=6,
+                  command=d.destroy).pack(side="right")
+
+    def _do_long_rest(self):
+        if not self.char:
+            return
+        if not tk.messagebox.askyesno(
+                "Long Rest",
+                "Take a long rest?\n\n"
+                "• Full HP restored\n"
+                "• Half your hit dice recovered\n"
+                "• All spell slots restored\n"
+                "• All long-rest features recharged\n"
+                "• Conditions cleared",
+                parent=self.root):
+            return
+        from controllers.game_controller import process_long_rest
+        result = process_long_rest(self.session, self.char)
+        from models.character import save_character
+        save_character(self.char)
+        lines = [f"  Long rest complete. Recovered {result['hp_recovered']} HP."]
+        slots = {k: v for k, v in result.get("slots_recovered", {}).items() if v}
+        if slots:
+            lines.append(f"  Spell slots restored: {', '.join(f'L{k}×{v}' for k,v in slots.items())}.")
+        if result.get("features_recharged"):
+            lines.append(f"  Features recharged: {', '.join(result['features_recharged'])}.")
+        self._display("\n".join(lines) + "\n\n", "system")
+        self._update_sidebar()
 
     # ── XP & level-up ─────────────────────────────────────────────────────────
 
