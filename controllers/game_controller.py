@@ -14,6 +14,7 @@ from models.progression import (
     current_max_uses, recharges_on_short_rest,
 )
 from models.enemies import ENEMIES, enemy_list_for_dm
+from models.adventure import generate_adventure, advance_beat as _adv_advance_beat
 
 SKILL_ABILITIES = {
     "Acrobatics": "dexterity",    "Animal Handling": "wisdom",
@@ -239,3 +240,18 @@ def process_long_rest(session, char):
         "slots_recovered":    slots_recovered,
         "features_recharged": recharged,
     }
+
+
+def start_adventure(session, char):
+    """Generate and store a fresh adventure in the session. Returns the adventure dict."""
+    adv = generate_adventure(char)
+    session["adventure"] = adv
+    return adv
+
+
+def advance_beat(session):
+    """Advance the session's adventure to the next beat. Returns XP awarded (0 if none)."""
+    adv = session.get("adventure")
+    if not adv:
+        return 0
+    return _adv_advance_beat(adv)

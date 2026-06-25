@@ -268,7 +268,7 @@ A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in heade
 
 ---
 
-### 🔜 NEXT — DM Adventure Structure
+### ✅ DONE — DM Adventure Structure
 
 **Context from DMG research:** The current DM has no concept of story arc — it narrates indefinitely with no structure. The DMG defines adventures as having: a hook → rising tension → climax → resolution.
 
@@ -279,11 +279,15 @@ A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in heade
 - Balance the three pillars: combat, exploration (discovery/mystery), social (named NPCs).
 - Adventures should feel like a story with a beginning, middle, and end — not an infinite sandbox.
 
-**Implementation approach (to be designed):**
-- New `session["adventure"]` dict: `{hook, antagonist, beats: [str×3], climax, current_beat: 0}`
-- `dm.py` `_build_system_prompt` includes the adventure outline.
-- New `[BEAT]` or `[CLIMAX]` tags the DM can emit to advance the story arc.
-- XP awards tied to beat completion, not just combat.
+**Implementation (complete):**
+- `models/adventure.py` — 8 adventure templates (town, wilderness, dungeon, urban, coastal). `generate_adventure(char)` picks one randomly. `advance_beat(adventure)` advances `current_beat` and returns XP. `adventure_prompt_block(adventure)` returns the system prompt section.
+- `session["adventure"]` — stored on session dict. Fields: `title, setting, hook, antagonist {name, role, motivation, plan}, beats [str×3], climax, resolution, current_beat (0–5), beat_xp [150,300,500], climax_xp 800`.
+- `models/dm.py` — `_build_system_prompt(character, session=None)` now injects `adventure_prompt_block` after the enemy list. Parses three new tags:
+  - `[BEAT]` → `beat_complete` event — advance beat, award XP (150/300/500)
+  - `[CLIMAX]` → `climax_reached` event — display final confrontation header
+  - `[BREAK]` → `break_suggested` event — display session break banner in narration
+- `controllers/game_controller.py` — `start_adventure(session, char)` and `advance_beat(session)` public API.
+- `views/desktop/app.py` — `start_adventure()` called in `_launch_new_adventure`. `_advance_beat()` and `_show_break_point()` methods. Break point banner is embedded directly in the narration Text widget.
 
 ---
 

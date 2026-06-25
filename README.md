@@ -20,9 +20,10 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
 | `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
 | `models/enemies.py` | ✅ Complete | Comprehensive SRD enemy list CR 0–30 (~160 monsters) |
+| `models/adventure.py` | ✅ Complete | 8 adventure templates with structured story arcs |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** DM adventure structure improvements (story arc awareness, villain/antagonist, three-pillar balance) and Character Progression Phase 2 & 3.
+> **Next milestone:** Character Progression Phase 2 & 3 (XP bar, feature charges, rest buttons, full DEV panel).
 
 ---
 
@@ -73,6 +74,30 @@ The sidebar combat tracker with HP bars for all combatants:
 - Enemy turns resolve automatically with narrated outcomes
 - Death saves trigger automatically when the player reaches 0 HP
 - Sessions save on quit and resume mid-combat
+
+---
+
+### Adventure Structure
+
+Every new adventure is drawn from a library of 8 structured story templates. Each adventure has:
+
+- A **hook** — the opening situation that draws the character in
+- A named **antagonist** with a motivation and a plan already in motion
+- Three escalating **beats** (Act 1 → Act 2 → Act 3) that build toward a climax
+- A **climax** — the final confrontation
+- A **resolution** — aftermath and closure
+
+The DM tracks the current beat and steers the story toward it without rushing. When a beat resolves naturally, the DM emits a `[BEAT]` tag — the engine advances the arc, displays a chapter transition, and awards story XP (150 / 300 / 500 XP per beat). The final act emits `[CLIMAX]` instead.
+
+**Natural break points** — when the story reaches a safe resting point between beats (after combat, at an inn, at the end of a scene), the DM emits `[BREAK]` and a banner appears in the narration:
+
+```
+────────────────────────────────────────────────────
+  Good stopping point — this is a natural break
+  in the story. Save & Quit when ready, or keep
+  going if you want to push on.
+────────────────────────────────────────────────────
+```
 
 ---
 

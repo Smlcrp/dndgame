@@ -32,6 +32,8 @@ def empty_session(character_name="", session_name=""):
         "round":          0,
         "initiative_order": [],
         "current_turn":   0,
+
+        "adventure":      None,
     }
 
 

@@ -11,6 +11,7 @@ if str(_root) not in sys.path:
 from models import game_state as gs
 from models.character import modifier
 from models.enemies import enemy_list_for_dm
+from models.adventure import adventure_prompt_block
 
 OLLAMA_URL           = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_MODEL = "HammerAI/hermes-3-llama-3.1:8b-q4_K_M"
@@ -24,7 +25,7 @@ class DungeonMaster:
     def __init__(self, model=None):
         self.model = model or DEFAULT_OLLAMA_MODEL
 
-    def _build_system_prompt(self, character):
+    def _build_system_prompt(self, character, session=None):
         name  = character.get("name") or "the adventurer"
         race  = character.get("race", "Human")
         cls   = character.get("class", "Fighter")
@@ -82,10 +83,10 @@ NARRATION RULES — READ CAREFULLY:
 10. If this is the first message, open with a vivid scene that fits the character's background and class.
 11. Keep responses focused. One scene at a time.
 
-{enemy_list_for_dm(level)}"""
+{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}"""
 
     def _messages_for_ollama(self, session, character, player_input):
-        messages = [{"role": "system", "content": self._build_system_prompt(character)}]
+        messages = [{"role": "system", "content": self._build_system_prompt(character, session)}]
         for entry in session.get("history", []):
             role = "user" if entry["role"] == "player" else "assistant"
             messages.append({"role": role, "content": entry["text"]})
@@ -140,7 +141,17 @@ NARRATION RULES — READ CAREFULLY:
         for m in re.finditer(r"\[XP:\s*(\d+)\]", raw_text, re.IGNORECASE):
             events.append({"type": "xp_award", "amount": int(m.group(1))})
 
+        if re.search(r"\[BEAT\]", raw_text, re.IGNORECASE):
+            events.append({"type": "beat_complete"})
+
+        if re.search(r"\[CLIMAX\]", raw_text, re.IGNORECASE):
+            events.append({"type": "climax_reached"})
+
+        if re.search(r"\[BREAK\]", raw_text, re.IGNORECASE):
+            events.append({"type": "break_suggested"})
+
         clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
+        clean = re.sub(r"\[(BEAT|CLIMAX|BREAK)\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
 
         return clean, events

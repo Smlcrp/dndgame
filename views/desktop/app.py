@@ -19,6 +19,8 @@ from controllers.game_controller import (
     process_enemy_turn,
     process_death_save,
     process_xp_award,
+    start_adventure,
+    advance_beat as gc_advance_beat,
     SKILL_ABILITIES,
 )
 from models.progression import is_asi_level, get_subclass_trigger
@@ -822,6 +824,7 @@ class GameApp:
         self.session = gs.empty_session(character_name=char_name,
                                         session_name=char_name)
         gs.init_hp(self.session, self.char)
+        start_adventure(self.session, self.char)
         d.destroy()
         self._start_adventure(new=True)
 
@@ -1026,7 +1029,11 @@ class GameApp:
             self._set_input_enabled(True)
             return
 
-        pending_xp = 0
+        pending_xp  = 0
+        beat_done   = False
+        climax_done = False
+        show_break  = False
+
         for ev in result["events"]:
             if ev["type"] == "combat_start":
                 self._start_combat(ev["enemies"])
@@ -1036,6 +1043,21 @@ class GameApp:
                 return
             elif ev["type"] == "xp_award":
                 pending_xp += ev["amount"]
+            elif ev["type"] == "beat_complete":
+                beat_done = True
+            elif ev["type"] == "climax_reached":
+                climax_done = True
+            elif ev["type"] == "break_suggested":
+                show_break = True
+
+        if climax_done:
+            self._display("── The final confrontation is at hand ──\n\n", "header")
+
+        if beat_done:
+            pending_xp += self._advance_beat()
+
+        if show_break:
+            self._show_break_point()
 
         if pending_xp:
             self._award_xp(pending_xp)
@@ -1069,6 +1091,30 @@ class GameApp:
             pass
         self._display("── Story Mode ended ──\n\n", "header")
         self._set_input_enabled(True)
+
+    def _advance_beat(self):
+        """Advance the adventure beat and display a transition message. Returns XP earned."""
+        xp = gc_advance_beat(self.session)
+        adv  = self.session.get("adventure", {})
+        beat = adv.get("current_beat", 0)
+        if beat <= 3:
+            self._display(f"── Act {beat} begins ──\n\n", "header")
+        elif beat == 4:
+            self._display("── The story reaches its climax ──\n\n", "header")
+        return xp
+
+    def _show_break_point(self):
+        """Embed a break-point banner in the narration suggesting a good save point."""
+        self._narration.config(state="normal")
+        self._narration.insert("end",
+            "─" * 52 + "\n"
+            "  Good stopping point — this is a natural break\n"
+            "  in the story. Save & Quit when ready, or keep\n"
+            "  going if you want to push on.\n"
+            + "─" * 52 + "\n\n",
+            "system")
+        self._narration.see("end")
+        self._narration.config(state="disabled")
 
     def _handle_dm_error(self, msg, on_complete=None):
         self._erase_last_line()
