@@ -10,6 +10,7 @@ if str(_root) not in sys.path:
 
 from models import game_state as gs
 from models.character import modifier
+from models.enemies import enemy_list_for_dm
 
 OLLAMA_URL           = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
@@ -79,7 +80,9 @@ NARRATION RULES — READ CAREFULLY:
    [XP: N]
    Example: [XP: 50] after defeating a goblin, [XP: 200] after completing a quest. Scale to difficulty.
 10. If this is the first message, open with a vivid scene that fits the character's background and class.
-11. Keep responses focused. One scene at a time."""
+11. Keep responses focused. One scene at a time.
+
+{enemy_list_for_dm(level)}"""
 
     def _messages_for_ollama(self, session, character, player_input):
         messages = [{"role": "system", "content": self._build_system_prompt(character)}]

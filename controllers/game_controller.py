@@ -13,49 +13,7 @@ from models.progression import (
     features_gained_at, feature_charges_gained_at,
     current_max_uses, recharges_on_short_rest,
 )
-
-# ── Enemy data ─────────────────────────────────────────────────────────────────
-
-ENEMY_STATS = {
-    "Bandit":          {"hp": 11, "ac": 12, "xp": 25,  "initiative_mod": 1,
-                        "attacks": [{"name": "Scimitar",   "bonus": 3, "damage": "1d6+1", "damage_type": "slashing"}]},
-    "Cultist":         {"hp":  9, "ac": 12, "xp": 25,  "initiative_mod": 1,
-                        "attacks": [{"name": "Dagger",     "bonus": 3, "damage": "1d4+1", "damage_type": "piercing"}]},
-    "Goblin":          {"hp":  7, "ac": 15, "xp": 50,  "initiative_mod": 2,
-                        "attacks": [{"name": "Scimitar",   "bonus": 4, "damage": "1d6+2", "damage_type": "slashing"}]},
-    "Kobold":          {"hp":  5, "ac": 12, "xp": 25,  "initiative_mod": 2,
-                        "attacks": [{"name": "Dagger",     "bonus": 4, "damage": "1d4+2", "damage_type": "piercing"}]},
-    "Skeleton":        {"hp": 13, "ac": 13, "xp": 50,  "initiative_mod": 2,
-                        "attacks": [{"name": "Shortsword", "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
-    "Zombie":          {"hp": 22, "ac":  8, "xp": 50,  "initiative_mod":-2,
-                        "attacks": [{"name": "Slam",       "bonus": 3, "damage": "1d6+1", "damage_type": "bludgeoning"}]},
-    "Wolf":            {"hp": 11, "ac": 13, "xp": 50,  "initiative_mod": 2,
-                        "attacks": [{"name": "Bite",       "bonus": 4, "damage": "2d4+2", "damage_type": "piercing"}]},
-    "Guard":           {"hp": 11, "ac": 16, "xp": 25,  "initiative_mod": 1,
-                        "attacks": [{"name": "Spear",      "bonus": 3, "damage": "1d6+1", "damage_type": "piercing"}]},
-    "Gnoll":           {"hp": 22, "ac": 15, "xp": 100, "initiative_mod": 1,
-                        "attacks": [{"name": "Spear",      "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
-    "Hobgoblin":       {"hp": 11, "ac": 18, "xp": 100, "initiative_mod": 1,
-                        "attacks": [{"name": "Longsword",  "bonus": 3, "damage": "1d8+1", "damage_type": "slashing"}]},
-    "Lizardfolk":      {"hp": 22, "ac": 15, "xp": 100, "initiative_mod": 1,
-                        "attacks": [{"name": "Bite",       "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
-    "Orc":             {"hp": 15, "ac": 13, "xp": 100, "initiative_mod": 1,
-                        "attacks": [{"name": "Greataxe",   "bonus": 5, "damage": "1d12+3","damage_type": "slashing"}]},
-    "Thug":            {"hp": 32, "ac": 11, "xp": 100, "initiative_mod": 0,
-                        "attacks": [{"name": "Mace",       "bonus": 4, "damage": "1d6+2", "damage_type": "bludgeoning"}]},
-    "Spy":             {"hp": 27, "ac": 12, "xp": 200, "initiative_mod": 2,
-                        "attacks": [{"name": "Shortsword", "bonus": 4, "damage": "1d6+2", "damage_type": "piercing"}]},
-    "Ogre":            {"hp": 59, "ac": 11, "xp": 450, "initiative_mod":-1,
-                        "attacks": [{"name": "Greatclub",  "bonus": 6, "damage": "2d8+4", "damage_type": "bludgeoning"}]},
-    "Troll":           {"hp": 84, "ac": 15, "xp":1800, "initiative_mod": 2,
-                        "attacks": [{"name": "Claw",       "bonus": 7, "damage": "2d6+4", "damage_type": "slashing"}]},
-    "Bandit Captain":  {"hp": 65, "ac": 15, "xp": 450, "initiative_mod": 2,
-                        "attacks": [{"name": "Scimitar",   "bonus": 5, "damage": "1d6+3", "damage_type": "slashing"}]},
-    "Werewolf":        {"hp": 58, "ac": 12, "xp": 700, "initiative_mod": 1,
-                        "attacks": [{"name": "Claws",      "bonus": 4, "damage": "2d4+2", "damage_type": "slashing"}]},
-    "Vampire Spawn":   {"hp": 82, "ac": 15, "xp":1800, "initiative_mod": 3,
-                        "attacks": [{"name": "Claws",      "bonus": 6, "damage": "2d4+3", "damage_type": "slashing"}]},
-}
+from models.enemies import ENEMIES, enemy_list_for_dm
 
 SKILL_ABILITIES = {
     "Acrobatics": "dexterity",    "Animal Handling": "wisdom",
@@ -90,7 +48,8 @@ def build_enemy_list(enemy_specs, player_level):
     """Build a list of enemy dicts from DM event specs."""
     enemies = []
     for spec in enemy_specs:
-        base  = ENEMY_STATS.get(spec["name"], _enemy_defaults(spec["name"], player_level))
+        data  = ENEMIES.get(spec["name"])
+        base  = data if data is not None else _enemy_defaults(spec["name"], player_level)
         count = spec.get("count", 1)
         for i in range(count):
             label = spec["name"] if count == 1 else f"{spec['name']} {i+1}"
