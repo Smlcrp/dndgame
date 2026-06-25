@@ -293,20 +293,52 @@ Remaining mechanical work after progression:
 - Expanded enemy roster and encounter tables
 - Multiclassing (defer until single-class leveling is solid)
 
-### Stage 2 — Self-Contained Installer
-**⚠️ STOP — talk to the user about the vision before building anything here.**
+### Stage 2 — Electron + Flask Migration (confirmed plan)
+Migrate from Tkinter to a proper game architecture: **Flask backend + HTML/JS/CSS frontend packaged via Electron**.
 
-The goal is a game that installs and runs like any normal PC game — no manual Python setup, no terminal. Before writing any code for this stage, discuss:
+**Why this path:**
+- Tkinter has a hard ceiling on visual quality and cannot support the Steam Overlay (requires OpenGL/D3D)
+- The MVC structure already anticipates this — controllers return plain dicts, nothing in models touches Tkinter
+- Electron + Flask is the proven path for Python-backed desktop games on Steam
+- NW.js is also a viable alternative (5,700+ Steam games use it); evaluate at build time
+- **Tauri is off the table** — its Steam integration requires writing Rust, which defeats using Python as the backend
+
+**Architecture after migration:**
+- `controllers/` unchanged — same functions called by Flask routes instead of Tkinter callbacks
+- `views/web/api.py` becomes the real backend (Flask routes, JSON responses)
+- `views/desktop/` retired once web UI reaches feature parity
+- Frontend: HTML/CSS/JS, styled with Bootstrap or equivalent
+- Packaged as an Electron app with a bundled Ollama setup flow
+
+**⚠️ STOP before building — discuss with the user:**
 - Whether to bundle Ollama + model in the installer or download on first run (models are 4–8 GB)
-- Whether to stay Tkinter or move to a web-based UI (Electron/Tauri wrapping Flask) — this decision changes the entire packaging approach
-- Target audience and distribution method (GitHub releases, itch.io, etc.)
-
-High-level options to discuss:
-- **Tkinter path:** PyInstaller to freeze the Python app → NSIS or Inno Setup wraps it + Ollama installer into one .exe
-- **Web UI path:** Flask backend + HTML/JS frontend packaged as Electron or Tauri → ships as a native app with CSS/Bootstrap UI, built-in Ollama management
+- Target distribution (GitHub releases, itch.io, Steam)
+- Scene architecture: make the Scene pattern explicit before building the frontend (MainMenuScene, GameScene, CombatScene — each a class with `on_enter()`, `update()`, `render()`)
 
 ### Stage 3 — UI Polish
-Last. The "make it pretty" pass only makes sense once Stage 1 is done and the Stage 2 packaging decision is made (since that decision determines whether we use Tkinter widgets or HTML/CSS).
+Full CSS/Bootstrap pass once the Electron shell is running and mechanics are complete.
+
+---
+
+## Steam (Low Priority — Future Reference)
+
+Notes for when Steam distribution becomes relevant. Do not act on any of this until Stage 2 is complete and the user explicitly asks.
+
+### What Steam actually requires
+- **`SteamAPI_RunCallbacks()` must be called at least once per second** — the only hard architectural constraint. In an Electron app this goes in the main process on a 1-second interval
+- **Steam Overlay** requires OpenGL or Direct3D rendering. Electron can support this; plain Tkinter and plain HTML cannot without GPU-accelerated rendering enabled
+- **Steam Cloud saves** — use Auto-Cloud (config file only, no code changes needed). Saves must be files on disk, not in the Windows registry. Current `data/sessions/` JSON layout is already correct; just configure the Auto-Cloud path in Steamworks
+- **Steam achievements** — call `SteamUserStats()->SetAchievement()` then `StoreStats()`. In Python via Steamworks flat C API using `ctypes`, or via the SteamworksPy compiled wrapper (DLL/SO — not pure Python)
+
+### Python + Steam integration options
+- **`ctypes` + flat C API** — Steamworks provides a special flat C API for language interop; Python can call it directly via `ctypes` without C++ bindings
+- **SteamworksPy** — compiled native extension (DLL on Windows), ships alongside a `steamworks.py` wrapper. Requires distributing compiled binaries
+- **Steamworks.js / Greenworks** — JavaScript bindings for Electron; the most natural fit once on the Electron path
+
+### Disk layout Steam expects
+- Save files: `%APPDATA%` or `%LOCALAPPDATA%\[GameName]\saves\` on Windows
+- Config: same parent folder as saves
+- Do not use the Windows registry for any game state
 
 ---
 
