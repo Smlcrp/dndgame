@@ -223,8 +223,10 @@ def _build_animation(face_normal, face_idx):
     """Pre-compute 100 eased frames that tumble to land on the given face."""
     rng = random.Random(face_idx * 137 + 42)
     rx_t, ry_t = _target_angles(face_normal)
-    extra_rx  = rng.randint(2, 4)
-    extra_ry  = rng.randint(2, 4)
+    # Non-integer multiples ensure the fractional part puts the die on a
+    # different starting face (integer multiples would be ≡ 0 mod 2π).
+    extra_rx  = rng.uniform(2.3, 3.7)
+    extra_ry  = rng.uniform(2.3, 3.7)
     exp_rx    = rng.uniform(2.6, 3.4)
     exp_ry    = rng.uniform(2.6, 3.4)
     rx_start  = rx_t - extra_rx * 2 * math.pi

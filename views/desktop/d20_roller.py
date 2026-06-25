@@ -62,8 +62,8 @@ def _angle_diff(a, b):
 def _generate_animation(face_idx, seed):
     rng = random.Random(seed)
     rx_t, ry_t = _face_target_angles(face_idx)
-    extra_rx = rng.randint(2, 4)
-    extra_ry = rng.randint(2, 4)
+    extra_rx = rng.uniform(2.3, 3.7)
+    extra_ry = rng.uniform(2.3, 3.7)
     exp_rx = rng.uniform(2.6, 3.4)
     exp_ry = rng.uniform(2.6, 3.4)
     rx_start = rx_t - extra_rx * 2 * math.pi
