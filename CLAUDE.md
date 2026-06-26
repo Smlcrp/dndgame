@@ -365,7 +365,7 @@ Build full D&D 5e character progression. Execute in three committed phases so co
 
 ---
 
-### NEXT — Actions Reference Panel + DM-Driven Action Parsing
+### ✅ DONE — Actions Reference Panel + DM-Driven Action Parsing
 
 Replace the current compact attack/feature text block above the combat input bar with an "⚔ Actions" button that opens a read-only reference panel. All mechanical actions are still triggered through the player's typed dialogue — the DM parses natural language to determine what action and bonus action are being used.
 

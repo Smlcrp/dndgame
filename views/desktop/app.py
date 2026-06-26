@@ -487,39 +487,13 @@ class GameApp:
         for w in self._input_frame.winfo_children():
             w.destroy()
 
-        attack_opts = self._get_attack_options()
-        uses        = self.char.get("feature_uses", {}) if self.char else {}
-
-        # ── Compact reference (one line each) ──────────────────────────────────
-        ref = tk.Frame(self._input_frame, bg=PANEL)
-        ref.pack(fill="x", padx=6, pady=(4, 2))
-
-        if attack_opts:
-            parts = []
-            for opt in attack_opts:
-                mode_tag = "  [bonus action]" if opt.get("mode") == "offhand" else ""
-                parts.append(f"{opt['label']} {opt['bonus']:+d} · {opt['damage']} {opt['dmg_type']}{mode_tag}")
-            tk.Label(ref, text="⚔  " + "   |   ".join(parts),
-                     font=("Segoe UI", 8), bg=PANEL, fg=FG).pack(anchor="w")
-        else:
-            tk.Label(ref, text="No weapons equipped.",
-                     font=("Segoe UI", 8), bg=PANEL, fg=DIM).pack(anchor="w")
-
-        combat_uses = {k: v for k, v in uses.items() if k in self._COMBAT_FEATURES}
-        if combat_uses:
-            ab_parts = []
-            for name, data in combat_uses.items():
-                current = data.get("current", 0)
-                max_u   = data.get("max", 1)
-                if current > 0:
-                    ab_parts.append(f"{name} ({current}/{max_u})")
-                else:
-                    ab_parts.append(f"{name} (0/{max_u} — spent)")
-            tk.Label(ref, text="★  " + "   |   ".join(ab_parts),
-                     font=("Segoe UI", 8), bg=PANEL, fg=DIM).pack(anchor="w")
-
         row = tk.Frame(self._input_frame, bg=PANEL)
-        row.pack(fill="x", padx=6, pady=(0, 4))
+        row.pack(fill="x", padx=6, pady=(4, 4))
+
+        tk.Button(row, text="⚔ Actions", font=FONT_SM,
+                  bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
+                  activebackground=ACCENT, activeforeground="#1a1a2e",
+                  command=self._open_action_panel).pack(side="left", padx=(0, 4))
 
         self._combat_entry = tk.Entry(
             row, bg=INPUT_BG, fg=FG, font=FONT_BODY,
@@ -539,6 +513,149 @@ class GameApp:
                       bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
                       activebackground=ACCENT, activeforeground="#1a1a2e",
                       command=self._open_spell_picker).pack(side="right", padx=(0, 4))
+
+    # ── Action reference panel ────────────────────────────────────────────────
+
+    def _tooltip_show(self, event, text):
+        self._tooltip_hide()
+        tw = tk.Toplevel(self.root)
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tk.Label(tw, text=text, font=FONT_SM, bg="#2a2a1a", fg=ACCENT,
+                 relief="flat", bd=0, padx=8, pady=4).pack()
+        tw.update_idletasks()
+        x = event.x_root + 14
+        y = event.y_root + 14
+        tw.geometry(f"+{x}+{y}")
+        self._active_tooltip = tw
+
+    def _tooltip_hide(self, _event=None):
+        tw = getattr(self, "_active_tooltip", None)
+        if tw:
+            try:
+                tw.destroy()
+            except Exception:
+                pass
+        self._active_tooltip = None
+
+    def _open_action_panel(self):
+        INCAPACITATING = {"Stunned", "Paralyzed", "Incapacitated", "Unconscious"}
+        player_comb    = next((c for c in self.session.get("initiative_order", [])
+                               if c.get("is_player")), None)
+        p_conds        = set(player_comb.get("conditions", []) if player_comb
+                             else self.session.get("conditions", []))
+        action_blocked = bool(INCAPACITATING & p_conds)
+        blocked_reason = f"Condition: {', '.join(INCAPACITATING & p_conds)}" if action_blocked else ""
+
+        d = tk.Toplevel(self.root)
+        d.title("Available Actions")
+        d.configure(bg=BG)
+        d.resizable(False, False)
+
+        pad_x = 16
+
+        def section(label):
+            tk.Frame(d, bg=ACCENT, height=1).pack(fill="x", padx=pad_x, pady=(10, 0))
+            tk.Label(d, text=label, font=FONT_SM, bg=BG, fg=ACCENT).pack(
+                anchor="w", padx=pad_x, pady=(2, 4))
+
+        def row(text, available, reason=""):
+            fg_col = FG if available else DIM
+            lbl = tk.Label(d, text=text, font=FONT_BODY, bg=BG, fg=fg_col,
+                           cursor="arrow", anchor="w", justify="left")
+            lbl.pack(fill="x", padx=pad_x + 8, pady=1)
+            if not available and reason:
+                lbl.bind("<Enter>", lambda e, r=reason: self._tooltip_show(e, r))
+                lbl.bind("<Leave>", self._tooltip_hide)
+
+        # ── ACTIONS ──────────────────────────────────────────────────────────
+        section("⚔  ACTIONS")
+
+        attack_opts = self._get_attack_options()
+        main_attacks = [o for o in attack_opts if o.get("mode") != "offhand"]
+        if main_attacks:
+            for opt in main_attacks:
+                text = f"  ⚔  {opt['label']}  {opt['bonus']:+d} · {opt['damage']} {opt['dmg_type']}"
+                row(text, available=not action_blocked,
+                    reason=blocked_reason or "")
+        else:
+            row("  ⚔  No weapons equipped", available=False, reason="Equip a weapon in the character sheet")
+
+        sc = self.char.get("spellcasting", {}) if self.char else {}
+        if sc.get("enabled", False):
+            spells_avail = bool(get_available_combat_spells(self.char))
+            row("  ✦  Cast a Spell", available=spells_avail and not action_blocked,
+                reason=blocked_reason or "No castable combat spells available")
+
+        tk.Label(d, text="  ─── Standard Actions ───", font=FONT_SM,
+                 bg=BG, fg=DIM).pack(anchor="w", padx=pad_x + 8, pady=(4, 0))
+        for std in ("Dash", "Dodge", "Disengage", "Hide"):
+            row(f"  ↳  {std}", available=not action_blocked, reason=blocked_reason)
+
+        # ── BONUS ACTIONS ─────────────────────────────────────────────────────
+        section("★  BONUS ACTIONS")
+
+        offhand = [o for o in attack_opts if o.get("mode") == "offhand"]
+        for opt in offhand:
+            text = f"  ⚔  {opt['label']}  {opt['bonus']:+d} · {opt['damage']} {opt['dmg_type']}"
+            row(text, available=not action_blocked, reason=blocked_reason)
+
+        uses = self.char.get("feature_uses", {}) if self.char else {}
+        bonus_features = {k: v for k, v in uses.items() if k in self._BONUS_ACTION_FEATURES}
+        if bonus_features:
+            for fname, data in bonus_features.items():
+                cur = data.get("current", 0)
+                mx  = data.get("max", 1)
+                avail = cur > 0
+                text  = f"  ★  {fname}  ({cur}/{mx})"
+                row(text, available=avail,
+                    reason=f"No charges remaining — {cur}/{mx}")
+        else:
+            row("  No bonus actions available", available=False, reason="")
+
+        tk.Label(d, text="  Describe your action in the text bar below.",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", padx=pad_x, pady=(10, 12))
+
+        d.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width()  - d.winfo_width())  // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - d.winfo_height()) // 2
+        d.geometry(f"+{x}+{y}")
+        d.bind("<Escape>", lambda _e: d.destroy())
+
+    # ── Client-side fallback action parsing ───────────────────────────────────
+
+    def _parse_action_from_text(self, text):
+        option = self._find_weapon_in_text(text)
+        if option and option.get("mode") != "offhand":
+            return {"type": "action_taken", "action": "attack",
+                    "weapon": option["weapon"], "mode": option.get("mode"),
+                    "damage_override": option.get("damage_override")}
+        from models.spells import SPELLS
+        text_lower = text.lower()
+        for name in SPELLS:
+            if name.lower() in text_lower:
+                available = get_available_combat_spells(self.char)
+                if any(a["name"] == name for a in available):
+                    return {"type": "action_taken", "action": "spell",
+                            "spell": name, "slot": None}
+        feature = self._detect_feature_in_text(text)
+        if feature and feature not in self._BONUS_ACTION_FEATURES:
+            return {"type": "action_taken", "action": "feature", "feature": feature}
+        for std in ("dodge", "dash", "disengage", "hide"):
+            if std in text_lower:
+                return {"type": "action_taken", "action": std}
+        return None
+
+    def _parse_bonus_from_text(self, text):
+        option = self._find_weapon_in_text(text)
+        if option and option.get("mode") == "offhand":
+            return {"type": "bonus_action_taken", "action": "attack",
+                    "weapon": option["weapon"],
+                    "damage_override": option.get("damage_override")}
+        feature = self._detect_feature_in_text(text)
+        if feature and feature in self._BONUS_ACTION_FEATURES:
+            return {"type": "bonus_action_taken", "action": "feature", "feature": feature}
+        return None
 
     # Bonus-action features that don't consume the attack action
     _BONUS_ACTION_FEATURES = {
@@ -572,72 +689,99 @@ class GameApp:
         return True
 
     def _send_combat_action(self):
-        text = getattr(self, "_combat_entry", None)
-        if not text:
+        if not getattr(self, "_combat_entry", None):
             return
         action = self._combat_entry.get().strip()
         if not action:
             return
         self._combat_entry.delete(0, "end")
         self._set_input_enabled(False)
-
         self._display(f"  You: {action}\n\n", "player")
         self._combat_last_action = action
 
-        feature  = self._detect_feature_in_text(action)
-        option   = self._find_weapon_in_text(action)
-        is_bonus = feature in self._BONUS_ACTION_FEATURES if feature else False
+        def _end_turn():
+            cb.end_turn(self.session)
+            self.root.after(300, self._next_turn)
 
-        # Apply feature if found
-        if feature:
-            feat_ok = self._apply_combat_feature(feature)
-            if not feat_ok:
-                # Out of charges — re-enable input so player can choose again
-                self._build_combat_input()
+        def _on_dm_result(result):
+            events    = result.get("events", [])
+            action_ev = next((e for e in events if e["type"] == "action_taken"), None)
+            bonus_ev  = next((e for e in events if e["type"] == "bonus_action_taken"), None)
+
+            # Client-side fallback if DM didn't emit tags
+            if not action_ev:
+                action_ev = self._parse_action_from_text(action)
+            if not bonus_ev:
+                bonus_ev = self._parse_bonus_from_text(action)
+
+            # Apply bonus action feature first (if any)
+            if bonus_ev and bonus_ev.get("action") == "feature":
+                self._apply_combat_feature(bonus_ev["feature"])
+
+            if not action_ev:
+                _end_turn()
                 return
 
-        # Try weapon attack
-        if option:
-            self._do_player_attack(option["weapon"],
-                                   damage_override=option.get("damage_override"),
-                                   label=option["label"])
-            return
+            act = action_ev.get("action", "")
 
-        # Feature was used (bonus action) but no weapon attack found — let player attack
-        if feature and is_bonus:
-            self._display(
-                f"  Bonus action used. Now choose your attack action.\n\n", "system")
-            self._build_combat_input()
-            return
+            if act == "attack":
+                weapon   = action_ev.get("weapon", "")
+                mode     = action_ev.get("mode")
+                dmg_ovr  = action_ev.get("damage_override")
+                opts     = self._get_attack_options()
+                mode_map = {"twohanded": "melee_2h", "thrown": "thrown", "ranged": "ranged"}
+                mapped   = mode_map.get(mode, mode)
+                opt = next((o for o in opts
+                            if o["weapon"].lower() == weapon.lower()
+                            and (mapped is None or o.get("mode") == mapped)), None)
+                if opt is None:
+                    opt = next((o for o in opts
+                                if o["weapon"].lower() == weapon.lower()), None)
+                if opt:
+                    dmg_ovr = dmg_ovr or opt.get("damage_override")
+                    lbl     = opt["label"]
+                else:
+                    lbl = weapon
+                self._do_player_attack(weapon, damage_override=dmg_ovr,
+                                       label=lbl, skip_dm_call=True)
 
-        # Pure narrative / full-action feature (Lay on Hands, etc.)
-        if feature:
-            def _end_feature_turn():
-                cb.end_turn(self.session)
-                self._next_turn()
-            self._dm_call(action, on_complete=_end_feature_turn)
-            return
-
-        # Nothing matched — give specific feedback
-        thrown_words = {"throw", "thrown", "hurl", "toss", "fling", "chuck"}
-        if any(w in action.lower() for w in thrown_words):
-            weapons = self.char.get("attacks", []) if self.char else []
-            for atk in weapons:
-                if atk["name"].lower() in action.lower():
-                    self._display(
-                        f"  {atk['name']} has no Thrown property — "
-                        f"it can't be thrown as a ranged attack. "
-                        f"Make a melee attack instead, or type your action.\n\n",
-                        "danger")
-                    self._build_combat_input()
+            elif act == "spell":
+                from models.spells import SPELLS
+                spell_name = action_ev.get("spell", "")
+                spell_data = SPELLS.get(spell_name)
+                if not spell_data:
+                    _end_turn()
                     return
-        self._display(
-            "  No weapon or ability matched. Sending action to DM...\n\n",
-            "system")
-        def _end_narrative_turn():
-            cb.end_turn(self.session)
-            self._next_turn()
-        self._dm_call(action, on_complete=_end_narrative_turn)
+                slot = action_ev.get("slot")
+                if slot is None and spell_data["level"] > 0:
+                    sc_slots = self.char.get("spellcasting", {}).get("slots", {})
+                    for lvl in sorted(sc_slots.keys(), key=int):
+                        if int(lvl) >= spell_data["level"]:
+                            av = sc_slots[lvl]
+                            if av.get("total", 0) - av.get("used", 0) > 0:
+                                slot = int(lvl)
+                                break
+                if slot is None:
+                    slot = spell_data["level"]
+                living = [c for c in self.session["initiative_order"]
+                          if not c["is_player"] and c["hp"] > 0]
+                target = living[0]["name"] if living else ""
+                self._do_player_spell(spell_name, spell_data, slot, target, skip_dm_call=True)
+
+            elif act == "feature":
+                feat_ok = self._apply_combat_feature(action_ev.get("feature", ""))
+                if feat_ok:
+                    _end_turn()
+                else:
+                    self._build_combat_input()
+
+            elif act in ("dodge", "dash", "disengage", "hide"):
+                _end_turn()
+
+            else:
+                _end_turn()
+
+        self._dm_call(action, on_action=_on_dm_result)
 
     # ── Startup ────────────────────────────────────────────────────────────────
 
@@ -1021,25 +1165,28 @@ class GameApp:
         self._display(f"> {action}\n\n", "player")
         self._dm_call(action)
 
-    def _dm_call(self, action, on_complete=None):
+    def _dm_call(self, action, on_complete=None, on_action=None):
         self._display("DM is thinking...\n", "system")
         def _thread():
             try:
                 result = self.dm.respond(self.session, self.char, action)
-                self.root.after(0, lambda: self._handle_dm_response(result, on_complete))
+                self.root.after(0, lambda: self._handle_dm_response(result, on_complete, on_action))
             except Exception as e:
                 msg = str(e) or repr(e)
-                self.root.after(0, lambda: self._handle_dm_error(msg, on_complete))
+                self.root.after(0, lambda: self._handle_dm_error(msg, on_complete, on_action))
         threading.Thread(target=_thread, daemon=True).start()
 
-    def _handle_dm_response(self, result, on_complete=None):
+    def _handle_dm_response(self, result, on_complete=None, on_action=None):
         self._erase_last_line()
         self._display(result["narration"] + "\n\n", "dm")
         self._loc_var.set(self.session.get("location", self.session.get("scene", "")[:40]))
 
         if on_complete:
-            # Combat narration path — skip event processing, hand control back to combat
             on_complete()
+            return
+
+        if on_action:
+            on_action(result)
             return
 
         if self._story_mode:
@@ -1176,11 +1323,13 @@ class GameApp:
         self._narration.see("end")
         self._narration.config(state="disabled")
 
-    def _handle_dm_error(self, msg, on_complete=None):
+    def _handle_dm_error(self, msg, on_complete=None, on_action=None):
         self._erase_last_line()
         self._display(f"[DM Error: {msg}]\n\n", "danger")
         if on_complete:
             on_complete()
+        elif on_action:
+            self._build_combat_input()
         else:
             self._set_input_enabled(True)
 
@@ -1228,7 +1377,7 @@ class GameApp:
         else:
             self.root.after(800, self._do_enemy_turn)
 
-    def _do_player_attack(self, weapon_name, damage_override=None, label=None):
+    def _do_player_attack(self, weapon_name, damage_override=None, label=None, skip_dm_call=False):
         living_enemies = [c for c in self.session["initiative_order"]
                           if not c["is_player"] and c["hp"] > 0]
         if not living_enemies:
@@ -1266,12 +1415,15 @@ class GameApp:
             self._display(f"  Damage: {dmg} — {target} HP: {result['new_hp']}\n\n", "hit")
             if result.get("killed"):
                 self._display(f"  ☠  {target} has fallen!\n\n", "danger")
-            base    = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
-            prefix  = "CRITICAL HIT! " if result.get("critical") else ""
-            outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
-            if result.get("killed"):
-                outcome += f" {target} has been defeated!"
-            self._dm_call(f"{base} [{outcome}]", on_complete=_advance_turn)
+            if skip_dm_call:
+                _advance_turn()
+            else:
+                base    = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
+                prefix  = "CRITICAL HIT! " if result.get("critical") else ""
+                outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
+                if result.get("killed"):
+                    outcome += f" {target} has been defeated!"
+                self._dm_call(f"{base} [{outcome}]", on_complete=_advance_turn)
 
         def _after_roll():
             target_entry = next((c for c in self.session["initiative_order"]
@@ -1288,8 +1440,11 @@ class GameApp:
                 "hit" if will_hit else "miss")
 
             if not will_hit:
-                base   = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
-                self._dm_call(f"{base} [The attack misses.]", on_complete=_advance_turn)
+                if skip_dm_call:
+                    _advance_turn()
+                else:
+                    base = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
+                    self._dm_call(f"{base} [The attack misses.]", on_complete=_advance_turn)
                 return
 
             actual_notation = damage_override or weapon["damage"]
@@ -1421,7 +1576,7 @@ class GameApp:
         y = self.root.winfo_y() + (self.root.winfo_height() - d.winfo_height()) // 2
         d.geometry(f"+{x}+{y}")
 
-    def _do_player_spell(self, spell_name, spell_data, slot_level, target_name):
+    def _do_player_spell(self, spell_name, spell_data, slot_level, target_name, skip_dm_call=False):
         import re as _re
         from models.character import use_spell_slot
         from models.spells import spell_damage_notation
@@ -1468,12 +1623,15 @@ class GameApp:
                     self._display(f"  ☠  {target_name} has fallen!\n\n", "danger")
                 if spell_data.get("on_hit_effect"):
                     self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
-                crit_tag = "CRITICAL HIT! " if result.get("critical") else ""
-                self._dm_call(
-                    f"{crit_tag}I cast {spell_name} and hit {target_name} for {dmg} "
-                    f"{spell_data['damage_type']} damage. HP remaining: {result['new_hp']}."
-                    + (" They have fallen!" if result.get("killed") else ""),
-                    on_complete=_advance_turn)
+                if skip_dm_call:
+                    _advance_turn()
+                else:
+                    crit_tag = "CRITICAL HIT! " if result.get("critical") else ""
+                    self._dm_call(
+                        f"{crit_tag}I cast {spell_name} and hit {target_name} for {dmg} "
+                        f"{spell_data['damage_type']} damage. HP remaining: {result['new_hp']}."
+                        + (" They have fallen!" if result.get("killed") else ""),
+                        on_complete=_advance_turn)
 
             def _after_spell_roll():
                 target_c  = next((c for c in self.session["initiative_order"]
@@ -1487,8 +1645,11 @@ class GameApp:
                 if not hit:
                     self._display(f"  Miss — {pre_roll['kept']} + {atk_bonus:+d} = "
                                   f"{total} vs AC {target_ac}\n\n", "danger")
-                    self._dm_call(f"I cast {spell_name} but missed {target_name}.",
-                                  on_complete=_advance_turn)
+                    if skip_dm_call:
+                        _advance_turn()
+                    else:
+                        self._dm_call(f"I cast {spell_name} but missed {target_name}.",
+                                      on_complete=_advance_turn)
                     return
 
                 crit = nat20
@@ -1529,13 +1690,16 @@ class GameApp:
             if not result["saved"] and spell_data.get("on_hit_effect"):
                 self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
 
-            dm_verb = "saved and took half damage" if result["saved"] else "failed their save"
-            self._dm_call(
-                f"I cast {spell_name}. {target_name} {dm_verb}."
-                + (f" They took {dmg_tot} {spell_data['damage_type']} damage."
-                   f" HP remaining: {result['new_hp']}." if dmg_tot else "")
-                + (" They have fallen!" if result.get("killed") else ""),
-                on_complete=_advance_turn)
+            if skip_dm_call:
+                _advance_turn()
+            else:
+                dm_verb = "saved and took half damage" if result["saved"] else "failed their save"
+                self._dm_call(
+                    f"I cast {spell_name}. {target_name} {dm_verb}."
+                    + (f" They took {dmg_tot} {spell_data['damage_type']} damage."
+                       f" HP remaining: {result['new_hp']}." if dmg_tot else "")
+                    + (" They have fallen!" if result.get("killed") else ""),
+                    on_complete=_advance_turn)
 
         else:  # auto
             result  = process_spell_cast(self.session, self.char, spell_name,
@@ -1555,14 +1719,17 @@ class GameApp:
             elif spell_data.get("on_hit_effect"):
                 self._display(f"  {spell_data['on_hit_effect']}\n\n", "system")
 
-            self._dm_call(
-                f"I cast {spell_name}"
-                + (f" for {dmg_tot} {spell_data['damage_type']} damage" if dmg_tot else "")
-                + (f". Effect: {spell_data['on_hit_effect']}" if not dmg_tot
-                   and spell_data.get("on_hit_effect") else "")
-                + (f". {target_name} HP: {result['new_hp']}." if dmg_tot else ".")
-                + (" They have fallen!" if result.get("killed") else ""),
-                on_complete=_advance_turn)
+            if skip_dm_call:
+                _advance_turn()
+            else:
+                self._dm_call(
+                    f"I cast {spell_name}"
+                    + (f" for {dmg_tot} {spell_data['damage_type']} damage" if dmg_tot else "")
+                    + (f". Effect: {spell_data['on_hit_effect']}" if not dmg_tot
+                       and spell_data.get("on_hit_effect") else "")
+                    + (f". {target_name} HP: {result['new_hp']}." if dmg_tot else ".")
+                    + (" They have fallen!" if result.get("killed") else ""),
+                    on_complete=_advance_turn)
 
     def _show_damage_roll(self, notation, pre_dmg, is_crit, on_done):
         """Animate damage dice (up to 2) sequentially, then call on_done."""

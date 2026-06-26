@@ -507,6 +507,30 @@ if self.state in ("COMBAT", "DEAD"):
 
 ## Features Added
 
+### Actions Reference Panel + DM-Driven Action Parsing
+
+Replaces the compact attack/feature text block above the combat input bar with a cleaner, smarter system where the player describes actions in natural language and the DM parses their intent.
+
+**`models/dm.py`:**
+- `_build_combat_prompt_block(character)` — builds a live context block (available weapons, spells with slot counts, feature charges) and injects action tag instructions into the DM system prompt when `session["in_combat"]` is True.
+- `_parse_events()` extended to extract `[ACTION: ...]` and `[BONUS: ...]` tags from DM responses:
+  - `[ACTION: attack=WeaponName]` / `[ACTION: attack=WeaponName, mode=twohanded|thrown|ranged]`
+  - `[ACTION: spell=SpellName]` / `[ACTION: spell=SpellName, slot=N]`
+  - `[ACTION: feature=FeatureName]`
+  - `[ACTION: dodge]` / `[ACTION: dash]` / `[ACTION: disengage]` / `[ACTION: hide]`
+  - `[BONUS: attack=WeaponName]` / `[BONUS: feature=FeatureName]`
+  - Tags are stripped from the clean narration text before display.
+
+**`views/desktop/app.py`:**
+- `_build_combat_input()` — compact reference block removed; replaced with `⚔ Actions` button on the left of the input row.
+- `_open_action_panel()` — read-only reference `Toplevel` showing two sections (ACTIONS and BONUS ACTIONS). Unavailable entries are greyed out; hovering shows a floating tooltip explaining why (condition name, charge count, etc.).
+- `_tooltip_show()` / `_tooltip_hide()` — lightweight `overrideredirect` tooltip helper.
+- `_parse_action_from_text()` / `_parse_bonus_from_text()` — client-side fallback parsers (weapon name matching, spell name matching, feature detection) used when the DM does not emit action tags.
+- `_do_player_attack(... skip_dm_call=False)` — new parameter; when True, skips the post-dice DM narration call and advances the turn directly (used when the DM already narrated the attempt before the dice).
+- `_do_player_spell(... skip_dm_call=False)` — same for all three spell delivery types.
+- `_dm_call(... on_action=None)` / `_handle_dm_response(... on_action=None)` / `_handle_dm_error(... on_action=None)` — new `on_action` callback path that receives the full result dict (including parsed events) instead of skipping event processing.
+- `_send_combat_action()` — fully rewritten: sends the player's text to the DM (with live combat context), receives narration + action tags, dispatches to existing mechanical flows (`_do_player_attack`, `_do_player_spell`, `_apply_combat_feature`) with `skip_dm_call=True`, falls back to client-side parsing if the DM returns no tags, ends the turn on pure narrative actions.
+
 ### Spell Combat Support
 
 Full in-combat spellcasting added across the model, controller, and view layers.
