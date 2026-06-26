@@ -609,66 +609,136 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 
 ### ✅ Stage 1 — Game Mechanics (COMPLETE)
 
-All core D&D mechanics are implemented and tested (376 tests passing):
+All core D&D 5e mechanics implemented and tested (376 tests passing):
 - Turn-based combat with conditions, crits, death saves
 - Full character progression: XP, level-up dialog (features → HP → subclass → ASI/feat → spells)
-- 30 PHB feats selectable at ASI levels
-- Spell learning at level-up for known/prepared/wizard classes
+- 30 PHB feats at ASI levels; spell learning for all caster archetypes
 - In-game economy: gold awards, magic items, mechanical bonuses applied at combat resolution
 - DM-driven action parsing via structured tags
-- 8 adventure templates with structured story arcs and 3 length presets (One Shot / Quest / Epic)
+- 8 adventure templates, 3 length presets (One Shot / Quest / Epic)
 - Companion system: 10 classes, combat AI, spell slots, death saves
 - D&D Beyond character import
 - Passive perception/investigation/insight in DM system prompt
 - Natural knowledge check system with 5-tier result quality scale
 
-### Stage 2 — Sidebar & Rest UI (next)
+### ✅ Stage 2 — Sidebar & Rest UI (COMPLETE)
 
-- **XP progress bar** — gold bar below VITALS: "XP: 6500 / 14000 (Lv5→6)"
-- **Feature charge pips** — `[●●○] Action Surge` style instead of plain text counts. Clickable to use (with confirmation).
-- **Inspiration toggle** — small gold button in the vitals row
-- **Short Rest button** — hit-dice spending dialog with animated die rolls per die spent
-- **Long Rest button** — one-click with confirmation, restores HP/slots/features
+- XP progress bar in VITALS section
+- Feature charge display with current/max counts; clickable to use
+- Inspiration toggle
+- Short Rest button (hit-dice spending with animated die rolls)
+- Long Rest button (one-click confirm, restores HP/slots/features)
 
-### Stage 3 — DEV Panel
+### ✅ Stage 3 — DEV Panel (COMPLETE)
 
-Floating panel (F4, no grab_set so game stays interactive):
-- Award XP → Lv2 through Lv10 quick-jump buttons
+Floating panel (F4 / DEV button in header):
+- Award XP; level jump to Lv2–Lv10
 - Set HP (spinbox)
 - Add condition (dropdown)
-- Start test combat (spawns 1 Goblin)
+- Spawn test combat
 - Short/Long Rest instant buttons
-
-### Stage 4 — Electron + Flask Migration (confirmed plan)
-Migrate from Tkinter to a proper game architecture: **Flask backend + HTML/JS/CSS frontend packaged via Electron**.
-
-**Why this path:**
-- Tkinter has a hard ceiling on visual quality and cannot support the Steam Overlay (requires OpenGL/D3D)
-- The MVC structure already anticipates this — controllers return plain dicts, nothing in models touches Tkinter
-- Electron + Flask is the proven path for Python-backed desktop games on Steam
-- NW.js is also a viable alternative (5,700+ Steam games use it); evaluate at build time
-- **Tauri is off the table** — its Steam integration requires writing Rust, which defeats using Python as the backend
-
-**Architecture after migration:**
-- `controllers/` unchanged — same functions called by Flask routes instead of Tkinter callbacks
-- `views/web/api.py` becomes the real backend (Flask routes, JSON responses)
-- `views/desktop/` retired once web UI reaches feature parity
-- Frontend: HTML/CSS/JS, styled with Bootstrap or equivalent
-- Packaged as an Electron app with a bundled Ollama setup flow
-
-**⚠️ STOP before building — discuss with the user:**
-- Whether to bundle Ollama + model in the installer or download on first run (models are 4–8 GB)
-- Target distribution (GitHub releases, itch.io, Steam)
-- Scene architecture: make the Scene pattern explicit before building the frontend (MainMenuScene, GameScene, CombatScene — each a class with `on_enter()`, `update()`, `render()`)
-
-### Stage 3 — UI Polish
-Full CSS/Bootstrap pass once the Electron shell is running and mechanics are complete.
 
 ---
 
-## Steam (Low Priority — Future Reference)
+### Stage 4 — Electron + Flask Migration
 
-Notes for when Steam distribution becomes relevant. Do not act on any of this until Stage 2 is complete and the user explicitly asks.
+Migrate from Tkinter to a proper game frontend: **Flask backend + HTML/JS/CSS + Electron shell**.
+
+**Why this path:**
+- Tkinter has a hard ceiling on visual quality and cannot support Steam Overlay (requires OpenGL/D3D)
+- MVC is already framework-agnostic — `controllers/` return plain dicts and need no changes
+- Electron + Flask is the proven Python-backed desktop game path for Steam
+- NW.js is a viable alternative (5,700+ Steam games); evaluate at build time
+- Tauri is off the table — its Steam integration requires writing Rust
+
+**⚠️ Discuss with the user before starting:**
+- Bundle Ollama + model in the installer, or download on first run? (models are 4–8 GB)
+- Target distribution: GitHub releases → itch.io → Steam (in that order)
+- Scene architecture: define `MainMenuScene`, `GameScene`, `CombatScene` as explicit classes with `on_enter() / update() / render()` before writing any HTML
+
+#### 4a — Flask Backend
+- Create `views/web/api.py` — Flask app with routes mirroring every Tkinter callback
+- Routes: `POST /action`, `GET /state`, `POST /roll`, `POST /attack`, `POST /rest`, `POST /level-up`, `POST /save`, `GET /characters`, `POST /characters/new`, `DELETE /characters/<name>`
+- Session state lives server-side (Flask `session`) backed by the same `data/sessions/` JSON files already in use
+- All routes return JSON; errors follow `{"error": "...", "code": N}`
+- Add pytest tests for every route alongside the existing model tests
+
+#### 4b — HTML/CSS Frontend
+- One-page app — vanilla JS with fetch API (no framework required)
+- Scene classes in `static/js/scenes/`: `MainMenuScene`, `CharacterSelectScene`, `PresetScene`, `GameScene`, `CombatScene`, `LevelUpScene`
+- Each scene manages its own DOM subtree; `SceneManager` swaps active scene and calls lifecycle hooks
+- Narration panel: `<div id="narration">` append-only, auto-scrolls; player text styled distinctly in blue
+- Sidebar: sticky right panel updated by `GameScene.updateSidebar(state)` after every response
+- Dark theme CSS vars matching current constants: `--bg: #1a1a2e`, `--accent: #c8a951`, etc.
+- d20 roller: CSS 3D transform animation replacing the Tkinter Canvas — same 20 pre-computed spin angles as CSS keyframes
+- Combat tracker: `<div id="combat-tracker">` inside the sidebar, visible only during combat
+
+#### 4c — Electron Shell
+- `main.js`: spawn Flask subprocess on app launch, wait for `/ping`, then load `http://localhost:5000`
+- Graceful shutdown: kill Flask subprocess on `app.on('before-quit')`
+- `electron-builder` config: package Python (via PyInstaller one-dir bundle) + Electron together
+- Single `.exe` installer on Windows via NSIS; `.dmg` on Mac
+- First-run wizard: detect Ollama → if absent show download link; if present check model → if absent run `ollama pull` with progress bar
+
+#### 4d — Retire Tkinter
+- Delete `views/desktop/` once web UI has full feature parity and all routes are test-covered
+- Update `main.py` to launch Electron instead of `tk.Tk()`
+- `take_screenshots.py` can be archived (browser DevTools replaces it)
+
+---
+
+### Stage 5 — Visual Design Pass
+
+Full design pass after the Electron shell is running and all scenes are functional.
+
+- **Typography** — proper game font (e.g. Crimson Text or IM Fell for narrative, monospace for rolls)
+- **Color system** — expand beyond the 9 current constants; add surface elevation tokens (`--surface-0`, `--surface-1`, `--surface-2`) for card layering
+- **Narration panel** — parchment-style texture background; smooth auto-scroll; animated "DM is thinking…" typing indicator
+- **Sidebar** — collapsible sections; HP bar animates on damage/healing; magic item cards with rarity color border
+- **d20 roller** — CSS keyframe version with glow effect on nat-20; shake on nat-1
+- **Combat tracker** — highlight active combatant row with a pulse animation; dead enemies shown with strikethrough and reduced opacity
+- **Level-up dialog** — full-screen overlay with particle effect on level gain
+- **Responsive layout** — support window widths from 900px to 1920px
+
+---
+
+### Stage 6 — Distribution
+
+Release pipeline once Stage 5 is complete.
+
+#### GitHub Releases (first)
+- Tag `v1.0.0`; `electron-builder` CI workflow produces `.exe` and `.dmg` artifacts automatically on push to `release/*` branches
+- Auto-updater via `electron-updater` reading GitHub Releases API
+
+#### itch.io (second)
+- Itch.io page with screenshots, trailer, and a "pay what you want" price
+- Butler CLI in CI to upload builds automatically on release tag
+
+#### Steam (third — when ready)
+- Steamworks partner account; AppID configured
+- `SteamAPI_RunCallbacks()` on a 1-second interval in `main.js`
+- Steam Overlay: enable GPU acceleration in Electron (`--enable-gpu` launch flag)
+- Steam Cloud: Auto-Cloud configured for `data/sessions/` and `data/characters/` — no code changes needed
+- Steam Achievements: `Steamworks.js` / Greenworks bindings in `main.js`; achievement IDs defined in Steamworks partner portal
+- Steam Deck: verify input mapping; controller-friendly UI pass (larger hit targets, gamepad navigation)
+
+---
+
+### Stage 7 — Content Expansion (post-launch)
+
+- **More adventure templates** — expand from 8 to 20+; add templates for specific settings (seafaring, underdark, planar travel, heist)
+- **More enemies** — expand the 160-monster `enemies.py` roster; add legendary actions and lair actions for boss fights
+- **Multiclassing** — tracked in character schema already (`"multiclass": []`); need progression table, spell slot merging, and feature eligibility checks
+- **More races and classes** — Artificer, Blood Hunter; Aasimar, Githyanki, Fairy
+- **Crafting system** — components dropped by enemies; recipes unlock with Arcana/Smith proficiency
+- **World map** — persistent overworld between adventures; unlockable locations
+- **Mod support** — JSON-defined adventure templates, enemies, and items that users can drop into `data/`
+
+---
+
+## Steam — Technical Reference
+
+Notes for when Steam distribution becomes relevant (Stage 6). Do not build any of this until Stage 5 is complete and the user explicitly asks.
 
 ### What Steam actually requires
 - **`SteamAPI_RunCallbacks()` must be called at least once per second** — the only hard architectural constraint. In an Electron app this goes in the main process on a 1-second interval

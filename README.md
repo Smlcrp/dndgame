@@ -754,28 +754,23 @@ Spell options are filtered against already-known spells and labeled with their l
 
 ## What's Next
 
-Game mechanics are complete. The next phase moves up the stack — richer UI, then migrating off Tkinter entirely.
+Game mechanics, sidebar UI, and the DEV panel are complete. The project now moves into the Electron + Flask migration.
 
-### Phase 2 — Sidebar Upgrades
-- **XP bar** — gold progress bar below VITALS showing XP toward next level
-- **Feature charge pips** — `[●●○] Action Surge` style display instead of plain `[1/1]` text
-- **Inspiration toggle** — small gold button in the vitals row
-- **Short Rest / Long Rest buttons** — Short rest opens a hit-dice spending dialog with animated die rolls; Long rest is one-click with confirmation
+### Stage 4 — Electron + Flask Migration *(next)*
+The Tkinter UI has a hard ceiling on visual quality and can't support the Steam Overlay. The MVC architecture was designed for this migration — `controllers/` return plain dicts and are already framework-agnostic.
+- **Flask backend** (`views/web/api.py`) — routes mirror every Tkinter callback; all return JSON
+- **HTML/JS frontend** — scene-based one-page app; dark theme CSS vars matching current palette; d20 roller as CSS 3D animation
+- **Electron shell** — spawns Flask on launch, packages Python via PyInstaller, first-run Ollama setup wizard
+- **Retire Tkinter** once web UI reaches feature parity
 
-### Phase 3 — DEV Panel
-- Award XP, quick-jump to any level, set HP, add conditions, spawn a test combat — all without playing through the story
+### Stage 5 — Visual Design
+Full design pass on the web frontend: game typography, parchment narration panel, animated HP bar, particle level-up effect, responsive layout from 900px to 1920px.
 
-### Phase 4 — Electron + Flask Migration
-The Tkinter UI has a hard ceiling on visual quality. The MVC structure was designed for this migration — controllers return plain dicts and are already framework-agnostic.
-- Flask backend replaces Tkinter callbacks
-- HTML/CSS/JS frontend (Bootstrap or Tailwind) replaces Tkinter widgets
-- Packaged as an Electron app for distribution
-- Bundled Ollama setup flow for first-run installation
+### Stage 6 — Distribution
+GitHub Releases → itch.io → Steam. Steam Overlay via Electron GPU acceleration, Steam Cloud via Auto-Cloud (zero changes to save format needed), achievements via Steamworks.js.
 
-### Phase 5 — Polish & Distribution
-- Full visual redesign in the web frontend
-- Steam / itch.io distribution via Electron + Steamworks.js
-- Auto-Cloud saves, achievements
+### Stage 7 — Content Expansion
+More adventure templates, more enemies (legendary actions, lair actions), multiclassing, crafting, world map, mod support via JSON drop-ins.
 
 ---
 
