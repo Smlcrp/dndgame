@@ -207,9 +207,10 @@ NARRATION RULES — READ CAREFULLY:
    Example: [COMBAT: Goblin×2, Hobgoblin×1]
 8. When the scene location changes, emit on its own line:
    [SCENE: Location Name]
-9. When the player earns XP (completing an encounter, solving a puzzle, finishing a quest), emit on its own line:
+9. When the player earns XP, emit on its own line:
    [XP: N]
-   Example: [XP: 50] after defeating a goblin, [XP: 200] after completing a quest. Scale to difficulty.
+   XP is awarded ONLY for tangible accomplishments: defeating enemies in combat, solving a puzzle or trap, completing a quest objective, or a significant story achievement the player actively caused.
+   NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
 10. If this is the first message, open with a vivid scene that fits the character's background and class.
 11. Keep responses focused. One scene at a time.
 
