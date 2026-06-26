@@ -34,6 +34,7 @@ def empty_session(character_name="", session_name=""):
         "current_turn":   0,
 
         "adventure":      None,
+        "companions":     [],
     }
 
 
@@ -200,4 +201,5 @@ def living_combatants(session):
 
 
 def enemies_alive(session):
-    return any(c["hp"] > 0 for c in session["initiative_order"] if not c["is_player"])
+    return any(c["hp"] > 0 for c in session["initiative_order"]
+               if not c["is_player"] and not c.get("is_companion"))

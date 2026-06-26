@@ -155,9 +155,32 @@ class GameApp:
         sf.pack(side="right", fill="y", padx=(4,8), pady=6)
         sf.pack_propagate(False)
 
-        _sb_bar = tk.Scrollbar(sf, orient="vertical", bg=PANEL, troughcolor=INPUT_BG)
+        # Tab bar
+        _tab_bar = tk.Frame(sf, bg=PANEL, height=32)
+        _tab_bar.pack(fill="x")
+        _tab_bar.pack_propagate(False)
+        self._sb_tab_char  = tk.Button(
+            _tab_bar, text="CHARACTER", font=("Segoe UI", 8, "bold"),
+            bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0, padx=10,
+            activebackground=ACCENT, activeforeground="#1a1a2e",
+            command=lambda: self._switch_sidebar_tab("character"))
+        self._sb_tab_char.pack(side="left", fill="y")
+        self._sb_tab_party = tk.Button(
+            _tab_bar, text="PARTY", font=("Segoe UI", 8, "bold"),
+            bg=BTN_BG, fg=DIM, relief="flat", bd=0, padx=10,
+            activebackground=ACCENT, activeforeground="#1a1a2e",
+            command=lambda: self._switch_sidebar_tab("party"))
+        self._sb_tab_party.pack(side="left", fill="y")
+        self._sb_active_tab = "character"
+
+        # CHARACTER panel (scrollable)
+        self._char_panel = tk.Frame(sf, bg=PANEL)
+        self._char_panel.pack(fill="both", expand=True)
+
+        _sb_bar = tk.Scrollbar(self._char_panel, orient="vertical",
+                               bg=PANEL, troughcolor=INPUT_BG)
         _sb_bar.pack(side="right", fill="y")
-        _sb_cv = tk.Canvas(sf, bg=PANEL, highlightthickness=0,
+        _sb_cv = tk.Canvas(self._char_panel, bg=PANEL, highlightthickness=0,
                            yscrollcommand=_sb_bar.set)
         _sb_cv.pack(side="left", fill="both", expand=True)
         _sb_bar.config(command=_sb_cv.yview)
@@ -169,8 +192,28 @@ class GameApp:
         _sb_cv.bind(
             "<Configure>",
             lambda e: _sb_cv.itemconfig(_win_id, width=e.width))
+
+        # PARTY panel (scrollable, hidden initially)
+        self._party_panel = tk.Frame(sf, bg=PANEL)
+        _pb_bar = tk.Scrollbar(self._party_panel, orient="vertical",
+                               bg=PANEL, troughcolor=INPUT_BG)
+        _pb_bar.pack(side="right", fill="y")
+        _pb_cv = tk.Canvas(self._party_panel, bg=PANEL, highlightthickness=0,
+                           yscrollcommand=_pb_bar.set)
+        _pb_cv.pack(side="left", fill="both", expand=True)
+        _pb_bar.config(command=_pb_cv.yview)
+        self._party_inner = tk.Frame(_pb_cv, bg=PANEL)
+        _pw_id = _pb_cv.create_window((0, 0), window=self._party_inner, anchor="nw")
+        self._party_inner.bind(
+            "<Configure>",
+            lambda e: _pb_cv.configure(scrollregion=_pb_cv.bbox("all")))
+        _pb_cv.bind(
+            "<Configure>",
+            lambda e: _pb_cv.itemconfig(_pw_id, width=e.width))
+
         sf.bind_all("<MouseWheel>",
-                    lambda e: _sb_cv.yview_scroll(int(-1*(e.delta/120)), "units"))
+                    lambda e: (_sb_cv if self._sb_active_tab == "character" else _pb_cv)
+                    .yview_scroll(int(-1*(e.delta/120)), "units"))
 
         def _sec(text):
             tk.Label(self._sb_inner, text=text, font=("Segoe UI", 8, "bold"),
@@ -1197,6 +1240,10 @@ class GameApp:
             elif ev["type"] == "skill_check":
                 self._handle_skill_check(ev["skill"], ev["dc"])
                 return
+            elif ev["type"] == "companion_join":
+                self._handle_companion_join(ev["name"])
+            elif ev["type"] == "scene_change":
+                self._on_scene_change(ev["location"])
             elif ev["type"] == "xp_award":
                 pending_xp += ev["amount"]
             elif ev["type"] == "beat_complete":
@@ -1350,10 +1397,35 @@ class GameApp:
         def _after_init():
             result = gc_setup_combat(self.session, self.char, enemy_specs,
                                      d20_initiative=init_roll["total"])
+            # Add active companions to initiative order
+            from models.character import modifier as _cmod
+            for comp in self.session.get("companions", []):
+                if comp.get("status") == "dead":
+                    continue
+                dex_mod  = _cmod(comp["abilities"].get("dexterity", 10))
+                init_val = dice.initiative(dex_mod)["total"]
+                self.session["initiative_order"].append({
+                    "name":       comp["name"],
+                    "initiative": init_val,
+                    "hp":         comp["hp"]["current"],
+                    "max_hp":     comp["hp"]["max"],
+                    "ac":         comp["ac"],
+                    "is_player":  False,
+                    "is_companion": True,
+                    "conditions": [],
+                })
+            # Re-sort initiative order
+            self.session["initiative_order"].sort(
+                key=lambda c: c["initiative"], reverse=True)
             self.state = "COMBAT"
             self._update_sidebar()
             self._display("Initiative order:\n", "system")
-            self._display(result["display"] + "\n\n", "system")
+            order_lines = "\n".join(
+                f"  {c['initiative']:2d}  {c['name']}"
+                + (" [you]" if c["is_player"] else "")
+                + (" [companion]" if c.get("is_companion") else "")
+                for c in self.session["initiative_order"])
+            self._display(order_lines + "\n\n", "system")
             self._next_turn()
 
         self._show_roll_button("Initiative", init_roll["roll"], _after_init)
@@ -1379,6 +1451,8 @@ class GameApp:
                 return
             self._display(f"── Round {self.session['round']} — Your turn ──\n\n", "header")
             self._build_combat_input()
+        elif current.get("is_companion"):
+            self.root.after(800, self._do_companion_turn)
         else:
             self.root.after(800, self._do_enemy_turn)
 
@@ -1801,6 +1875,244 @@ class GameApp:
 
         self._dm_call(dm_prompt, on_complete=_after_enemy_dm)
 
+    def _do_companion_turn(self):
+        from models.companions import companion_ai, companion_sneak_attack_damage
+        current = gs.current_combatant(self.session)
+        if not current or not current.get("is_companion"):
+            self._next_turn()
+            return
+
+        comp_data = next(
+            (c for c in self.session.get("companions", [])
+             if c["name"] == current["name"]), None)
+
+        # Dead/missing companion data — skip
+        if not comp_data:
+            cb.end_turn(self.session)
+            self.root.after(300, self._next_turn)
+            return
+
+        # ── Unconscious: death save ────────────────────────────────────────────
+        if current["hp"] <= 0 or comp_data.get("status") == "unconscious":
+            self._do_companion_death_save(current, comp_data)
+            return
+
+        self._display(f"── {current['name']}'s turn ──\n", "header")
+
+        action = companion_ai(comp_data, self.session)
+        act    = action.get("action", "none")
+        target = action.get("target", "")
+
+        def _advance():
+            self._sync_companion_hp_to_data()
+            cb.end_turn(self.session)
+            if self._sb_active_tab == "party":
+                self._refresh_party_tab()
+            self.root.after(300, self._next_turn)
+
+        if act == "none":
+            cb.end_turn(self.session)
+            self.root.after(300, self._next_turn)
+            return
+
+        elif act == "attack":
+            atk   = comp_data["attack"]
+            sneak = action.get("sneak_attack", False)
+            bonus = atk["bonus"]
+            dmg_note = atk["damage"]
+            if sneak:
+                sa = companion_sneak_attack_damage(comp_data["level"])
+                dmg_note = f"{dmg_note}+{sa}"
+
+            result = cb.resolve_attack(
+                self.session, current["name"], target, bonus, dmg_note)
+            self._display_attack_result(result)
+            self._update_sidebar()
+
+            if result.get("hit"):
+                dmg     = result["damage"]["total"]
+                outcome = (f"{current['name']} hits {target} for {dmg} damage."
+                           + (f" {target} has been defeated!" if result.get("killed") else ""))
+            else:
+                outcome = f"{current['name']} attacks {target} and misses."
+
+            self._dm_call(
+                f"[Companion turn — ONE sentence only] {outcome}",
+                on_complete=_advance)
+
+        elif act == "spell":
+            spell    = action["spell"]
+            is_heal  = action.get("is_heal", False)
+            slot_lvl = action.get("slot_level", 0)
+            dmg_note = action.get("damage", "1d6")
+
+            if is_heal:
+                # Apply healing
+                heal_roll = dice.damage(dmg_note) if dmg_note else {"total": 0}
+                amount    = heal_roll["total"]
+                # Find target: player or companion
+                player_c  = next(
+                    (c for c in self.session["initiative_order"] if c["is_player"]), None)
+                t_entry   = next(
+                    (c for c in self.session["initiative_order"]
+                     if c["name"] == target), None)
+                if target == (player_c["name"] if player_c else "") and player_c:
+                    new_hp = gs.apply_healing(
+                        self.session, amount,
+                        self.char["hp"].get("max", 1))
+                    self._display(
+                        f"  {current['name']} heals {target} for {amount} HP. "
+                        f"HP: {new_hp}\n\n", "hit")
+                elif t_entry:
+                    new_hp = gs.apply_combat_healing(self.session, target, amount)
+                    self._display(
+                        f"  {current['name']} heals {target} for {amount} HP. "
+                        f"HP: {new_hp}\n\n", "hit")
+                else:
+                    self._display(
+                        f"  {current['name']} casts {spell}.\n\n", "system")
+
+                self._update_sidebar()
+                self._dm_call(
+                    f"[Companion turn — ONE sentence only] "
+                    f"{current['name']} casts {spell} and heals {target}.",
+                    on_complete=_advance)
+
+            else:
+                # Offensive spell
+                has_dmg = any(c.isdigit() for c in dmg_note) and "0" not in dmg_note.replace("0", "")
+                if has_dmg and dmg_note != "0":
+                    dmg_roll = dice.damage(dmg_note)
+                    total    = dmg_roll["total"]
+                    new_hp   = gs.apply_combat_damage(self.session, target, total)
+                    killed   = new_hp is not None and new_hp <= 0
+                    self._display(
+                        f"  {current['name']} casts {spell} on {target}. "
+                        f"{total} damage. {target} HP: {new_hp}\n\n",
+                        "hit")
+                    if killed:
+                        self._display(f"  ☠  {target} has fallen!\n\n", "danger")
+                    outcome = (f"{current['name']} casts {spell}. "
+                               f"{total} damage to {target}."
+                               + (f" {target} is defeated!" if killed else ""))
+                else:
+                    self._display(
+                        f"  {current['name']} casts {spell} on {target}.\n\n", "system")
+                    outcome = f"{current['name']} casts {spell} targeting {target}."
+
+                self._update_sidebar()
+                self._dm_call(
+                    f"[Companion turn — ONE sentence only] {outcome}",
+                    on_complete=_advance)
+
+        elif act == "feature":
+            feature     = action["feature"]
+            heal_amount = action.get("heal_amount", 0)
+            feat_target = action.get("target", current["name"])
+
+            if feature == "Second Wind":
+                dmg_note = action.get("damage", f"1d10+{comp_data['level']}")
+                heal_roll = dice.damage(dmg_note)
+                heal_amount = heal_roll["total"]
+
+            if heal_amount > 0:
+                t_entry = next(
+                    (c for c in self.session["initiative_order"]
+                     if c["name"] == feat_target), None)
+                player_c = next(
+                    (c for c in self.session["initiative_order"]
+                     if c["is_player"]), None)
+                if feat_target == (player_c["name"] if player_c else "") and player_c:
+                    new_hp = gs.apply_healing(self.session, heal_amount,
+                                              self.char["hp"].get("max", 1))
+                    self._display(
+                        f"  {current['name']} uses {feature} on {feat_target}. "
+                        f"+{heal_amount} HP. HP: {new_hp}\n\n", "hit")
+                elif t_entry:
+                    new_hp = gs.apply_combat_healing(self.session, feat_target, heal_amount)
+                    self._display(
+                        f"  {current['name']} uses {feature} on {feat_target}. "
+                        f"+{heal_amount} HP. HP: {new_hp}\n\n", "hit")
+                else:
+                    self._display(
+                        f"  {current['name']} uses {feature}.\n\n", "system")
+            elif feature == "Bardic Inspiration":
+                self._display(
+                    f"  {current['name']} grants Bardic Inspiration to {feat_target}.\n\n",
+                    "system")
+            else:
+                self._display(
+                    f"  {current['name']} uses {feature}.\n\n", "system")
+
+            self._update_sidebar()
+            self._dm_call(
+                f"[Companion turn — ONE sentence only] "
+                f"{current['name']} uses {feature}.",
+                on_complete=_advance)
+
+    def _do_companion_death_save(self, entry, comp_data):
+        """Roll a death save for an unconscious companion."""
+        import random as _rand
+        comp_data["status"] = "unconscious"
+        self._display(f"── {entry['name']} — Death Saving Throw! ──\n", "danger")
+        raw = _rand.randint(1, 20)
+        ds  = comp_data.setdefault("death_saves", {"successes": 0, "failures": 0})
+
+        if raw == 20:
+            comp_data["status"] = "active"
+            entry["hp"] = 1
+            comp_data["hp"]["current"] = 1
+            ds["successes"] = 0
+            ds["failures"]  = 0
+            self._display(f"  Natural 20! {entry['name']} revives at 1 HP!\n\n", "hit")
+        elif raw >= 10:
+            ds["successes"] = min(3, ds["successes"] + 1)
+            if ds["successes"] >= 3:
+                comp_data["status"] = "active"
+                self._display(f"  {entry['name']} stabilizes.\n\n", "system")
+            else:
+                self._display(
+                    f"  Success ({raw}). {ds['successes']}/3 successes.\n\n", "system")
+        elif raw == 1:
+            ds["failures"] = min(3, ds["failures"] + 2)
+            self._display(f"  Natural 1! Two failures. {ds['failures']}/3.\n\n", "danger")
+        else:
+            ds["failures"] = min(3, ds["failures"] + 1)
+            self._display(
+                f"  Failure ({raw}). {ds['failures']}/3 failures.\n\n", "danger")
+
+        if ds["failures"] >= 3:
+            comp_data["status"]       = "dead"
+            comp_data["dead_at_scene"] = self.session.get("location", "Unknown")
+            self._display(f"  ☠  {entry['name']} has died.\n\n", "danger")
+            def _after_death():
+                cb.end_turn(self.session)
+                self.root.after(300, self._next_turn)
+            self._dm_call(
+                f"[Companion death] {entry['name']} has just died from their wounds. "
+                f"Narrate their death in ONE dramatic sentence.",
+                on_complete=_after_death)
+            if self._sb_active_tab == "party":
+                self._refresh_party_tab()
+            return
+
+        if self._sb_active_tab == "party":
+            self._refresh_party_tab()
+        cb.end_turn(self.session)
+        self.root.after(300, self._next_turn)
+
+    def _sync_companion_hp_to_data(self):
+        """Sync initiative-order HP back to companion data (for party tab display)."""
+        for entry in self.session.get("initiative_order", []):
+            if not entry.get("is_companion"):
+                continue
+            for comp in self.session.get("companions", []):
+                if comp["name"] == entry["name"]:
+                    comp["hp"]["current"] = entry["hp"]
+                    if entry["hp"] <= 0 and comp.get("status") == "active":
+                        comp["status"] = "unconscious"
+                    break
+
     def _display_attack_result(self, result):
         if "error" in result:
             self._display(f"  Error: {result['error']}\n\n", "danger")
@@ -1826,6 +2138,7 @@ class GameApp:
                 f" Miss.\n\n", "miss")
 
     def _end_combat(self, victory=True):
+        self._sync_companion_hp_to_data()
         xp = cb.xp_from_combat(self.session)
         gs.end_combat(self.session)
         self.state = "EXPLORING"
@@ -2086,6 +2399,233 @@ class GameApp:
             return False
         current = gs.current_combatant(self.session)
         return bool(current and current.get("is_player", False))
+
+    # ── Sidebar tab switcher ──────────────────────────────────────────────────
+
+    def _switch_sidebar_tab(self, tab):
+        self._sb_active_tab = tab
+        if tab == "character":
+            self._party_panel.pack_forget()
+            self._char_panel.pack(fill="both", expand=True)
+            self._sb_tab_char.config(bg=ACCENT, fg="#1a1a2e")
+            self._sb_tab_party.config(bg=BTN_BG, fg=DIM)
+        else:
+            self._char_panel.pack_forget()
+            self._party_panel.pack(fill="both", expand=True)
+            self._sb_tab_char.config(bg=BTN_BG, fg=DIM)
+            self._sb_tab_party.config(bg=ACCENT, fg="#1a1a2e")
+            self._refresh_party_tab()
+
+    # ── Party tab ─────────────────────────────────────────────────────────────
+
+    def _refresh_party_tab(self):
+        """Rebuild all companion cards in the party panel."""
+        for w in self._party_inner.winfo_children():
+            w.destroy()
+        if not self.session:
+            return
+        companions = self.session.get("companions", [])
+        if not companions:
+            tk.Label(self._party_inner, text="No companions yet.",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(pady=20, padx=10)
+            return
+        for comp in companions:
+            self._build_companion_card(self._party_inner, comp)
+
+    def _build_companion_card(self, parent, comp):
+        """Build one companion card widget."""
+        status = comp.get("status", "active")
+        dead   = status == "dead"
+        uncon  = status == "unconscious"
+
+        card_bg = BTN_BG if dead else PANEL
+        fg_main = DIM   if dead else FG
+        fg_dim  = DIM
+
+        card = tk.Frame(parent, bg=card_bg, padx=8, pady=8,
+                        highlightbackground=ACCENT if not dead else DIM,
+                        highlightthickness=1)
+        card.pack(fill="x", padx=6, pady=(6, 0))
+
+        # ── Header row (name, class, level) ──────────────────────────────────
+        hdr = tk.Frame(card, bg=card_bg)
+        hdr.pack(fill="x")
+        name_text = comp["name"]
+        if dead:
+            name_text += "  ✝"
+        tk.Label(hdr, text=name_text, font=("Segoe UI", 10, "bold"),
+                 bg=card_bg, fg=fg_main, anchor="w").pack(side="left")
+        status_text = " [UNCONSCIOUS]" if uncon else (" [FALLEN]" if dead else "")
+        if status_text:
+            tk.Label(hdr, text=status_text, font=FONT_SM,
+                     bg=card_bg, fg=RED).pack(side="left", padx=(4, 0))
+        tk.Label(card,
+                 text=f"{comp['race']}  {comp['class']} ({comp['subclass']})  •  Level {comp['level']}",
+                 font=FONT_SM, bg=card_bg, fg=fg_dim, anchor="w").pack(fill="x")
+
+        if dead:
+            return  # dead cards show minimal info, no more content
+
+        # ── HP bar ────────────────────────────────────────────────────────────
+        hp_cur, hp_max = self._companion_hp(comp)
+        tk.Label(card, text=f"HP: {hp_cur} / {hp_max}",
+                 font=FONT_SM, bg=card_bg, fg=fg_main).pack(anchor="w", pady=(4, 0))
+        hp_bar = tk.Canvas(card, bg=card_bg, height=7, highlightthickness=0)
+        hp_bar.pack(fill="x", pady=(1, 2))
+        def _draw_hp_bar(canvas=hp_bar, cur=hp_cur, mx=hp_max):
+            canvas.delete("all")
+            w = canvas.winfo_width() or 260
+            canvas.create_rectangle(0, 0, w, 7, fill=BTN_BG, outline="")
+            ratio  = cur / max(1, mx)
+            colour = GREEN if ratio > 0.5 else (YELLOW if ratio > 0.25 else RED)
+            canvas.create_rectangle(0, 0, int(w * ratio), 7, fill=colour, outline="")
+        hp_bar.bind("<Configure>", lambda e: _draw_hp_bar())
+        self.root.after(50, _draw_hp_bar)
+
+        # ── AC ────────────────────────────────────────────────────────────────
+        tk.Label(card, text=f"AC {comp['ac']}", font=FONT_SM,
+                 bg=card_bg, fg=fg_dim).pack(anchor="w")
+
+        # ── Death saves (only when unconscious) ───────────────────────────────
+        if uncon:
+            ds = comp.get("death_saves", {"successes": 0, "failures": 0})
+            ds_frame = tk.Frame(card, bg=card_bg)
+            ds_frame.pack(anchor="w", pady=(2, 0))
+            tk.Label(ds_frame, text="Death Saves:", font=FONT_SM,
+                     bg=card_bg, fg=RED).pack(side="left")
+            succ = "●" * ds["successes"] + "○" * (3 - ds["successes"])
+            fail = "●" * ds["failures"]  + "○" * (3 - ds["failures"])
+            tk.Label(ds_frame, text=f"  ✓{succ}", font=FONT_SM,
+                     bg=card_bg, fg=GREEN).pack(side="left")
+            tk.Label(ds_frame, text=f"  ✗{fail}", font=FONT_SM,
+                     bg=card_bg, fg=RED).pack(side="left")
+
+        # ── Feature charges ───────────────────────────────────────────────────
+        feat_uses = comp.get("feature_uses", {})
+        if feat_uses:
+            tk.Frame(card, bg=BTN_BG, height=1).pack(fill="x", pady=(4, 2))
+            for fname, data in feat_uses.items():
+                cur = data.get("current", 0)
+                mx  = data.get("max", 1)
+                pips = ("●" * cur + "○" * (mx - cur)) if mx <= 10 else f"{cur}/{mx}"
+                row  = tk.Frame(card, bg=card_bg)
+                row.pack(fill="x")
+                tk.Label(row, text=f"{fname}", font=FONT_SM,
+                         bg=card_bg, fg=fg_main if cur > 0 else fg_dim,
+                         anchor="w").pack(side="left")
+                tk.Label(row, text=f"  {pips}", font=FONT_SM,
+                         bg=card_bg, fg=ACCENT if cur > 0 else fg_dim).pack(side="left")
+
+        # ── Spell slots (casters only) ────────────────────────────────────────
+        slots = comp.get("spell_slots", {})
+        if slots:
+            tk.Frame(card, bg=BTN_BG, height=1).pack(fill="x", pady=(4, 2))
+            slot_row = tk.Frame(card, bg=card_bg)
+            slot_row.pack(fill="x")
+            tk.Label(slot_row, text="Slots:", font=FONT_SM,
+                     bg=card_bg, fg=fg_dim).pack(side="left")
+            for lvl_str in sorted(slots.keys(), key=int):
+                data  = slots[lvl_str]
+                total = data.get("total", 0)
+                used  = data.get("used", 0)
+                avail = total - used
+                pips  = "●" * avail + "○" * used
+                tk.Label(slot_row, text=f"  L{lvl_str}:{pips}", font=FONT_SM,
+                         bg=card_bg, fg=ACCENT if avail > 0 else fg_dim).pack(side="left")
+
+        # ── Personality ───────────────────────────────────────────────────────
+        tk.Frame(card, bg=BTN_BG, height=1).pack(fill="x", pady=(4, 2))
+        for trait in comp.get("personality_traits", []):
+            tk.Label(card, text=f'"{trait}"', font=FONT_SM,
+                     bg=card_bg, fg=fg_dim, wraplength=270, justify="left",
+                     anchor="w").pack(fill="x")
+        if comp.get("ideal"):
+            tk.Label(card, text=f"Ideal: {comp['ideal']}", font=FONT_SM,
+                     bg=card_bg, fg=fg_dim, wraplength=270, justify="left",
+                     anchor="w").pack(fill="x", pady=(2, 0))
+        if comp.get("bond"):
+            tk.Label(card, text=f"Bond: {comp['bond']}", font=FONT_SM,
+                     bg=card_bg, fg=fg_dim, wraplength=270, justify="left",
+                     anchor="w").pack(fill="x", pady=(2, 0))
+        if comp.get("flaw"):
+            tk.Label(card, text=f"Flaw: {comp['flaw']}", font=FONT_SM,
+                     bg=card_bg, fg=fg_dim, wraplength=270, justify="left",
+                     anchor="w").pack(fill="x", pady=(2, 0))
+        tk.Label(card, text=comp.get("alignment", ""), font=FONT_SM,
+                 bg=card_bg, fg=fg_dim).pack(anchor="w", pady=(2, 0))
+
+    def _companion_hp(self, comp):
+        """Return (current, max) HP — uses initiative order during combat."""
+        if self.session and self.session.get("in_combat"):
+            for entry in self.session.get("initiative_order", []):
+                if entry.get("is_companion") and entry["name"] == comp["name"]:
+                    return entry["hp"], entry["max_hp"]
+        return comp["hp"]["current"], comp["hp"]["max"]
+
+    # ── Companion join ────────────────────────────────────────────────────────
+
+    def _handle_companion_join(self, name):
+        from models.companions import find_companion_template, build_companion_at_level
+        template = find_companion_template(name)
+        if not template:
+            self._display(f"  [System: unknown companion '{name}']\n\n", "danger")
+            return
+        companions = self.session.setdefault("companions", [])
+        if any(c["name"].lower() == name.lower() for c in companions):
+            return  # already in party
+        level = self.char.get("level", 1)
+        comp  = build_companion_at_level(template, level)
+        companions.append(comp)
+        self._display(f"\n  {comp['name']} joins the party.\n\n", "system")
+        if self._sb_active_tab == "party":
+            self._refresh_party_tab()
+
+    def _companion_long_rest(self):
+        """Restore companion HP and all resources on a long rest."""
+        for comp in self.session.get("companions", []):
+            if comp.get("status") == "dead":
+                continue
+            comp["hp"]["current"] = comp["hp"]["max"]
+            if comp.get("status") == "unconscious":
+                comp["status"] = "active"
+                comp["death_saves"] = {"successes": 0, "failures": 0}
+            # Restore all spell slots
+            for data in comp.get("spell_slots", {}).values():
+                data["used"] = 0
+            # Restore long-rest features
+            for feat_data in comp.get("feature_uses", {}).values():
+                if feat_data.get("recharge") in ("long", "short", "turn"):
+                    feat_data["current"] = feat_data["max"]
+
+    def _companion_short_rest(self):
+        """Restore companion short-rest features on a short rest (rough avg heal)."""
+        import math, random
+        from models.companions import _HIT_DICE, _mod
+        for comp in self.session.get("companions", []):
+            if comp.get("status") == "dead":
+                continue
+            # Restore short-rest features (Channel Divinity, Second Wind, Ki, etc.)
+            for feat_data in comp.get("feature_uses", {}).values():
+                if feat_data.get("recharge") == "short":
+                    feat_data["current"] = feat_data["max"]
+            # Heal ~avg hit die roll
+            hd      = _HIT_DICE.get(comp["class"], 8)
+            con_mod = _mod(comp["abilities"].get("constitution", 10))
+            gained  = max(1, hd // 2 + 1 + con_mod)
+            comp["hp"]["current"] = min(comp["hp"]["max"],
+                                        comp["hp"]["current"] + gained)
+
+    def _on_scene_change(self, location):
+        """Update location display and remove dead companion cards on next scene."""
+        self._loc_var.set(location)
+        companions = self.session.get("companions", [])
+        # Remove companions who died before this scene change
+        self.session["companions"] = [
+            c for c in companions
+            if not (c.get("status") == "dead" and c.get("dead_at_scene") is not None)
+        ]
+        if self._sb_active_tab == "party":
+            self._refresh_party_tab()
 
     # ── helpers shared by action-panel and sidebar refresh ───────────────────
 
@@ -2509,7 +3049,10 @@ class GameApp:
             if result["features_recharged"]:
                 lines.append(f"  Recharged: {', '.join(result['features_recharged'])}.")
             self._display("\n".join(lines) + "\n\n", "system")
+            self._companion_short_rest()
             self._update_sidebar()
+            if self._sb_active_tab == "party":
+                self._refresh_party_tab()
             _save_char(self.char)
             d.destroy()
 
@@ -2581,8 +3124,12 @@ class GameApp:
             lines.append(f"  Spell slots restored: {', '.join(f'L{k}×{v}' for k,v in slots.items())}.")
         if result.get("features_recharged"):
             lines.append(f"  Features recharged: {', '.join(result['features_recharged'])}.")
+        # Restore companion resources on long rest
+        self._companion_long_rest()
         self._display("\n".join(lines) + "\n\n", "system")
         self._update_sidebar()
+        if self._sb_active_tab == "party":
+            self._refresh_party_tab()
 
     # ── XP & level-up ─────────────────────────────────────────────────────────
 
@@ -2591,6 +3138,16 @@ class GameApp:
         self._display(
             f"  +{amount} XP  (Total: {result['total_xp']})\n\n", "system")
         if result["leveled_up"]:
+            # Level companions alongside the player
+            from models.companions import level_up_companion
+            new_level = result["new_level"]
+            for comp in self.session.get("companions", []):
+                if comp.get("status") != "dead" and comp["level"] < new_level:
+                    level_up_companion(comp, new_level)
+                    self._display(
+                        f"  {comp['name']} advances to level {new_level}.\n\n", "system")
+            if self._sb_active_tab == "party":
+                self._refresh_party_tab()
             self._show_levelup_dialog(result, on_close=after or self._resume_after_levelup)
         else:
             xp_next = result["xp_to_next"]

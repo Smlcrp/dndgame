@@ -176,8 +176,10 @@ class DungeonMaster:
         traits = character.get("personality_traits", "")
         bonds  = character.get("bonds", "")
 
-        in_combat = session.get("in_combat", False) if session else False
+        in_combat    = session.get("in_combat", False) if session else False
         combat_block = self._build_combat_prompt_block(character) if in_combat else ""
+        companions   = session.get("companions", []) if session else []
+        party_block  = self._build_party_block(character, companions)
 
         return f"""You are the Dungeon Master for a solo D&D 5e adventure. Your job is to narrate an immersive story — you are a storyteller, not a game host.
 
@@ -214,7 +216,64 @@ NARRATION RULES — READ CAREFULLY:
 10. If this is the first message, open with a vivid scene that fits the character's background and class.
 11. Keep responses focused. One scene at a time.
 
-{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{combat_block}"""
+{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{combat_block}"""
+
+    def _build_party_block(self, character, companions):
+        """System prompt section describing party members and companion introduction rules."""
+        from models.companions import get_available_companions
+
+        player_class   = character.get("class", "")
+        active         = [c for c in companions if c.get("status") != "dead"]
+        active_classes = [c["class"] for c in active]
+
+        lines = ["\n\nCOMPANION SYSTEM:"]
+
+        if active:
+            lines.append("\nCURRENT PARTY MEMBERS (in addition to the player):")
+            for c in active:
+                status = " [UNCONSCIOUS]" if c.get("status") == "unconscious" else ""
+                lines.append(
+                    f"  {c['name']} — {c['race']} {c['class']} ({c['subclass']}), "
+                    f"Level {c['level']}{status}")
+                lines.append(f"    \"{c['personality_traits'][0]}\"")
+                lines.append(f"    Ideal: {c['ideal']}")
+                lines.append(f"    Alignment: {c['alignment']}")
+                lines.append(
+                    f"    Their surname ({c['last_name']}) may be used naturally by "
+                    f"NPCs, in formal introductions, or in dramatic moments.")
+            lines.append(
+                "\n  Voice each party member consistently according to their personality, "
+                "ideal, and alignment. They have opinions and may push back on choices "
+                "that conflict with their moral code.")
+        else:
+            lines.append("\nThe player is currently traveling alone.")
+
+        available = get_available_companions(player_class, active_classes)
+        max_companions = 3
+
+        if len(active) < max_companions and available:
+            names_and_classes = ", ".join(
+                f"{t['first_name']} {t['last_name']} ({t['class']})"
+                for t in available)
+            lines += [
+                "\nINTRODUCING A COMPANION:",
+                "You MAY introduce one of the available companions when the story calls "
+                "for it naturally — a stranger who helps in a fight, someone rescued, "
+                "a guide hired by the quest-giver. Do NOT rush this. There is no requirement "
+                "to introduce anyone. Let the story create the moment.",
+                f"Available companions: {names_and_classes}",
+                "Rules:",
+                "- NEVER introduce a companion whose class matches the player or any active party member.",
+                "- Narrate their arrival naturally first, then emit on its own line: "
+                "[COMPANION: First Last]",
+                "- Use their full name at introduction. Their surname can appear in the story "
+                "as NPCs address them or as the narrative calls for it.",
+                "- The party cap is 3 companions. Do not introduce more.",
+            ]
+        elif len(active) >= max_companions:
+            lines.append("\nThe party is at full capacity (3 companions). Do not introduce more.")
+
+        return "\n".join(lines)
 
     def _messages_for_ollama(self, session, character, player_input):
         messages = [{"role": "system", "content": self._build_system_prompt(character, session)}]
@@ -281,6 +340,9 @@ NARRATION RULES — READ CAREFULLY:
         if re.search(r"\[BREAK\]", raw_text, re.IGNORECASE):
             events.append({"type": "break_suggested"})
 
+        for m in re.finditer(r"\[COMPANION:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
+            events.append({"type": "companion_join", "name": m.group(1).strip()})
+
         for m in re.finditer(r"\[ACTION:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
             content = m.group(1).strip()
             pairs   = {k.strip().lower(): v.strip()
@@ -321,7 +383,7 @@ NARRATION RULES — READ CAREFULLY:
                 continue
             events.append(ev)
 
-        clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
+        clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP|COMPANION):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
         clean = re.sub(r"\[(ACTION|BONUS):[^\]]*\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\[(BEAT|CLIMAX|BREAK)\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
