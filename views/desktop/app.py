@@ -369,8 +369,9 @@ class GameApp:
             bg=ACCENT, fg="#1a1a2e", padx=6, pady=2)
 
         self.root.bind_all("<F4>", self._open_dev_panel)
-        self._dev_panel   = None
-        self._story_mode  = False
+        self._dev_panel     = None
+        self._dev_unlocked  = False
+        self._story_mode    = False
 
     def _on_input_focus_in(self, _event=None):
         if hasattr(self, "_input_var") and self._input_var.get() == _EXPLORE_PLACEHOLDER:
@@ -3908,12 +3909,70 @@ class GameApp:
     # ── DEV panel (Ctrl+D) ────────────────────────────────────────────────────
 
     def _open_dev_panel(self, event=None):
+        if not self._dev_unlocked:
+            self._prompt_dev_password()
+            return "break"
         try:
             self._open_dev_panel_inner()
         except Exception as _e:
             import traceback
             tk.messagebox.showerror("DEV panel error", traceback.format_exc(), parent=self.root)
         return "break"
+
+    def _prompt_dev_password(self):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("DEV Access")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.update_idletasks()
+        pw, ph = 300, 160
+        rx = self.root.winfo_x() + (self.root.winfo_width()  - pw) // 2
+        ry = self.root.winfo_y() + (self.root.winfo_height() - ph) // 2
+        dlg.geometry(f"{pw}x{ph}+{rx}+{ry}")
+
+        body = tk.Frame(dlg, bg=BG, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+
+        tk.Label(body, text="DEV Access", font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w")
+        tk.Label(body, text="Enter the DEV password to unlock controls.",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(2, 10))
+
+        pw_var = tk.StringVar()
+        entry = tk.Entry(body, textvariable=pw_var, show="●",
+                         bg=INPUT_BG, fg=FG, font=FONT_BODY,
+                         relief="flat", bd=0, insertbackground=ACCENT)
+        entry.pack(fill="x", ipady=5)
+        entry.focus_set()
+
+        err_lbl = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
+        err_lbl.pack(anchor="w", pady=(4, 0))
+
+        def _confirm(_event=None):
+            if pw_var.get() == "0922":
+                self._dev_unlocked = True
+                dlg.destroy()
+                try:
+                    self._open_dev_panel_inner()
+                except Exception:
+                    import traceback
+                    tk.messagebox.showerror("DEV panel error", traceback.format_exc(),
+                                            parent=self.root)
+            else:
+                err_lbl.config(text="Incorrect password.")
+                pw_var.set("")
+                entry.focus_set()
+
+        entry.bind("<Return>", _confirm)
+
+        btn_row = tk.Frame(body, bg=BG)
+        btn_row.pack(fill="x", pady=(8, 0))
+        tk.Button(btn_row, text="Cancel", font=FONT_SM, bg=BTN_BG, fg=FG,
+                  relief="flat", padx=10, pady=4,
+                  command=dlg.destroy).pack(side="left")
+        tk.Button(btn_row, text="Unlock", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                  relief="flat", padx=14, pady=4,
+                  command=_confirm).pack(side="right")
 
     def _open_dev_panel_inner(self):
         if not self.char or not self.session:
