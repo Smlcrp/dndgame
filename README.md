@@ -38,25 +38,59 @@ Launch with:
 python main.py
 ```
 
+---
+
 ### Main Menu
 
-Choose **New Adventure** to pick a character and begin at Level 1, **Next Adventure** to carry a leveled character into a brand-new story, or **Resume Session** to continue a saved session mid-story.
+Choose **New Adventure** to pick a character and start at Level 1, **Next Adventure** to carry a leveled character into a fresh story, or **Resume Session** to continue mid-session.
 
-<img src="docs/screenshots/01_startup.png" alt="Main menu — New Adventure or Resume Session" width="280"/>
+<img src="docs/screenshots/01_startup.png" alt="Main menu — three mode cards" width="340"/>
+
+---
+
+### Select Character
+
+Pick from saved characters. **+ New Character** opens the full character builder. **⬇ DDB Import** imports directly from a D&D Beyond URL.
+
+<img src="docs/screenshots/02_character_select.png" alt="Character select screen" width="340"/>
+
+---
+
+### Choose Your Adventure
+
+After selecting a character, pick how long you want to play. **Quest** (the default, highlighted) is a complete arc in one sitting. **Epic** runs across multiple sessions with deeper subplots. **One Shot** races straight to the confrontation.
+
+<img src="docs/screenshots/14_preset_select.png" alt="Adventure preset selection — Epic, Quest, One Shot" width="340"/>
 
 ---
 
 ### The Game Interface
 
-Type actions in the input bar — the AI DM narrates the world and drives the story. The right-hand sidebar tracks your character's HP, AC, ability scores, saving throws, skills, and attack options in real time.
+Type actions in the input bar — the AI DM narrates the world and drives the story. The sidebar on the right tracks your full character state in real time: HP, AC, XP progress, features with charge counts, inventory, and attacks.
 
-<img src="docs/screenshots/06_main_game.png" alt="Main game interface showing narration and character sidebar" width="700"/>
+<img src="docs/screenshots/06_main_game.png" alt="Main game interface — narration panel and character sidebar" width="700"/>
+
+---
+
+### The Sidebar
+
+The sidebar shows your complete character state at a glance. Sections from top to bottom: CHARACTER (name/class/level), VITALS (HP bar, AC, speed, initiative, XP progress bar), ABILITIES (all six scores with modifiers), FEATURES (limited-use abilities with current/max charges), INVENTORY (coin purse and magic items), and ATTACKS.
+
+<img src="docs/screenshots/07_sidebar.png" alt="Full character sidebar showing all sections including INVENTORY" width="220"/>
+
+---
+
+### Gold, Loot, and Magic Items
+
+The DM awards gold and items automatically mid-adventure via structured tags. Awards appear as inline system messages in the narration (`── 50 gp added  (Total: 97 gp) ──`) and update the sidebar INVENTORY section instantly. Magic weapon and armor bonuses apply mechanically — a +1 Longsword shows `+8` to hit and `1d8+5` damage rather than the base values.
+
+<img src="docs/screenshots/11_inventory_sidebar.png" alt="Sidebar INVENTORY section showing coin purse and magic items" width="220"/>
 
 ---
 
 ### Skill Checks — 3D Animated d20
 
-When the DM triggers a skill check, a **Roll** button appears in the narration. Click it to open the 3D d20 window — click the die to spin it, and it eases to a stop landing exactly on your result. Each of the 20 possible roll values has its own pre-computed animation.
+When the DM calls for a skill check, a **Roll** button appears inline in the narration. Click it to open the 3D d20 — click the die to spin it, and it eases to a stop on your exact result. Each of the 20 possible values has its own unique pre-computed animation.
 
 <img src="docs/screenshots/08_d20_roller.png" alt="3D animated d20 roller showing a roll of 17" width="200"/>
 
@@ -64,72 +98,52 @@ When the DM triggers a skill check, a **Roll** button appears in the narration. 
 
 ### Combat
 
-Combat starts automatically when the DM encounters enemies. A `[COMBAT:]` event spins up the initiative engine — everyone rolls, and turns proceed in order. The narration shows the initiative list; the sidebar's **COMBAT** section tracks every combatant's current HP live. Your **ATTACKS** become clickable buttons that open the d20 roller for the attack roll.
+Combat starts automatically when the DM encounters enemies. Initiative is rolled for everyone, and turns proceed in order. The narration shows the full initiative list; the sidebar COMBAT section tracks every combatant's HP live. Your attack buttons highlight gold on your turn — click one, roll the d20, then roll damage if you hit.
 
-<img src="docs/screenshots/09_combat.png" alt="Combat encounter — initiative order, narration, and attack buttons" width="700"/>
+Type actions in natural language ("I attack the captain") and the DM parses your intent, emitting structured action tags that drive the mechanical resolution. The **⚔ Actions** button shows a reference panel of available actions and bonus actions. The **✦ Spells** button opens the spell picker (visible only when you have castable combat spells).
 
-The sidebar combat tracker with HP bars for all combatants:
+<img src="docs/screenshots/09_combat.png" alt="Combat — initiative list, narration, ⚔ Actions and ✦ Spells buttons" width="700"/>
 
-<img src="docs/screenshots/10_combat_sidebar.png" alt="Sidebar showing the combat initiative tracker and attack buttons" width="200"/>
+<img src="docs/screenshots/10_combat_sidebar.png" alt="Combat sidebar — FEATURES, INVENTORY, gold attacks, and live HP tracker" width="220"/>
 
 **During combat:**
-- Roll for initiative the same way as skill checks — click the die, it lands on your result
-- Choose your attack from the sidebar buttons each turn; the d20 determines whether you hit
 - Enemy turns resolve automatically with narrated outcomes
-- Death saves trigger automatically when the player reaches 0 HP
-- Sessions save on quit and resume mid-combat
+- Death saves trigger at 0 HP — nat-20 revives at 1 HP, three failures = dead
+- Sessions save on quit and resume mid-combat including initiative state
+
+---
+
+### Level-Up
+
+When XP crosses a threshold the level-up dialog opens automatically. It walks through each relevant step: new class features displayed as cards, an animated HP die roll (or take average), subclass selection at the trigger level, ASI or feat, and spell learning for casters.
+
+<img src="docs/screenshots/15_level_up.png" alt="Level-up dialog — new features and HP roll step" width="430"/>
+
+**ASI or Feat** — at ASI levels you choose: +2 to one ability, +1 to two abilities, or take a feat from 30 PHB options. Each feat shows a one-line description on selection.
+
+<img src="docs/screenshots/12_feat_picker.png" alt="Level-up ASI step with Take a Feat selected and Sentinel highlighted" width="430"/>
+
+**Spell Learning** — casters with a spells-known list (Bard, Sorcerer, Warlock, Ranger) pick one new spell from any accessible level not already known. Wizards pick two. Prepare-from-list classes (Cleric, Druid, Paladin) see an informational message only.
+
+<img src="docs/screenshots/13_spell_picker.png" alt="Level-up spell learning — spell list with Fireball highlighted" width="430"/>
 
 ---
 
 ### Adventure Structure
 
-Every new adventure is drawn from a library of 8 structured story templates. Each adventure has:
-
-- A **hook** — the opening situation that draws the character in
-- A named **antagonist** with a motivation and a plan already in motion
-- Three escalating **beats** (Act 1 → Act 2 → Act 3) that build toward a climax
-- A **climax** — the final confrontation
-- A **resolution** — aftermath and closure
-
-The DM tracks the current beat and steers the story toward it without rushing. When a beat resolves naturally, the DM emits a `[BEAT]` tag — the engine advances the arc, displays a chapter transition, and awards story XP (150 / 300 / 500 XP per beat). The final act emits `[CLIMAX]` instead.
-
-**Natural break points** — when the story reaches a safe resting point between beats (after combat, at an inn, at the end of a scene), the DM emits `[BREAK]` and a banner appears in the narration:
-
-```
-────────────────────────────────────────────────────
-  Good stopping point — this is a natural break
-  in the story. Save & Quit when ready, or keep
-  going if you want to push on.
-────────────────────────────────────────────────────
-```
+Every adventure is drawn from a library of 8 structured story templates. Each has a hook, a named antagonist with a plan already in motion, escalating acts (1–5 depending on preset), a climax, and a resolution. The DM tracks the current beat and steers toward it — `[BEAT]` advances the arc and awards story XP (150 / 300 / 500 per beat for a Quest), `[CLIMAX]` triggers the final confrontation, and `[BREAK]` displays a natural stopping-point banner.
 
 ---
 
 ### Story Mode
 
-The **DEV panel** (press **F4** during a session, or click the DEV button in the header) includes a **Story Mode** toggle. When activated:
-
-- The DM opens a purely narrative scene — no combat, no skill checks, no dice rolls.
-- All game mechanics (XP awards, combat triggers, skill check prompts) are suppressed for the duration.
-- A gold **◆ STORY MODE** badge appears in the header while active.
-- Type responses as normal; the DM narrates back without engaging any game systems.
-- Click **Exit Story Mode** in the DEV panel to return to normal play.
-
-Story Mode is useful for exploring social scenarios, lore conversations, and narrative interludes where rolling dice would break the mood.
+The **DEV panel** (press **F4** or click DEV in the header) includes a **Story Mode** toggle. When active, all game mechanics (combat, XP, skill checks) are suspended — pure narrative only. A gold **◆ STORY MODE** badge appears in the header.
 
 ---
 
 ### Companion System
 
-During play the DM can add companions to your party (up to 3 — party of 4 total). When the DM introduces a companion, it emits a `[COMPANION: Name]` tag and the companion joins automatically.
-
-- **10 pre-built companions** — each with a real class (Fighter, Rogue, Cleric, Wizard, Ranger, Paladin, Druid, Bard, Barbarian, Monk), full 5e stat block, and a name, personality traits, ideal, bond, and flaw.
-- **No duplicate classes** — the DM is instructed not to offer a companion class the player already has.
-- **Combat AI** — companions act autonomously on their initiative turn. Each class has its own tactical role: strikers attack, healers prioritise low-HP allies, controllers target debuffs, supports buff the party.
-- **Spell slots** — full and half casters track their own slots through combat and rests.
-- **Death saves** — companions that drop to 0 HP make death saving throws on their turn. Nat-20 revives at 1 HP; 3 failures = dead. Dead companions' party cards linger until the next scene change.
-- **Levels together** — companions always level up when the player does.
-- **Party tab** — a dedicated PARTY tab in the sidebar shows all companion cards with live HP bars, AC, feature pips, spell slot pips, and death save counters.
+The DM can add up to 3 companions to your party via `[COMPANION: Name]` tags. Each companion has a full 5e class (Fighter, Rogue, Cleric, Wizard, Ranger, Paladin, Druid, Bard, Barbarian, Monk), stat block, and personality. They act autonomously in combat with class-appropriate tactics, track their own spell slots and death saves, and level up alongside the player.
 
 ---
 
@@ -717,8 +731,6 @@ The DM can award gold and items mid-adventure using structured tags in its narra
 
 Gold and items appear in the new **INVENTORY** sidebar section (between FEATURES and COMBAT), showing the full coin purse (pp/gp/sp/cp) and a list of magic items. Characters are saved automatically on each award.
 
-<img src="docs/screenshots/11_inventory_sidebar.png" alt="Sidebar INVENTORY section showing coin purse and magic items" width="230"/>
-
 **Magic Items Affect Mechanics**
 
 Magic weapon and armor bonuses are not cosmetic — they are applied at resolution time:
@@ -729,8 +741,6 @@ Magic weapon and armor bonuses are not cosmetic — they are applied at resoluti
 
 The level-up ASI step now offers three options: "+2 to one ability", "+1 to two abilities", or **Take a Feat**. Selecting a feat opens a scrollable list of 30 PHB feats (Alert, Lucky, Great Weapon Master, Sharpshooter, War Caster, Tough, and more) with a one-line description shown below the list on selection. The chosen feat is saved to `character["feats"]` and shown to the DM in future prompts. The Tough feat applies its HP bonus (+2 × level) immediately on confirmation.
 
-<img src="docs/screenshots/12_feat_picker.png" alt="Level-up ASI step with Take a Feat selected and Sentinel highlighted" width="430"/>
-
 **Spell Learning at Level-Up**
 
 The level-up spells step is now a real picker instead of a redirect stub:
@@ -740,7 +750,32 @@ The level-up spells step is now a real picker instead of a redirect stub:
 
 Spell options are filtered against already-known spells and labeled with their level (`[Lv3] Fireball`). Selections are added to `spellcasting.spells_known`.
 
-<img src="docs/screenshots/13_spell_picker.png" alt="Level-up spell learning step showing available spells with Fireball highlighted" width="430"/>
+---
+
+## What's Next
+
+Game mechanics are complete. The next phase moves up the stack — richer UI, then migrating off Tkinter entirely.
+
+### Phase 2 — Sidebar Upgrades
+- **XP bar** — gold progress bar below VITALS showing XP toward next level
+- **Feature charge pips** — `[●●○] Action Surge` style display instead of plain `[1/1]` text
+- **Inspiration toggle** — small gold button in the vitals row
+- **Short Rest / Long Rest buttons** — Short rest opens a hit-dice spending dialog with animated die rolls; Long rest is one-click with confirmation
+
+### Phase 3 — DEV Panel
+- Award XP, quick-jump to any level, set HP, add conditions, spawn a test combat — all without playing through the story
+
+### Phase 4 — Electron + Flask Migration
+The Tkinter UI has a hard ceiling on visual quality. The MVC structure was designed for this migration — controllers return plain dicts and are already framework-agnostic.
+- Flask backend replaces Tkinter callbacks
+- HTML/CSS/JS frontend (Bootstrap or Tailwind) replaces Tkinter widgets
+- Packaged as an Electron app for distribution
+- Bundled Ollama setup flow for first-run installation
+
+### Phase 5 — Polish & Distribution
+- Full visual redesign in the web frontend
+- Steam / itch.io distribution via Electron + Steamworks.js
+- Auto-Cloud saves, achievements
 
 ---
 

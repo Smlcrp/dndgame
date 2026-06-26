@@ -607,15 +607,39 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 
 ## Project Roadmap
 
-### Stage 1 — Game Mechanics (current focus)
-Complete the character progression system (Phases 2 & 3 — sidebar XP bar, feature charge display, rest buttons, DEV panel). This is the priority because UI polish and packaging work should wrap around a mechanically finished game.
+### ✅ Stage 1 — Game Mechanics (COMPLETE)
 
-Remaining mechanical work:
-- Character Progression Phase 2 (sidebar: XP bar, feature charge pips, Inspiration toggle, rest buttons)
-- Character Progression Phase 3 (DEV panel: award XP, level jump, set HP, test combat)
-- Multiclassing (defer until single-class leveling is solid)
+All core D&D mechanics are implemented and tested (376 tests passing):
+- Turn-based combat with conditions, crits, death saves
+- Full character progression: XP, level-up dialog (features → HP → subclass → ASI/feat → spells)
+- 30 PHB feats selectable at ASI levels
+- Spell learning at level-up for known/prepared/wizard classes
+- In-game economy: gold awards, magic items, mechanical bonuses applied at combat resolution
+- DM-driven action parsing via structured tags
+- 8 adventure templates with structured story arcs and 3 length presets (One Shot / Quest / Epic)
+- Companion system: 10 classes, combat AI, spell slots, death saves
+- D&D Beyond character import
+- Passive perception/investigation/insight in DM system prompt
+- Natural knowledge check system with 5-tier result quality scale
 
-### Stage 2 — Electron + Flask Migration (confirmed plan)
+### Stage 2 — Sidebar & Rest UI (next)
+
+- **XP progress bar** — gold bar below VITALS: "XP: 6500 / 14000 (Lv5→6)"
+- **Feature charge pips** — `[●●○] Action Surge` style instead of plain text counts. Clickable to use (with confirmation).
+- **Inspiration toggle** — small gold button in the vitals row
+- **Short Rest button** — hit-dice spending dialog with animated die rolls per die spent
+- **Long Rest button** — one-click with confirmation, restores HP/slots/features
+
+### Stage 3 — DEV Panel
+
+Floating panel (F4, no grab_set so game stays interactive):
+- Award XP → Lv2 through Lv10 quick-jump buttons
+- Set HP (spinbox)
+- Add condition (dropdown)
+- Start test combat (spawns 1 Goblin)
+- Short/Long Rest instant buttons
+
+### Stage 4 — Electron + Flask Migration (confirmed plan)
 Migrate from Tkinter to a proper game architecture: **Flask backend + HTML/JS/CSS frontend packaged via Electron**.
 
 **Why this path:**
