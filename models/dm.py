@@ -395,7 +395,9 @@ NARRATION RULES — READ CAREFULLY:
 
     def _messages_for_ollama(self, session, character, player_input):
         messages = [{"role": "system", "content": self._build_system_prompt(character, session)}]
-        for entry in session.get("history", []):
+        history = session.get("history", [])
+        # Keep only the most recent 20 entries (10 exchanges) to stay within context
+        for entry in history[-20:]:
             role = "user" if entry["role"] == "player" else "assistant"
             messages.append({"role": role, "content": entry["text"]})
         messages.append({"role": "user", "content": player_input})
@@ -407,6 +409,7 @@ NARRATION RULES — READ CAREFULLY:
                 "model":    self.model,
                 "messages": messages,
                 "stream":   False,
+                "options":  {"num_ctx": 8192},
             }, timeout=120)
             resp.raise_for_status()
             return resp.json()["message"]["content"]
