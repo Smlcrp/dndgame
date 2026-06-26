@@ -717,6 +717,8 @@ The DM can award gold and items mid-adventure using structured tags in its narra
 
 Gold and items appear in the new **INVENTORY** sidebar section (between FEATURES and COMBAT), showing the full coin purse (pp/gp/sp/cp) and a list of magic items. Characters are saved automatically on each award.
 
+<img src="docs/screenshots/11_inventory_sidebar.png" alt="Sidebar INVENTORY section showing coin purse and magic items" width="230"/>
+
 **Magic Items Affect Mechanics**
 
 Magic weapon and armor bonuses are not cosmetic — they are applied at resolution time:
@@ -727,6 +729,8 @@ Magic weapon and armor bonuses are not cosmetic — they are applied at resoluti
 
 The level-up ASI step now offers three options: "+2 to one ability", "+1 to two abilities", or **Take a Feat**. Selecting a feat opens a scrollable list of 30 PHB feats (Alert, Lucky, Great Weapon Master, Sharpshooter, War Caster, Tough, and more) with a one-line description shown below the list on selection. The chosen feat is saved to `character["feats"]` and shown to the DM in future prompts. The Tough feat applies its HP bonus (+2 × level) immediately on confirmation.
 
+<img src="docs/screenshots/12_feat_picker.png" alt="Level-up ASI step with Take a Feat selected and Sentinel highlighted" width="430"/>
+
 **Spell Learning at Level-Up**
 
 The level-up spells step is now a real picker instead of a redirect stub:
@@ -735,6 +739,8 @@ The level-up spells step is now a real picker instead of a redirect stub:
 - **Wizard**: pick 2 new spells to add to the spellbook
 
 Spell options are filtered against already-known spells and labeled with their level (`[Lv3] Fireball`). Selections are added to `spellcasting.spells_known`.
+
+<img src="docs/screenshots/13_spell_picker.png" alt="Level-up spell learning step showing available spells with Fireball highlighted" width="430"/>
 
 ---
 
