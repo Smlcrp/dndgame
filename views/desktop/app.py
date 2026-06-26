@@ -487,8 +487,114 @@ class GameApp:
         for w in self._input_frame.winfo_children():
             w.destroy()
 
+        uses        = self.char.get("feature_uses", {}) if self.char else {}
+        attack_opts = self._get_attack_options()
+
+        # ── Weapon & feature strip (one line) ─────────────────────────────────
+        strip = tk.Frame(self._input_frame, bg=PANEL)
+        strip.pack(fill="x", padx=6, pady=(4, 0))
+
+        weapon_parts = []
+        for opt in attack_opts:
+            if opt.get("mode") == "offhand":
+                weapon_parts.append(f"⚔ {opt['label']} {opt['bonus']:+d}  [BA]")
+            else:
+                weapon_parts.append(f"⚔ {opt['label']} {opt['bonus']:+d}")
+        feat_parts = []
+        for fname, data in uses.items():
+            if fname in self._COMBAT_FEATURES:
+                cur = data.get("current", 0)
+                mx  = data.get("max", 1)
+                feat_parts.append(f"★ {fname} {cur}/{mx}")
+
+        strip_text = "   ·   ".join(weapon_parts)
+        if feat_parts:
+            strip_text += ("   │   " if weapon_parts else "") + "   ·   ".join(feat_parts)
+        if not strip_text:
+            strip_text = "No weapons equipped"
+
+        tk.Label(strip, text=strip_text, font=("Segoe UI", 8),
+                 bg=PANEL, fg=FG).pack(anchor="w")
+
+        # ── Spell tray (always-visible scrollable list, combat only) ──────────
+        sc = self.char.get("spellcasting", {}) if self.char else {}
+        if sc.get("enabled", False):
+            spells = get_available_combat_spells(self.char)
+            # Also include spells with 0 slots so player sees them (greyed)
+            known = list(dict.fromkeys(
+                sc.get("spells_prepared", []) + sc.get("spells_known", [])))
+            from models.spells import SPELLS as _ALL_SPELLS, spell_damage_notation
+            all_combat = []
+            for name in known:
+                sp = _ALL_SPELLS.get(name)
+                if not sp:
+                    continue
+                if sp["level"] == 0:
+                    all_combat.append({"name": name, "spell": sp,
+                                       "level": 0, "slots_left": None, "available": True})
+                else:
+                    sc_slots = sc.get("slots", {})
+                    total_avail = sum(
+                        max(0, v.get("total", 0) - v.get("used", 0))
+                        for k, v in sc_slots.items() if int(k) >= sp["level"])
+                    all_combat.append({"name": name, "spell": sp,
+                                       "level": sp["level"],
+                                       "slots_left": total_avail,
+                                       "available": total_avail > 0})
+            all_combat.sort(key=lambda s: (s["level"], s["name"]))
+
+            if all_combat:
+                tray_outer = tk.Frame(self._input_frame, bg=PANEL)
+                tray_outer.pack(fill="x", padx=6, pady=(2, 0))
+
+                ICON = {"attack": "⚔", "save": "⊕", "auto": "★"}
+                SAVE_AB = {"dex": "DEX", "con": "CON", "wis": "WIS",
+                           "str": "STR", "int": "INT", "cha": "CHA"}
+                player_level = self.char.get("level", 1)
+                rows = []
+                for entry in all_combat:
+                    sp    = entry["spell"]
+                    icon  = ICON.get(sp["delivery"], "·")
+                    sab   = SAVE_AB.get(sp.get("save_ability") or "", "")
+                    dtype = f"{icon} {sp['delivery']}" + (f" {sab}" if sab else "")
+                    if entry["level"] == 0:
+                        slot_str = "cantrip    "
+                    else:
+                        n = entry["slots_left"]
+                        slot_str = f"L{entry['level']}  {n} slot{'s' if n != 1 else ''}  "
+                    rows.append((entry["name"], slot_str, dtype, entry["available"]))
+
+                tray_h = min(6, len(rows))
+                canvas = tk.Canvas(tray_outer, bg=INPUT_BG, highlightthickness=0,
+                                   height=tray_h * 18)
+                vsb    = tk.Scrollbar(tray_outer, orient="vertical", command=canvas.yview,
+                                      bg=PANEL, troughcolor=INPUT_BG, width=10)
+                canvas.configure(yscrollcommand=vsb.set)
+                vsb.pack(side="right", fill="y")
+                canvas.pack(side="left", fill="x", expand=True)
+
+                inner = tk.Frame(canvas, bg=INPUT_BG)
+                canvas.create_window((0, 0), window=inner, anchor="nw")
+
+                for spell_name, slot_str, dtype, avail in rows:
+                    fg_col  = FG if avail else DIM
+                    row_f   = tk.Frame(inner, bg=INPUT_BG)
+                    row_f.pack(fill="x", padx=4, pady=0)
+                    tk.Label(row_f, text=f"✦ {spell_name:<22}", font=("Segoe UI", 8),
+                             bg=INPUT_BG, fg=fg_col, anchor="w").pack(side="left")
+                    tk.Label(row_f, text=f"{slot_str:<16}", font=("Segoe UI", 8),
+                             bg=INPUT_BG, fg=fg_col, anchor="w").pack(side="left")
+                    tk.Label(row_f, text=dtype, font=("Segoe UI", 8),
+                             bg=INPUT_BG, fg=fg_col if avail else DIM, anchor="w").pack(side="left")
+
+                inner.update_idletasks()
+                canvas.configure(scrollregion=canvas.bbox("all"))
+                canvas.bind("<MouseWheel>",
+                            lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))
+
+        # ── Input row ─────────────────────────────────────────────────────────
         row = tk.Frame(self._input_frame, bg=PANEL)
-        row.pack(fill="x", padx=6, pady=(4, 4))
+        row.pack(fill="x", padx=6, pady=(2, 4))
 
         tk.Button(row, text="⚔ Actions", font=FONT_SM,
                   bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
@@ -506,13 +612,6 @@ class GameApp:
                   bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0, padx=12, pady=3,
                   activebackground="#e0c060", activeforeground="#1a1a2e",
                   command=self._send_combat_action).pack(side="right")
-
-        sc = self.char.get("spellcasting", {}) if self.char else {}
-        if sc.get("enabled", False) and get_available_combat_spells(self.char):
-            tk.Button(row, text="✦ Spells", font=FONT_SM,
-                      bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
-                      activebackground=ACCENT, activeforeground="#1a1a2e",
-                      command=self._open_spell_picker).pack(side="right", padx=(0, 4))
 
     # ── Action reference panel ────────────────────────────────────────────────
 
@@ -580,12 +679,6 @@ class GameApp:
                     reason=blocked_reason or "")
         else:
             row("  ⚔  No weapons equipped", available=False, reason="Equip a weapon in the character sheet")
-
-        sc = self.char.get("spellcasting", {}) if self.char else {}
-        if sc.get("enabled", False):
-            spells_avail = bool(get_available_combat_spells(self.char))
-            row("  ✦  Cast a Spell", available=spells_avail and not action_blocked,
-                reason=blocked_reason or "No castable combat spells available")
 
         tk.Label(d, text="  ─── Standard Actions ───", font=FONT_SM,
                  bg=BG, fg=DIM).pack(anchor="w", padx=pad_x + 8, pady=(4, 0))
