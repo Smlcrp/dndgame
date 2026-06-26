@@ -2100,14 +2100,16 @@ class GameApp:
     # ── Sidebar refresh methods ───────────────────────────────────────────────
 
     def _refresh_spells(self):
-        """Compact spellcasting stats: DC, ATK, slot pips. Hidden for non-casters."""
+        """Compact spellcasting stats: DC, ATK, slot pips. Shows — for non-casters."""
         for w in self._spells_frame.winfo_children():
             w.destroy()
+        _dash = lambda: tk.Label(self._spells_frame, text="—",
+                                 font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
         if not self.char:
-            return
+            _dash(); return
         sc = self.char.get("spellcasting", {})
         if not sc.get("enabled"):
-            return
+            _dash(); return
         dc  = sc.get("spell_save_dc", "?")
         atk = sc.get("attack_bonus", 0)
         tk.Label(self._spells_frame, text=f"Save DC {dc}  •  Atk {atk:+d}",
