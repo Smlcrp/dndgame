@@ -252,25 +252,39 @@ class GameApp:
         self._skills_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._skills_frame.pack(anchor="w", padx=10, pady=(0,4), fill="x")
 
-        # SPELLCASTING (compact: DC / ATK / slot counts — only populated for casters)
-        _sec("SPELLCASTING")
+        # SPELLCASTING — hidden for non-casters; store header refs for toggling
+        self._spells_sec_lbl = tk.Label(self._sb_inner, text="SPELLCASTING",
+                                        font=("Segoe UI", 8, "bold"), bg=PANEL, fg=ACCENT)
+        self._spells_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0))
+        self._spells_sec_div = tk.Frame(self._sb_inner, bg=BTN_BG, height=1)
+        self._spells_sec_div.pack(fill="x", padx=10, pady=(2, 4))
         self._spells_frame = tk.Frame(self._sb_inner, bg=PANEL)
-        self._spells_frame.pack(fill="x", padx=6, pady=(0,4))
+        self._spells_frame.pack(fill="x", padx=6, pady=(0, 4))
 
-        # ACTIONS (weapons + spells-as-actions + standard actions)
-        _sec("ACTIONS")
+        # ACTIONS (always visible)
+        self._actions_sec_lbl = tk.Label(self._sb_inner, text="ACTIONS",
+                                         font=("Segoe UI", 8, "bold"), bg=PANEL, fg=ACCENT)
+        self._actions_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0))
+        tk.Frame(self._sb_inner, bg=BTN_BG, height=1).pack(fill="x", padx=10, pady=(2, 4))
         self._attacks_frame = tk.Frame(self._sb_inner, bg=PANEL)
-        self._attacks_frame.pack(fill="x", padx=6, pady=(0,4))
+        self._attacks_frame.pack(fill="x", padx=6, pady=(0, 4))
 
-        # BONUS ACTIONS
-        _sec("BONUS ACTIONS")
+        # BONUS ACTIONS — hidden when empty; store header refs for toggling
+        self._bonus_sec_lbl = tk.Label(self._sb_inner, text="BONUS ACTIONS",
+                                       font=("Segoe UI", 8, "bold"), bg=PANEL, fg=ACCENT)
+        self._bonus_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0))
+        self._bonus_sec_div = tk.Frame(self._sb_inner, bg=BTN_BG, height=1)
+        self._bonus_sec_div.pack(fill="x", padx=10, pady=(2, 4))
         self._bonus_frame = tk.Frame(self._sb_inner, bg=PANEL)
-        self._bonus_frame.pack(fill="x", padx=6, pady=(0,4))
+        self._bonus_frame.pack(fill="x", padx=6, pady=(0, 4))
 
-        # FEATURES (non-BA charge tracking: Arcane Recovery etc.)
-        _sec("FEATURES")
+        # FEATURES (non-BA charges — always visible)
+        self._features_sec_lbl = tk.Label(self._sb_inner, text="FEATURES",
+                                          font=("Segoe UI", 8, "bold"), bg=PANEL, fg=ACCENT)
+        self._features_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0))
+        tk.Frame(self._sb_inner, bg=BTN_BG, height=1).pack(fill="x", padx=10, pady=(2, 4))
         self._features_frame = tk.Frame(self._sb_inner, bg=PANEL)
-        self._features_frame.pack(fill="x", padx=6, pady=(0,4))
+        self._features_frame.pack(fill="x", padx=6, pady=(0, 4))
 
         # COMBAT ORDER
         _sec("COMBAT")
@@ -2099,15 +2113,30 @@ class GameApp:
 
     # ── Sidebar refresh methods ───────────────────────────────────────────────
 
+    def _hide_sec(self, lbl, div, frame):
+        for w in (lbl, div, frame):
+            w.pack_forget()
+
+    def _show_spells_sec(self):
+        self._spells_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0),
+                                  before=self._actions_sec_lbl)
+        self._spells_sec_div.pack(fill="x", padx=10, pady=(2, 4),
+                                  before=self._actions_sec_lbl)
+        self._spells_frame.pack(fill="x", padx=6, pady=(0, 4),
+                                before=self._actions_sec_lbl)
+
     def _refresh_spells(self):
         """Compact spellcasting stats: DC, ATK, slot pips. Hidden for non-casters."""
         for w in self._spells_frame.winfo_children():
             w.destroy()
         if not self.char:
+            self._hide_sec(self._spells_sec_lbl, self._spells_sec_div, self._spells_frame)
             return
         sc = self.char.get("spellcasting", {})
         if not sc.get("enabled"):
+            self._hide_sec(self._spells_sec_lbl, self._spells_sec_div, self._spells_frame)
             return
+        self._show_spells_sec()
         dc  = sc.get("spell_save_dc", "?")
         atk = sc.get("attack_bonus", 0)
         tk.Label(self._spells_frame, text=f"Save DC {dc}  •  Atk {atk:+d}",
@@ -2221,13 +2250,21 @@ class GameApp:
         for std in ("Dash", "Dodge", "Disengage", "Hide"):
             _row(f"◈ {std}", avail=not blocked, reason=blocked_reason)
 
+    def _show_bonus_sec(self):
+        """Re-pack bonus actions header before the features section."""
+        self._bonus_sec_lbl.pack(anchor="w", padx=10, pady=(10, 0),
+                                 before=self._features_sec_lbl)
+        self._bonus_sec_div.pack(fill="x", padx=10, pady=(2, 4),
+                                 before=self._features_sec_lbl)
+        self._bonus_frame.pack(fill="x", padx=6, pady=(0, 4),
+                               before=self._features_sec_lbl)
+
     def _refresh_bonus_actions(self):
         """Off-hand attacks and bonus-action features, greyed when unavailable."""
         for w in self._bonus_frame.winfo_children():
             w.destroy()
         if not self.char:
-            tk.Label(self._bonus_frame, text="—",
-                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
+            self._hide_sec(self._bonus_sec_lbl, self._bonus_sec_div, self._bonus_frame)
             return
 
         blocked, blocked_reason = self._action_blocked_state()
@@ -2283,9 +2320,10 @@ class GameApp:
                     command=lambda n=fname: self._use_feature(n))
                 use_btn.pack(anchor="e", padx=4)
 
-        if not any_shown:
-            tk.Label(self._bonus_frame, text="—",
-                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
+        if any_shown:
+            self._show_bonus_sec()
+        else:
+            self._hide_sec(self._bonus_sec_lbl, self._bonus_sec_div, self._bonus_frame)
 
     def _set_input_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
