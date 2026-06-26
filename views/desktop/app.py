@@ -1705,7 +1705,7 @@ class GameApp:
                            f"{target} HP: {result['new_hp']}."
                            + (f" {target} has been defeated!" if result.get("killed") else ""))
                 self._dm_call(
-                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"[COMBAT RESULT — narrate dramatically in 2-3 sentences; do NOT echo HP values or damage numbers in your prose]"
                     f"{outcome}",
                     on_complete=_advance_turn)
 
@@ -1728,7 +1728,7 @@ class GameApp:
                     _advance_turn()
                 else:
                     self._dm_call(
-                        f"[COMBAT RESULT — narrate this outcome dramatically in 1-2 sentences] "
+                        f"[COMBAT RESULT — narrate dramatically in 1-2 sentences; do NOT echo HP values or damage numbers in your prose]"
                         f"The attack with {display_name} misses {target}.",
                         on_complete=_advance_turn)
                 return
@@ -1914,7 +1914,7 @@ class GameApp:
                 else:
                     crit_tag = "CRITICAL HIT! " if result.get("critical") else ""
                     self._dm_call(
-                        f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                        f"[COMBAT RESULT — narrate dramatically in 2-3 sentences; do NOT echo HP values or damage numbers in your prose]"
                         f"{crit_tag}{spell_name} hits {target_name} for {dmg} "
                         f"{spell_data['damage_type']} damage. {target_name} HP: {result['new_hp']}."
                         + (" {target_name} has been defeated!" if result.get("killed") else ""),
@@ -1936,7 +1936,7 @@ class GameApp:
                         _advance_turn()
                     else:
                         self._dm_call(
-                            f"[COMBAT RESULT — narrate this outcome dramatically in 1-2 sentences] "
+                            f"[COMBAT RESULT — narrate dramatically in 1-2 sentences; do NOT echo HP values or damage numbers in your prose]"
                             f"{spell_name} misses {target_name}.",
                             on_complete=_advance_turn)
                     return
@@ -1984,7 +1984,7 @@ class GameApp:
             else:
                 dm_verb = "resisted" if result["saved"] else "failed to resist"
                 self._dm_call(
-                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"[COMBAT RESULT — narrate dramatically in 2-3 sentences; do NOT echo HP values or damage numbers in your prose]"
                     f"{spell_name}: {target_name} {dm_verb}."
                     + (f" {dmg_tot} {spell_data['damage_type']} damage."
                        f" {target_name} HP: {result['new_hp']}." if dmg_tot else "")
@@ -2013,7 +2013,7 @@ class GameApp:
                 _advance_turn()
             else:
                 self._dm_call(
-                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"[COMBAT RESULT — narrate dramatically in 2-3 sentences; do NOT echo HP values or damage numbers in your prose]"
                     f"{spell_name} hits {target_name}."
                     + (f" {dmg_tot} {spell_data['damage_type']} damage."
                        f" {target_name} HP: {result['new_hp']}." if dmg_tot else "")

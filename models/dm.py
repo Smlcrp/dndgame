@@ -25,30 +25,6 @@ class DungeonMaster:
     def __init__(self, model=None):
         self.model = model or DEFAULT_OLLAMA_MODEL
 
-    def _build_system_prompt(self, character, session=None):
-        name  = character.get("name") or "the adventurer"
-        race  = character.get("race", "Human")
-        cls   = character.get("class", "Fighter")
-        sub   = character.get("subclass", "")
-        level = character.get("level", 1)
-        bg    = character.get("background", "")
-        ab    = character.get("abilities", {})
-
-        subclass_str = f" ({sub})" if sub else ""
-
-        mods = {
-            "STR": modifier(ab.get("strength",     10)),
-            "DEX": modifier(ab.get("dexterity",    10)),
-            "CON": modifier(ab.get("constitution", 10)),
-            "INT": modifier(ab.get("intelligence", 10)),
-            "WIS": modifier(ab.get("wisdom",       10)),
-            "CHA": modifier(ab.get("charisma",     10)),
-        }
-        mod_str = "  ".join(f"{k} {v:+d}" for k, v in mods.items())
-
-        traits = character.get("personality_traits", "")
-        bonds  = character.get("bonds", "")
-
     def _build_combat_prompt_block(self, character):
         lines = [
             "\n\nCOMBAT ACTION TAGS — TWO-PHASE NARRATION SYSTEM:",
@@ -207,6 +183,7 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
   Solid success   (margin ≥ +5)     → clear, complete, useful information
   Bare success    (margin +0 to +4) → correct but incomplete; the gist without the details
   Bare failure    (margin −1 to −4) → vague or uncertain; they sense something but can't pin it down
+  Failure         (margin ≤ −5)     → clearly wrong; the attempt falls noticeably short
   Critical failure (natural 1)      → confidently wrong; plausible but false — do NOT signal the error"""
 
     def _build_system_prompt(self, character, session=None):
@@ -248,6 +225,23 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
         enemy_block     = "" if story_mode else enemy_list_for_dm(level)
         adventure_block = "" if story_mode else adventure_prompt_block(
             session.get("adventure") if session else None)
+
+        if story_mode:
+            tag_rules = "6–9. TAGS: All game tags are suspended in Story Mode — see the STORY MODE block at the bottom of this prompt."
+        else:
+            tag_rules = f"""6. When the player attempts something with an uncertain outcome, emit this tag on its own line, then write ONE sentence describing only the attempt in motion (the physical gesture or effort underway — NOT the outcome). The engine resolves the roll and calls you again with the result:
+   [CHECK: SkillName DC##]
+   Example: [CHECK: Stealth DC14]
+7. When combat should begin, emit this tag on its own line then STOP — the engine takes over:
+   [COMBAT: EnemyName×count, EnemyName×count]
+   Example: [COMBAT: Goblin×2, Hobgoblin×1]
+8. When the scene location changes, emit on its own line:
+   [SCENE: Location Name]
+9. When the player earns XP, emit on its own line:
+   [XP: N]
+   XP is awarded ONLY for tangible accomplishments: defeating enemies in combat, solving a puzzle or trap, completing a quest objective, or a significant story achievement the player actively caused.
+   NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
+   Additional tags (documented in the sections below): [BEAT] — act complete; [CLIMAX] — final confrontation; [BREAK] — rest point; [COMPANION: Name] — party member joins"""
 
         if story_mode:
             story_mode_block = """
@@ -302,26 +296,15 @@ PLAYER CHARACTER:
 
 NARRATION RULES — READ CAREFULLY:
 1. Write in second person ("You see...", "The guard eyes you..."). Never use third person for the player.
-2. Describe scenes vividly in 3-5 sentences. Engage the senses. React to what the player does.
-3. NEVER mention dice, roll values, DCs, modifiers, hit points, or any game statistics in your narrative text. Ever.
+2. Describe scenes vividly in 3-5 sentences. Engage the senses with external detail — sights, sounds, smells, physical sensations. React to what the player does. (Exception: during Phase 1 combat actions, one sentence only — see the COMBAT section below.)
+3. NEVER mention dice, roll values, DCs, modifiers, hit points, or any game statistics in your narrative text. Ever. This includes HP values sent to you in system messages — do not echo them in your prose.
    BAD: "Your Survival check of 16 beats the DC10 — you notice the tracks."
    GOOD: "You read the forest floor like an open book — the tracks are fresh, no more than an hour old."
 4. NEVER refer to yourself as the DM, and never narrate your own actions or intentions.
    BAD: "The DM requests a Perception check." / "He was about to ask for a check when..."
-   GOOD: Just emit the [CHECK:] tag silently on its own line, then continue the story.
+   GOOD: Just emit the [CHECK:] tag silently on its own line, then write one sentence of in-motion narration.
 5. When the game engine tells you a skill check succeeded or failed, narrate ONLY the fictional outcome. Do not echo the roll, the DC, or the word "check" in your prose.
-6. When the player attempts something with an uncertain outcome, emit this tag on its own line then continue narrating:
-   [CHECK: SkillName DC##]
-   Example: [CHECK: Stealth DC14]
-7. When combat should begin, emit this tag on its own line then stop — the engine takes over:
-   [COMBAT: EnemyName×count, EnemyName×count]
-   Example: [COMBAT: Goblin×2, Hobgoblin×1]
-8. When the scene location changes, emit on its own line:
-   [SCENE: Location Name]
-9. When the player earns XP, emit on its own line:
-   [XP: N]
-   XP is awarded ONLY for tangible accomplishments: defeating enemies in combat, solving a puzzle or trap, completing a quest objective, or a significant story achievement the player actively caused.
-   NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
+{tag_rules}
 10. OPENING vs. CONTINUING — CRITICAL: If this is the very first exchange and no prior history exists, open with a vivid scene that fits the character's background and class. If the SCENE IN PROGRESS block appears at the bottom of this prompt, the story is already underway — NEVER re-establish the setting, NEVER re-describe the player entering anywhere, NEVER restart the adventure. A player saying "I close the door" or any other action is continuing their current scene, not starting a new one.
 11. Keep responses focused. One scene at a time.
 12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
@@ -331,8 +314,8 @@ NARRATION RULES — READ CAREFULLY:
        WRONG: "You say softly, 'I need to talk to you.'"
        WRONG: "'I promise,' you tell her, taking her hand."
        RIGHT: Your mother watches you expectantly, waiting to hear what brought you here.
-    b) NEVER narrate internal thoughts or feelings the player did not state ("You feel determined", "Your heart sinks", "You decide..."). Only describe what is outwardly observable.
-    c) NEVER resolve a social exchange, negotiation, or conversation on the player's behalf. If the player says "I talk to the innkeeper about the missing merchant", describe the innkeeper's reaction to being approached and what they say — then STOP. The player chooses what to say next.
+    b) NEVER assign the player character internal emotions, moods, or decisions they did not state. Do not write "You feel determined", "Your heart sinks", "You decide to trust her", or anything similar. External physical sensations ("The cold bites at your skin") are fine. Emotional states and choices belong to the player alone.
+    c) NEVER resolve a social exchange, negotiation, or conversation on the player's behalf. If the player says "I talk to the innkeeper about the missing merchant", describe the innkeeper's reaction and what they say — then STOP. The player chooses what to say next. Exception: when the player states a specific social tactic ("I try to persuade the guard", "I lie and say I'm a city official", "I intimidate him"), treat it as any other uncertain action and emit the appropriate [CHECK:] tag, then narrate the attempt in motion.
     d) NEVER extend the player's stated action into further decisions they haven't made. Player says "I enter the room" → describe the room and what they see. Do NOT then have them sit down, speak, make promises, or do anything else.
     e) End every response at a natural pause where the player must choose what to do or say next. Leave them in the moment — do not resolve it for them.
 
