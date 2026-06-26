@@ -282,6 +282,16 @@ Main game interface. `GameApp` class.
 
 ---
 
+### ✅ DONE — DEV Panel Password Gate
+
+The DEV button and F4 shortcut are protected by a password prompt. First press shows a modal dialog with a masked `●` entry field. Wrong passwords clear the field and display "Incorrect password." without any hint. On success `self._dev_unlocked = True` is set for the lifetime of that process — subsequent presses in the same session go straight to the panel.
+
+**Password:** `0922` — do not add this to README or any public-facing file.
+
+**Implementation:** `_prompt_dev_password()` in `views/desktop/app.py`. `self._dev_unlocked` initialized `False` at startup. `_open_dev_panel()` checks it before calling `_open_dev_panel_inner()`.
+
+---
+
 ### ✅ DONE — Story Mode (DEV panel button)
 
 A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in header). When active:
