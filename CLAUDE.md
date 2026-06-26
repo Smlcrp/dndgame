@@ -351,7 +351,7 @@ Every character loaded from disk is migrated to the current schema and validated
 
 ### ✅ DONE — Comprehensive Test Suite (Roadmap Item 5)
 
-373 tests total (87 existing companion tests + 286 new). All pass. Run with: `python -m pytest tests/ -q`
+376 tests total (87 existing companion tests + 289 new). All pass. Run with: `python -m pytest tests/ -q`
 
 **New test files:**
 - `tests/conftest.py` — central `sys.path` setup so no per-file boilerplate needed
@@ -365,6 +365,34 @@ Every character loaded from disk is migrated to the current schema and validated
 - `tests/test_integration.py` — full combat round (kill enemy → XP), player miss (enemy alive), crit (doubled dice), death save arc (stabilize / die / nat1 → dead / nat20 revive), full adventure beat sequence, beat XP → level-up threshold, schema round-trip (`migrate_character` + `validate_character` on sparse char)
 
 **Bug found and fixed by tests:** `[ACTION: dodge]` / `[ACTION: dash]` / `[ACTION: disengage]` / `[ACTION: hide]` crashed with `ValueError` in `dm.py:_parse_events` — `if "=" in part` guard was in the wrong position in the dict comprehension, running after the inner for-loop destructuring instead of before. Same fix applied to `[BONUS:]` parser. (Bug would have silently crashed any combat turn where the DM chose a non-attack action.)
+
+---
+
+### ✅ DONE — In-Game Economy, Magic Items, Feats, and Spell Learning
+
+Four gaps closed to make the game mechanically complete:
+
+**1. In-Game Economy (gold + loot)**
+- `models/character.py` — `currency` and `magic_items` / `magic_weapon_bonus` / `magic_armor_bonus` / `feats` added to `empty_character()` schema; `migrate_character()` fills these on any old save.
+- `models/dm.py` — Two new DM tags: `[GOLD: N]` (award N gp) and `[ITEM: name, slot=weapon|armor|misc, bonus=N]`. Added to `tag_rules` in the system prompt and parsed in `_parse_events`. Clean regex updated to strip them from displayed narration.
+- `controllers/game_controller.py` — `process_gold_award(char, amount)` and `process_item_award(char, name, slot, bonus)` — apply bonuses immediately and return updated values.
+- `views/desktop/app.py` — Events handled in `_handle_dm_response`: shows inline system messages ("── 50 gp added (Total: 50 gp) ──") and saves character automatically. New INVENTORY sidebar section shows coin purse (pp/gp/sp/cp) and magic items list.
+
+**2. Magic Items Affect Combat**
+- `models/combat.py:player_attack()` — reads `char["magic_weapon_bonus"]` and adds it to both the attack roll and damage notation (shown as "1d8+1" for a +1 weapon).
+- `views/desktop/app.py:_update_sidebar()` — AC display adds `char["magic_armor_bonus"]` so the sidebar reflects the true AC with magic armor equipped.
+
+**3. Feats at ASI Levels**
+- `views/desktop/app.py:_step_asi()` — Level-up ASI step now has three radio options: "+2 to one ability", "+1 to two abilities", "Take a Feat". Selecting feat shows a scrollable listbox of 30 PHB feats with a one-line description area below (updated on selection). Confirming appends feat name to `char["feats"]`. Tough feat applies its HP bonus immediately (2 HP × level, retroactive).
+- Feat list defined inline in `_step_asi()`: Alert, Athlete, Actor, Charger, Crossbow Expert, Defensive Duelist, Dual Wielder, Dungeon Delver, Durable, Great Weapon Master, Healer, Inspiring Leader, Lucky, Mage Slayer, Magic Initiate, Martial Adept, Mobile, Observant, Polearm Master, Resilient, Savage Attacker, Sentinel, Sharpshooter, Shield Master, Skilled, Tavern Brawler, Tough, War Caster, Weapon Master.
+- `models/dm.py` — character block now includes "Feats: ..." and "Magic Items: ..." lines when non-empty, so the DM knows what the player has.
+
+**4. Spell Learning at Level-Up**
+- `views/desktop/app.py:_step_spells()` — Replaced the redirect stub with a real spell picker:
+  - Prepare classes (Cleric, Druid, Paladin, Artificer): shown an informational message only ("prepares from full list each long rest").
+  - Known classes (Bard, Ranger, Sorcerer, Warlock): can pick 1 new spell from accessible spell levels not already known.
+  - Wizard: can pick 2 new spells.
+  - Dynamically imports from `character_builder/spells.py` (CANTRIPS, SPELLS dicts). Filters out already-known spells. Shows "[Lv3] Fireball" style labels. Multi-select Listbox capped at N picks; confirms into `sc["spells_known"]`.
 
 ---
 

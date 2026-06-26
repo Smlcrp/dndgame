@@ -24,10 +24,10 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `models/companions.py` | ✅ Complete | Full companion system — 10 templates, combat AI, spell slots, death saves |
 | `models/spells.py` | ✅ Complete | ~60 combat spells (cantrips–level 9) with scaling, upcasting, delivery types |
 | `views/desktop/character_builder/ddb_import.py` | ✅ Complete | D&D Beyond character importer — paste URL or ID to import |
-| `tests/` | ✅ Complete | 373 tests across all model layers (dice, character, combat, game state, progression, adventure, DM tag parsing, integration) |
+| `tests/` | ✅ Complete | 376 tests across all model layers (dice, character, combat, game state, progression, adventure, DM tag parsing, integration) |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** QA validation pass — full test run, corruption check, and repo clean-up before the main menu redesign.
+> **Current state:** Mechanically complete. All four in-game mechanic gaps (economy, magic items, feats, spell learning) are implemented. Next focus: Character Progression Phase 2 (sidebar XP bar, feature charge pips, rest buttons).
 
 ---
 
@@ -704,6 +704,37 @@ Full in-combat spellcasting added across the model, controller, and view layers.
   - *Save:* resolves immediately, displays save roll / result / damage, prompts DM.
   - *Auto:* resolves immediately, displays damage/effect, prompts DM.
 - `✦ Spells` button added to the combat input row; only visible when the character has spellcasting enabled and at least one castable combat spell.
+
+### In-Game Economy, Magic Items, Feats, and Spell Learning
+
+Four previously missing mechanics now complete the core gameplay loop.
+
+**Economy — Gold and Loot**
+
+The DM can award gold and items mid-adventure using structured tags in its narration:
+- `[GOLD: 50]` — adds 50 gp to the character's currency purse and shows an inline system message: `── 50 gp added (Total: 50 gp) ──`
+- `[ITEM: +1 Longsword, slot=weapon, bonus=1]` — adds the item to the character's inventory and applies its mechanical bonus immediately
+
+Gold and items appear in the new **INVENTORY** sidebar section (between FEATURES and COMBAT), showing the full coin purse (pp/gp/sp/cp) and a list of magic items. Characters are saved automatically on each award.
+
+**Magic Items Affect Mechanics**
+
+Magic weapon and armor bonuses are not cosmetic — they are applied at resolution time:
+- `+N weapon`: bonus added to both the attack roll and damage notation (displayed as "1d8+1")
+- `+N armor`: bonus added to the displayed AC in the sidebar
+
+**Feats at ASI Levels**
+
+The level-up ASI step now offers three options: "+2 to one ability", "+1 to two abilities", or **Take a Feat**. Selecting a feat opens a scrollable list of 30 PHB feats (Alert, Lucky, Great Weapon Master, Sharpshooter, War Caster, Tough, and more) with a one-line description shown below the list on selection. The chosen feat is saved to `character["feats"]` and shown to the DM in future prompts. The Tough feat applies its HP bonus (+2 × level) immediately on confirmation.
+
+**Spell Learning at Level-Up**
+
+The level-up spells step is now a real picker instead of a redirect stub:
+- **Prepare classes** (Cleric, Druid, Paladin, Artificer): informational message only — these classes prepare from the full list each long rest
+- **Known classes** (Bard, Ranger, Sorcerer, Warlock): pick 1 new spell from any accessible spell level not already known
+- **Wizard**: pick 2 new spells to add to the spellbook
+
+Spell options are filtered against already-known spells and labeled with their level (`[Lv3] Fireball`). Selections are added to `spellcasting.spells_known`.
 
 ---
 

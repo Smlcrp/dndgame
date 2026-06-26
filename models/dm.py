@@ -209,6 +209,13 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
 
         traits = character.get("personality_traits", "")
         bonds  = character.get("bonds", "")
+        feats      = character.get("feats", [])
+        items      = character.get("magic_items", [])
+        feats_line = ("\n  Feats: " + ", ".join(feats)) if feats else ""
+        items_line = ("\n  Magic Items: " + ", ".join(
+            it["name"] + (f" (+{it['bonus']})" if it.get("bonus") else "")
+            for it in items
+        )) if items else ""
 
         pb_val       = (level - 1) // 4 + 2
         skills       = character.get("skill_proficiencies", [])
@@ -241,7 +248,15 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
    [XP: N]
    XP is awarded ONLY for tangible accomplishments: defeating enemies in combat, solving a puzzle or trap, completing a quest objective, or a significant story achievement the player actively caused.
    NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
-   Additional tags (documented in the sections below): [BEAT] — act complete; [CLIMAX] — final confrontation; [BREAK] — rest point; [COMPANION: Name] — party member joins"""
+   Additional tags (documented in the sections below): [BEAT] — act complete; [CLIMAX] — final confrontation; [BREAK] — rest point; [COMPANION: Name] — party member joins
+10. When the player physically picks up coins or sells valuables, emit on its own line:
+    [GOLD: N]
+    N is the amount in gold pieces (gp). Use ONLY when they actually acquire currency — not for completing quest objectives (use [XP:] for that). Merchant prices are in gp.
+11. When the player acquires a magic item, emit on its own line:
+    [ITEM: Name, slot=weapon, bonus=1]    ← magic weapon — +1 to attack rolls and damage
+    [ITEM: Name, slot=armor, bonus=1]     ← magic armor or shield — +1 to AC
+    [ITEM: Name, slot=misc, bonus=0]      ← named item with no mechanical bonus (potions, keys, etc.)
+    Only emit [ITEM:] when the player gains the item, not when they find it unattended."""
 
         if story_mode:
             story_mode_block = """
@@ -292,7 +307,7 @@ PLAYER CHARACTER:
   Ability modifiers: {mod_str}
   Passive Perception: {passive_perc}  |  Passive Investigation: {passive_inv}  |  Passive Insight: {passive_ins}
   Personality: {traits}
-  Bonds: {bonds}
+  Bonds: {bonds}{feats_line}{items_line}
 
 NARRATION RULES — READ CAREFULLY:
 1. Write in second person ("You see...", "The guard eyes you..."). Never use third person for the player.
@@ -305,10 +320,10 @@ NARRATION RULES — READ CAREFULLY:
    GOOD: Just emit the [CHECK:] tag silently on its own line, then write one sentence of in-motion narration.
 5. When the game engine tells you a skill check succeeded or failed, narrate ONLY the fictional outcome. Do not echo the roll, the DC, or the word "check" in your prose.
 {tag_rules}
-10. OPENING vs. CONTINUING — CRITICAL: If this is the very first exchange and no prior history exists, open with a vivid scene that fits the character's background and class. If the SCENE IN PROGRESS block appears at the bottom of this prompt, the story is already underway — NEVER re-establish the setting, NEVER re-describe the player entering anywhere, NEVER restart the adventure. A player saying "I close the door" or any other action is continuing their current scene, not starting a new one.
-11. Keep responses focused. One scene at a time.
-12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
-13. PLAYER AGENCY — THIS IS NON-NEGOTIABLE:
+12. OPENING vs. CONTINUING — CRITICAL: If this is the very first exchange and no prior history exists, open with a vivid scene that fits the character's background and class. If the SCENE IN PROGRESS block appears at the bottom of this prompt, the story is already underway — NEVER re-establish the setting, NEVER re-describe the player entering anywhere, NEVER restart the adventure. A player saying "I close the door" or any other action is continuing their current scene, not starting a new one.
+13. Keep responses focused. One scene at a time.
+14. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
+15. PLAYER AGENCY — THIS IS NON-NEGOTIABLE:
     The player controls their character completely. You control the world and NPCs only.
     a) NEVER write spoken dialogue for the player character. Not one word in quotes. Not even a single sentence.
        WRONG: "You say softly, 'I need to talk to you.'"
@@ -446,6 +461,24 @@ NARRATION RULES — READ CAREFULLY:
         for m in re.finditer(r"\[COMPANION:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
             events.append({"type": "companion_join", "name": m.group(1).strip()})
 
+        for m in re.finditer(r"\[GOLD:\s*(\d+)\]", raw_text, re.IGNORECASE):
+            events.append({"type": "gold_award", "amount": int(m.group(1))})
+
+        for m in re.finditer(r"\[ITEM:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
+            content = m.group(1).strip()
+            parts   = {k.strip().lower(): v.strip()
+                       for part in content.split(",")
+                       if "=" in part
+                       for k, v in [part.split("=", 1)]}
+            name_part = content.split(",")[0].strip()
+            name      = name_part if "=" not in name_part else parts.get("name", name_part)
+            events.append({
+                "type":  "item_award",
+                "name":  name,
+                "slot":  parts.get("slot", "misc"),
+                "bonus": int(parts.get("bonus", 0)),
+            })
+
         for m in re.finditer(r"\[ACTION:\s*([^\]]+)\]", raw_text, re.IGNORECASE):
             content = m.group(1).strip()
             pairs   = {k.strip().lower(): v.strip()
@@ -488,7 +521,7 @@ NARRATION RULES — READ CAREFULLY:
                 continue
             events.append(ev)
 
-        clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP|COMPANION):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
+        clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP|COMPANION|GOLD|ITEM):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
         clean = re.sub(r"\[(ACTION|BONUS):[^\]]*\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\[(BEAT|CLIMAX|BREAK)\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()

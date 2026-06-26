@@ -19,6 +19,8 @@ from controllers.game_controller import (
     process_enemy_turn,
     process_death_save,
     process_xp_award,
+    process_gold_award,
+    process_item_award,
     start_adventure,
     advance_beat as gc_advance_beat,
     process_spell_cast,
@@ -316,6 +318,14 @@ class GameApp:
         _sec("FEATURES")
         self._features_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._features_frame.pack(fill="x", padx=6, pady=(0,4))
+
+        # GOLD & ITEMS
+        _sec("INVENTORY")
+        self._currency_label = tk.Label(
+            self._sb_inner, text="Gold: 0 gp", font=FONT_SM, bg=PANEL, fg=FG)
+        self._currency_label.pack(anchor="w", padx=10, pady=(0,2))
+        self._items_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._items_frame.pack(fill="x", padx=6, pady=(0,4))
 
         # COMBAT ORDER
         _sec("COMBAT")
@@ -1444,6 +1454,24 @@ class GameApp:
                 return
             elif ev["type"] == "companion_join":
                 self._handle_companion_join(ev["name"])
+            elif ev["type"] == "gold_award":
+                new_gp = process_gold_award(self.char, ev["amount"])
+                from models.character import save_character
+                save_character(self.char)
+                self._display(
+                    f"  ── {ev['amount']} gp added  (Total: {new_gp} gp) ──\n\n",
+                    "system")
+                self._update_sidebar()
+            elif ev["type"] == "item_award":
+                item = process_item_award(
+                    self.char, ev["name"], ev.get("slot", "misc"), ev.get("bonus", 0))
+                from models.character import save_character
+                save_character(self.char)
+                bonus_str = (f"  (+{item['bonus']} {item['slot']})" if item["bonus"] > 0 else "")
+                self._display(
+                    f"  ── Item acquired: {item['name']}{bonus_str} ──\n\n",
+                    "system")
+                self._update_sidebar()
             elif ev["type"] == "scene_change":
                 self._on_scene_change(ev["location"])
             elif ev["type"] == "xp_award":
@@ -2581,6 +2609,36 @@ class GameApp:
         # Feature charges (non-BA)
         self._refresh_features()
 
+        # Currency
+        gp  = self.char.get("currency", {}).get("gp", 0)
+        sp  = self.char.get("currency", {}).get("sp", 0)
+        cp  = self.char.get("currency", {}).get("cp", 0)
+        pp  = self.char.get("currency", {}).get("pp", 0)
+        coin_parts = []
+        if pp: coin_parts.append(f"{pp}pp")
+        coin_parts.append(f"{gp}gp")
+        if sp: coin_parts.append(f"{sp}sp")
+        if cp: coin_parts.append(f"{cp}cp")
+        self._currency_label.config(text="  ".join(coin_parts) if coin_parts else "0 gp")
+
+        # Magic items
+        for w in self._items_frame.winfo_children():
+            w.destroy()
+        items = self.char.get("magic_items", [])
+        if items:
+            for it in items:
+                bonus_str = f" +{it['bonus']}" if it.get("bonus", 0) > 0 else ""
+                tk.Label(self._items_frame, text=f"✦ {it['name']}{bonus_str}",
+                         font=("Segoe UI", 8), bg=PANEL, fg=ACCENT).pack(anchor="w")
+        else:
+            tk.Label(self._items_frame, text="—",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
+
+        # AC includes magic armor bonus
+        magic_ac = self.char.get("magic_armor_bonus", 0)
+        if magic_ac:
+            self._ac_label.config(text=f"AC {ac + magic_ac}")
+
         # Combat order
         for w in self._combat_frame.winfo_children():
             w.destroy()
@@ -3580,35 +3638,55 @@ class GameApp:
 
         # ── Step: ASI ──────────────────────────────────────────────────────────
         def _step_asi():
-            tk.Label(body, text="Ability Score Improvement",
+            FEATS = {
+                "Alert":              "+5 initiative; can't be surprised; no advantage vs you for hidden attackers.",
+                "Athlete":            "+1 STR or DEX; standing costs 5 ft; no penalty climbing; running long jump needs only 5 ft.",
+                "Actor":              "+1 CHA; advantage on Deception/Performance to pass yourself off; mimic speech you've heard.",
+                "Charger":            "When you Dash, bonus action attack (+5 damage if you moved 10+ ft straight).",
+                "Crossbow Expert":    "No loading penalty; no disadvantage in close quarters; off-hand crossbow bonus action.",
+                "Defensive Duelist":  "+1 DEX req. Finesse weapon — use reaction to add prof bonus to AC against one attack.",
+                "Dual Wielder":       "+1 AC wielding two melee weapons; use non-light weapons; draw/stow two at once.",
+                "Dungeon Delver":     "Advantage on Perception/Investigation for secret doors and trap saves; resistance to trap damage.",
+                "Durable":            "+1 CON; hit dice minimum = CON modifier (min 1) when rolling.",
+                "Great Weapon Master":"On crit or kill, bonus action attack; take -5 to hit for +10 damage.",
+                "Healer":             "Stabilise with action and restore 1 HP; healer's kit restores 1d6+4+max HD HP once per creature.",
+                "Inspiring Leader":   "+1 CHA; 10-min speech grants up to 6 allies temp HP = your level + CHA mod.",
+                "Lucky":              "3 luck points per long rest; reroll attack/ability/save or force reroll of attack against you.",
+                "Mage Slayer":        "React to attack an adjacent caster; disadvantage on that caster's Concentration saves.",
+                "Magic Initiate":     "Learn 2 cantrips and one 1st-level spell (once/long rest without slot) from any class.",
+                "Martial Adept":      "Learn 2 Battle Master maneuvers; gain 1d6 superiority die.",
+                "Mobile":             "+10 ft speed; Dash ignores difficult terrain; no opportunity attacks from creatures you attack.",
+                "Observant":          "+1 INT or WIS; lip-read; +5 passive Perception and Investigation.",
+                "Polearm Master":     "Bonus action attack with polearm butt; opportunity attack when creatures enter reach.",
+                "Resilient":          "+1 to chosen ability; gain proficiency in that ability's saving throw.",
+                "Savage Attacker":    "Once per turn on melee hit: reroll damage dice, keep either result.",
+                "Sentinel":           "Opportunity attacks reduce speed to 0; can opportunity attack even when target Disengages.",
+                "Sharpshooter":       "Ignore long range and half/three-quarter cover; -5 attack for +10 damage.",
+                "Shield Master":      "Bonus action shove when you attack; add shield AC to Dex saves targeting only you.",
+                "Skilled":            "Gain proficiency in any 3 skills or tools.",
+                "Tavern Brawler":     "+1 STR or CON; improvised weapon proficiency; unarmed = d4; bonus action grapple after hit.",
+                "Tough":              "HP max increases by 2 per level (applied immediately, retroactive).",
+                "War Caster":         "Advantage on Concentration saves; somatic components with hands full; spell as opportunity attack.",
+                "Weapon Master":      "+1 STR or DEX; gain proficiency with 4 weapons of your choice.",
+            }
+            feat_names = sorted(FEATS.keys())
+
+            tk.Label(body, text="Ability Score Improvement or Feat",
                      font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
 
-            ability_names = [
-                "Strength", "Dexterity", "Constitution",
-                "Intelligence", "Wisdom", "Charisma",
-            ]
-            ability_keys = [
-                "strength", "dexterity", "constitution",
-                "intelligence", "wisdom", "charisma",
-            ]
-
-            mode_var = tk.StringVar(value="plus2")
+            ability_names = ["Strength","Dexterity","Constitution","Intelligence","Wisdom","Charisma"]
+            ability_keys  = ["strength","dexterity","constitution","intelligence","wisdom","charisma"]
+            mode_var      = tk.StringVar(value="plus2")
 
             mode_frame = tk.Frame(body, bg=BG)
-            mode_frame.pack(anchor="w", pady=(0, 10))
-            tk.Radiobutton(mode_frame, text="+2 to one ability",
-                           variable=mode_var, value="plus2",
-                           bg=BG, fg=FG, selectcolor=BTN_BG,
-                           activebackground=BG, font=FONT_SM,
-                           command=lambda: _refresh_asi()).pack(side="left", padx=(0, 16))
-            tk.Radiobutton(mode_frame, text="+1 to two abilities",
-                           variable=mode_var, value="plus1each",
-                           bg=BG, fg=FG, selectcolor=BTN_BG,
-                           activebackground=BG, font=FONT_SM,
-                           command=lambda: _refresh_asi()).pack(side="left")
+            mode_frame.pack(anchor="w", pady=(0, 6))
+            for val, lbl in (("plus2","+2 to one ability"),("plus1each","+1 to two abilities"),("feat","Take a Feat")):
+                tk.Radiobutton(mode_frame, text=lbl, variable=mode_var, value=val,
+                               bg=BG, fg=FG, selectcolor=BTN_BG, activebackground=BG,
+                               font=FONT_SM, command=lambda: _refresh_asi()).pack(anchor="w")
 
             pick_frame = tk.Frame(body, bg=BG)
-            pick_frame.pack(anchor="w", pady=(0, 6))
+            pick_frame.pack(fill="both", expand=True, pady=(4, 0))
 
             err = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
             err.pack(anchor="w")
@@ -3616,45 +3694,68 @@ class GameApp:
             var1 = tk.StringVar(value=ability_names[0])
             var2 = tk.StringVar(value=ability_names[1])
 
+            def _menu(parent, var):
+                m = tk.OptionMenu(parent, var, *ability_names)
+                m.config(bg=BTN_BG, fg=FG, relief="flat", activebackground=ACCENT,
+                         activeforeground="#1a1a2e", font=FONT_SM, highlightthickness=0)
+                return m
+
             def _refresh_asi():
                 for w in pick_frame.winfo_children():
                     w.destroy()
-                if mode_var.get() == "plus2":
-                    tk.Label(pick_frame, text="+2  ", font=FONT_BODY,
-                             bg=BG, fg=ACCENT).pack(side="left")
-                    tk.OptionMenu(pick_frame, var1, *ability_names).pack(side="left")
-                    pick_frame.winfo_children()[-1].config(
-                        bg=BTN_BG, fg=FG, relief="flat",
-                        activebackground=ACCENT, activeforeground="#1a1a2e",
-                        font=FONT_SM, highlightthickness=0)
+                mode = mode_var.get()
+                if mode == "plus2":
+                    row = tk.Frame(pick_frame, bg=BG)
+                    row.pack(anchor="w")
+                    tk.Label(row, text="+2  ", font=FONT_BODY, bg=BG, fg=ACCENT).pack(side="left")
+                    _menu(row, var1).pack(side="left")
+                elif mode == "plus1each":
+                    row = tk.Frame(pick_frame, bg=BG)
+                    row.pack(anchor="w")
+                    tk.Label(row, text="+1  ", font=FONT_BODY, bg=BG, fg=ACCENT).pack(side="left")
+                    _menu(row, var1).pack(side="left")
+                    tk.Label(row, text="   +1  ", font=FONT_BODY, bg=BG, fg=ACCENT).pack(side="left")
+                    _menu(row, var2).pack(side="left")
                 else:
-                    tk.Label(pick_frame, text="+1  ", font=FONT_BODY,
-                             bg=BG, fg=ACCENT).pack(side="left")
-                    tk.OptionMenu(pick_frame, var1, *ability_names).pack(side="left")
-                    pick_frame.winfo_children()[-1].config(
-                        bg=BTN_BG, fg=FG, relief="flat",
-                        activebackground=ACCENT, activeforeground="#1a1a2e",
-                        font=FONT_SM, highlightthickness=0)
-                    tk.Label(pick_frame, text="   +1  ", font=FONT_BODY,
-                             bg=BG, fg=ACCENT).pack(side="left")
-                    tk.OptionMenu(pick_frame, var2, *ability_names).pack(side="left")
-                    pick_frame.winfo_children()[-1].config(
-                        bg=BTN_BG, fg=FG, relief="flat",
-                        activebackground=ACCENT, activeforeground="#1a1a2e",
-                        font=FONT_SM, highlightthickness=0)
+                    lf = tk.Frame(pick_frame, bg=INPUT_BG)
+                    lf.pack(fill="x", pady=(0, 4))
+                    sb_f = tk.Scrollbar(lf, bg=BG, troughcolor=INPUT_BG)
+                    sb_f.pack(side="right", fill="y")
+                    feat_lb = tk.Listbox(lf, bg=INPUT_BG, fg=FG, font=FONT_SM,
+                                         selectbackground=ACCENT, selectforeground="#1a1a2e",
+                                         relief="flat", bd=0, activestyle="none",
+                                         exportselection=False, yscrollcommand=sb_f.set, height=6)
+                    sb_f.config(command=feat_lb.yview)
+                    feat_lb.pack(fill="x", padx=4, pady=4)
+                    for fn in feat_names:
+                        feat_lb.insert("end", fn)
+                    feat_lb.select_set(0)
+
+                    desc_var = tk.StringVar(value=FEATS.get(feat_names[0], ""))
+                    desc_lbl = tk.Label(pick_frame, textvariable=desc_var, font=("Segoe UI", 8),
+                                        bg=BG, fg=DIM, wraplength=370, justify="left")
+                    desc_lbl.pack(anchor="w")
+
+                    def _on_select(event=None):
+                        sel = feat_lb.curselection()
+                        if sel:
+                            desc_var.set(FEATS.get(feat_lb.get(sel[0]), ""))
+                    feat_lb.bind("<<ListboxSelect>>", _on_select)
+                    pick_frame._feat_lb = feat_lb
 
             _refresh_asi()
 
             def _confirm_asi():
                 err.config(text="")
-                ab = self.char.get("abilities", {})
-                if mode_var.get() == "plus2":
+                mode = mode_var.get()
+                ab   = self.char.get("abilities", {})
+                if mode == "plus2":
                     key = ability_keys[ability_names.index(var1.get())]
                     if ab.get(key, 10) >= 20:
                         err.config(text=f"{var1.get()} is already at maximum (20).")
                         return
                     ab[key] = min(20, ab.get(key, 10) + 2)
-                else:
+                elif mode == "plus1each":
                     k1 = ability_keys[ability_names.index(var1.get())]
                     k2 = ability_keys[ability_names.index(var2.get())]
                     if k1 == k2:
@@ -3665,32 +3766,128 @@ class GameApp:
                         return
                     ab[k1] = min(20, ab.get(k1, 10) + 1)
                     ab[k2] = min(20, ab.get(k2, 10) + 1)
+                else:
+                    feat_lb = getattr(pick_frame, "_feat_lb", None)
+                    if feat_lb is None:
+                        err.config(text="Feat list not ready.")
+                        return
+                    sel = feat_lb.curselection()
+                    if not sel:
+                        err.config(text="Please choose a feat.")
+                        return
+                    feat_name = feat_lb.get(sel[0])
+                    self.char.setdefault("feats", []).append(feat_name)
+                    if feat_name == "Tough":
+                        bonus = new_lvl * 2
+                        self.char["hp"]["max"]     += bonus
+                        self.char["hp"]["current"] += bonus
+                        if self.session:
+                            self.session["current_hp"] = (
+                                self.session.get("current_hp", 0) + bonus)
                 _advance()
 
             _next_btn("Confirm →", _confirm_asi)
 
         # ── Step: spells ───────────────────────────────────────────────────────
         def _step_spells():
+            import sys as _sys
+            from pathlib import Path as _Path
+            _cb = _Path(__file__).parent / "character_builder"
+            if str(_cb) not in _sys.path:
+                _sys.path.insert(0, str(_cb))
+
+            PREPARE_CLASSES = {"Cleric", "Druid", "Paladin", "Artificer"}
+            WIZARD_PICKS    = 2
+            KNOWN_PICKS     = 1
+
             tk.Label(body, text="Spellcasting",
                      font=FONT_HDR, bg=BG, fg=ACCENT).pack(anchor="w", pady=(0, 6))
-            sc = self.char.get("spellcasting", {})
+
+            sc    = self.char.get("spellcasting", {})
             slots = sc.get("slots", {})
-            new_slots = [
-                f"Level {lvl}: {data['total']} slots"
-                for lvl, data in slots.items()
-                if data["total"] > 0
-            ]
-            if new_slots:
-                tk.Label(body, text="Current spell slots:",
-                         font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
-                for line in new_slots:
+            slot_lines = [f"Level {l}: {d['total']} slots"
+                          for l, d in slots.items() if d["total"] > 0]
+            if slot_lines:
+                tk.Label(body, text="Your spell slots:", font=FONT_SM,
+                         bg=BG, fg=DIM).pack(anchor="w", pady=(0, 2))
+                for line in slot_lines:
                     tk.Label(body, text=f"  {line}", font=FONT_SM,
                              bg=BG, fg=FG).pack(anchor="w")
-            tk.Label(body, text="",  bg=BG).pack()
+                tk.Label(body, text="", bg=BG).pack()
+
+            if cls in PREPARE_CLASSES:
+                tk.Label(body,
+                         text=f"{cls}s prepare spells from the full list each long rest.\nNo spell selection needed at level-up.",
+                         font=FONT_SM, bg=BG, fg=DIM, justify="left").pack(anchor="w")
+                _next_btn("Done", _advance)
+                return
+
+            try:
+                from spells import CANTRIPS as _CANTRIPS, SPELLS as _SPELL_LISTS
+            except Exception:
+                tk.Label(body,
+                         text="Could not load spell data.\nUse Character Builder to add new spells.",
+                         font=FONT_SM, bg=BG, fg=DIM, justify="left").pack(anchor="w")
+                _next_btn("Done", _advance)
+                return
+
+            already = set(sc.get("spells_known", []) + sc.get("spells_prepared", []))
+            n_picks = WIZARD_PICKS if cls == "Wizard" else KNOWN_PICKS
+
+            # Build available spell list: (level_label, name)
+            available = []
+            cls_spells = _SPELL_LISTS.get(cls, {})
+            for lvl_str, data in slots.items():
+                lvl = int(lvl_str)
+                if data["total"] > 0 and lvl in cls_spells:
+                    for name, school, *_ in cls_spells[lvl]:
+                        if name not in already:
+                            available.append((f"Lv{lvl}", name))
+            # Cantrips
+            cls_cantrips = _CANTRIPS.get(cls, [])
+            for name, *_ in cls_cantrips:
+                if name not in already:
+                    available.insert(0, ("Cantrip", name))
+
+            if not available:
+                tk.Label(body, text="No new spells available to learn at this level.",
+                         font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w")
+                _next_btn("Done", _advance)
+                return
+
             tk.Label(body,
-                     text="To add new spells or cantrips, use the\nCharacter Builder (Main Menu → New Adventure → Create Character).",
-                     font=FONT_SM, bg=BG, fg=DIM, justify="left").pack(anchor="w")
-            _next_btn("Done", _advance)
+                     text=f"Choose up to {n_picks} spell{'s' if n_picks>1 else ''} to learn:",
+                     font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 4))
+
+            lf2 = tk.Frame(body, bg=INPUT_BG)
+            lf2.pack(fill="both", expand=True)
+            sb3 = tk.Scrollbar(lf2, bg=BG, troughcolor=INPUT_BG)
+            sb3.pack(side="right", fill="y")
+            spell_lb = tk.Listbox(lf2, bg=INPUT_BG, fg=FG, font=FONT_SM,
+                                   selectbackground=ACCENT, selectforeground="#1a1a2e",
+                                   relief="flat", bd=0, activestyle="none",
+                                   exportselection=False, selectmode="multiple",
+                                   yscrollcommand=sb3.set, height=7)
+            sb3.config(command=spell_lb.yview)
+            spell_lb.pack(fill="both", expand=True, padx=4, pady=4)
+            for lvl_lbl, name in available:
+                spell_lb.insert("end", f"[{lvl_lbl}] {name}")
+
+            err2 = tk.Label(body, text="", font=FONT_SM, bg=BG, fg=RED)
+            err2.pack(anchor="w")
+
+            def _confirm_spells():
+                sel = spell_lb.curselection()
+                if len(sel) > n_picks:
+                    err2.config(text=f"Select at most {n_picks} spell{'s' if n_picks>1 else ''}.")
+                    return
+                for idx in sel:
+                    _, name = available[idx]
+                    if name not in sc.setdefault("spells_known", []):
+                        sc["spells_known"].append(name)
+                _advance()
+
+            _next_btn("Confirm →", _confirm_spells)
 
         def _show_step():
             _clear()

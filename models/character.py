@@ -110,6 +110,12 @@ def empty_character() -> dict:
 
         "conditions": [],
 
+        "magic_items":         [],
+        "magic_weapon_bonus":  0,
+        "magic_armor_bonus":   0,
+
+        "feats": [],
+
         "inspiration": False,
         "feature_uses": {},
 

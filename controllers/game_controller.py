@@ -263,6 +263,29 @@ def process_spell_cast(session, char, spell_name, target_name, slot_level,
                                       target_name, slot_level)
 
 
+def process_gold_award(char, amount):
+    """Add gold pieces to the character's currency. Returns new gp total."""
+    char.setdefault("currency", {"cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0})
+    char["currency"]["gp"] = char["currency"].get("gp", 0) + amount
+    return char["currency"]["gp"]
+
+
+def process_item_award(char, name, slot="misc", bonus=0):
+    """Add a magic item to the character. Applies mechanical bonus where relevant.
+    slot: 'weapon' | 'armor' | 'misc'
+    bonus: integer bonus applied to attack+damage (weapon) or AC (armor).
+    Returns the added item dict.
+    """
+    item = {"name": name, "slot": slot, "bonus": bonus}
+    char.setdefault("magic_items", [])
+    char["magic_items"].append(item)
+    if slot == "weapon" and bonus > 0:
+        char["magic_weapon_bonus"] = char.get("magic_weapon_bonus", 0) + bonus
+    elif slot == "armor" and bonus > 0:
+        char["magic_armor_bonus"] = char.get("magic_armor_bonus", 0) + bonus
+    return item
+
+
 def get_available_combat_spells(char):
     from models.spells import get_combat_spells
     return get_combat_spells(char)

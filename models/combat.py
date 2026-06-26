@@ -140,9 +140,12 @@ def player_attack(session, character, weapon_name, target_name,
     if not weapon:
         return {"error": f"No attack named '{weapon_name}' on character sheet."}
 
-    attacker_name = character["name"] or "Player"
-    attack_bonus  = weapon.get("attack_bonus", 0)
-    damage_note   = damage_override if damage_override is not None else weapon["damage"]
+    attacker_name  = character["name"] or "Player"
+    magic_bonus    = character.get("magic_weapon_bonus", 0)
+    attack_bonus   = weapon.get("attack_bonus", 0) + magic_bonus
+    base_damage    = damage_override if damage_override is not None else weapon["damage"]
+    damage_note    = (f"{base_damage}+{magic_bonus}" if magic_bonus > 0
+                      else base_damage)
 
     result = resolve_attack(session, attacker_name, target_name,
                             attack_bonus, damage_note, advantage, disadvantage,
