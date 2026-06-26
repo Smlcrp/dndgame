@@ -368,6 +368,24 @@ Every character loaded from disk is migrated to the current schema and validated
 
 ---
 
+### ✅ DONE — Game Mechanics Audit (Roadmap Item 8)
+
+Full audit of `dice.py`, `character.py`, `combat.py`, `progression.py` against D&D 5e SRD. Four bugs found and fixed. 3 new tests added (376 total).
+
+**Findings and fixes:**
+
+- ✅ `dice.py` — all functions correct: d20 advantage/disadvantage, nat20/nat1, critical damage (double dice count), death save outcomes, initiative.
+- ✅ `character.py` modifiers, proficiency bonus, skill/save bonuses — all correct.
+- ✅ `combat.py` — attack resolution (nat20 hit, nat1 miss, tie beats AC), crit delegation, death saves, XP from dead enemies only — all correct.
+- ❌ **FIXED — Level 11 XP threshold**: `progression.py` had `83000`; SRD value is **85,000**. Characters were reaching level 11 two thousand XP early.
+- ❌ **FIXED — Barbarian Rage scaling** (`progression.py`): old `{9: 3, 12: 3, 17: 4, 20: 6}` was wrong (wrong trigger levels, missing the 5-uses tier). Correct SRD progression: `{3: 3, 6: 4, 12: 5, 17: 6, 20: 999}` (999 = unlimited at level 20). The `current_max_uses` function applies scaling in sorted key order, so this fully implements the SRD table: 2 uses (Lv1-2) → 3 (Lv3-5) → 4 (Lv6-11) → 5 (Lv12-16) → 6 (Lv17-19) → unlimited (Lv20).
+- ⚠️ **FIXED — Long rest hit dice recovery** (`character.py`): used `total // 2` (floor) instead of ceil. A character with 5 total hit dice (levels 5, 7, 9 etc.) would recover 2 dice instead of the correct 3. Fixed to `(total + 1) // 2`.
+- 💡 **FIXED — Warlock Pact Magic short rest recharge** (`character.py`): `short_rest()` now calls `restore_spell_slots(char)` when `char["class"] == "Warlock"`. Previously Warlocks never recovered spell slots on a short rest, effectively breaking the class at mid/high levels.
+- ⚠️ NOT FIXED — Prone condition grants advantage to melee and ranged (SRD: disadvantage to ranged). Intentional simplification for a text-based game where attack type is not tracked.
+- 💡 NOT FIXED — Enemy saving throws use a raw d20 with no ability modifier. Tracked for future improvement but out of scope for this pass.
+
+---
+
 ### ✅ DONE — QA Validation Pass (Roadmap Item 6)
 
 373 tests, all passing in 0.5 s. Repo clean. Everything committed and pushed before starting items 7–9.

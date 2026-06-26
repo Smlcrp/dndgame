@@ -1,6 +1,6 @@
 XP_THRESHOLDS = [
     0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
-    83000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
+    85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
 ]
 
 # Per-class levels that grant an ASI or Feat choice
@@ -59,7 +59,7 @@ CLASS_FEATURE_CHARGES = {
             "recharge": "long_rest",
             "desc": "Enter a rage for 1 minute: bonus damage, resistance to physical damage, advantage on STR checks/saves",
             "min_level": 1,
-            "scaling": {9: 3, 12: 3, 17: 4, 20: 6},
+            "scaling": {3: 3, 6: 4, 12: 5, 17: 6, 20: 999},
         },
     },
     "Bard": {

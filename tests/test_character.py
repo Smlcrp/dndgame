@@ -229,6 +229,22 @@ class TestShortRest:
         with pytest.raises(ValueError):
             short_rest(c, 2, [4, 4])
 
+    def test_warlock_restores_spell_slots_on_short_rest(self):
+        c = self._char()
+        c["class"] = "Warlock"
+        c["spellcasting"]["slots"]["3"]["total"] = 2
+        c["spellcasting"]["slots"]["3"]["used"]  = 2
+        short_rest(c, 0, [])
+        assert c["spellcasting"]["slots"]["3"]["used"] == 0
+
+    def test_non_warlock_does_not_restore_slots_on_short_rest(self):
+        c = self._char()
+        c["class"] = "Wizard"
+        c["spellcasting"]["slots"]["3"]["total"] = 2
+        c["spellcasting"]["slots"]["3"]["used"]  = 2
+        short_rest(c, 0, [])
+        assert c["spellcasting"]["slots"]["3"]["used"] == 2
+
 
 class TestLongRest:
     def _char(self, hp_max=10, hd_total=6, hd_used=4):
@@ -257,9 +273,14 @@ class TestLongRest:
         assert c["death_saves"] == {"successes": 0, "failures": 0}
 
     def test_recovers_half_hit_dice(self):
-        # 6 total, 4 used → recover max(1, 6//2)=3 → used=max(0,4-3)=1
+        # 6 total, 4 used → recover ceil(6/2)=3 → used=max(0,4-3)=1
         c = long_rest(self._char(hd_total=6, hd_used=4))
         assert c["hit_dice"]["used"] == 1
+
+    def test_recovers_ceil_half_odd_total(self):
+        # 5 total, 5 used → recover ceil(5/2)=3 → used=max(0,5-3)=2
+        c = long_rest(self._char(hd_total=5, hd_used=5))
+        assert c["hit_dice"]["used"] == 2
 
     def test_recovers_at_least_one_hit_die(self):
         c = long_rest(self._char(hd_total=1, hd_used=1))

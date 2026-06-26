@@ -124,10 +124,13 @@ class TestCurrentMaxUses:
 
     def test_scaling_barbarian_rage(self):
         c = self._char()
-        # Scaling: {9: 3, 12: 3, 17: 4, 20: 6}
-        assert current_max_uses("Rage", "Barbarian", 9, c) == 3
-        assert current_max_uses("Rage", "Barbarian", 17, c) == 4
-        assert current_max_uses("Rage", "Barbarian", 20, c) == 6
+        # SRD: Lv1-2=2, Lv3-5=3, Lv6-11=4, Lv12-16=5, Lv17-19=6, Lv20=unlimited(999)
+        assert current_max_uses("Rage", "Barbarian", 2,  c) == 2
+        assert current_max_uses("Rage", "Barbarian", 3,  c) == 3
+        assert current_max_uses("Rage", "Barbarian", 6,  c) == 4
+        assert current_max_uses("Rage", "Barbarian", 12, c) == 5
+        assert current_max_uses("Rage", "Barbarian", 17, c) == 6
+        assert current_max_uses("Rage", "Barbarian", 20, c) == 999
 
     def test_unknown_feature_returns_zero(self):
         c = self._char()

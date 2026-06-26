@@ -325,6 +325,8 @@ def short_rest(char: dict, hit_dice_spent: int, rolls: list) -> dict:
         raise ValueError(f"Only {available} hit dice available.")
     healing = sum(max(1, r + con_mod) for r in rolls[:hit_dice_spent])
     char["hit_dice"]["used"] += hit_dice_spent
+    if char.get("class") == "Warlock":
+        restore_spell_slots(char)
     return apply_healing(char, healing)
 
 
@@ -332,7 +334,7 @@ def long_rest(char: dict) -> dict:
     char["hp"]["current"] = char["hp"]["max"]
     char["hp"]["temp"] = 0
     total = char["hit_dice"]["total"]
-    char["hit_dice"]["used"] = max(0, char["hit_dice"]["used"] - max(1, total // 2))
+    char["hit_dice"]["used"] = max(0, char["hit_dice"]["used"] - max(1, (total + 1) // 2))
     char["death_saves"] = {"successes": 0, "failures": 0}
     char["conditions"] = []
     restore_spell_slots(char)
