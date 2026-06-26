@@ -14,7 +14,7 @@ from models.enemies import enemy_list_for_dm
 from models.adventure import adventure_prompt_block
 
 OLLAMA_URL           = "http://localhost:11434/api/chat"
-DEFAULT_OLLAMA_MODEL = "hermes-3:8b-llama3.1-q6_K"
+DEFAULT_OLLAMA_MODEL = "HammerAI/hermes-3-llama-3.1:8b-q4_K_M"
 _DEFAULT_CONFIG      = Path(__file__).parent.parent / "data" / "dm_config.json"
 
 import requests

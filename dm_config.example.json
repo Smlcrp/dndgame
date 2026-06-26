@@ -2,7 +2,7 @@
   "_comment": "Copy this file to dm_config.json and fill in your settings. dm_config.json is gitignored.",
 
   "backend": "ollama",
-  "model": "hermes-3:8b-llama3.1-q6_K",
+  "model": "HammerAI/hermes-3-llama-3.1:8b-q4_K_M",
   "api_key": "",
 
   "_backends": {
@@ -10,11 +10,11 @@
       "description": "Free, runs locally. Requires Ollama installed and running (ollama serve).",
       "setup": [
         "1. Install Ollama: https://ollama.com  (or: winget install Ollama.Ollama)",
-        "2. Pull a model:   ollama pull hermes-3:8b-llama3.1-q6_K",
-        "3. Set backend to 'ollama' and model to 'hermes-3:8b-llama3.1-q6_K' (or whichever you pulled)",
+        "2. Pull a model:   ollama pull HammerAI/hermes-3-llama-3.1:8b-q4_K_M",
+        "3. Set backend to 'ollama' and model to 'HammerAI/hermes-3-llama-3.1:8b-q4_K_M' (or whichever you pulled)",
         "4. Leave api_key blank"
       ],
-      "recommended_models": ["hermes-3:8b-llama3.1-q6_K", "dolphin3:8b-llama3.1-q6_K", "llama3.1", "mistral"]
+      "recommended_models": ["HammerAI/hermes-3-llama-3.1:8b-q4_K_M", "dolphin-llama3:latest"]
     }
   }
 }
