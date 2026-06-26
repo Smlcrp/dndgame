@@ -51,13 +51,26 @@ class DungeonMaster:
 
     def _build_combat_prompt_block(self, character):
         lines = [
-            "\n\nCOMBAT ACTION TAGS — The player is describing their combat action in "
-            "natural language. Read what they say, identify the action (and optional bonus "
-            "action) they intend, and embed the appropriate tag on its own line BEFORE your "
-            "narration. Use ONLY the exact names listed below. Narrate the dramatic attempt "
-            "only — do NOT describe whether the attack hit, missed, or how much damage was "
-            "dealt. The game engine resolves that. If the player is doing something purely "
-            "narrative (talking, looking around, etc.), omit all action tags.",
+            "\n\nCOMBAT ACTION TAGS — CRITICAL RULES, READ CAREFULLY:",
+            "",
+            "The player describes their action in natural language. You must:",
+            "1. Emit the correct tag on its own line BEFORE your narration.",
+            "2. Write ONE short paragraph (2-3 sentences) narrating the dramatic ATTEMPT only.",
+            "   Describe the motion, the intent, the tension — stop the instant the action is "
+            "launched. The dice have not been rolled yet. You do not know if it hits.",
+            "3. HARD STOPS — never write any of these:",
+            "   - 'If successful...' or 'If it hits...' — you don't know the outcome",
+            "   - Any description of the attack connecting, dealing damage, or the enemy reacting to being hit",
+            "   - 'What do you do next?' or any prompt asking for the next action — the game engine handles turns",
+            "   - A second paragraph, aftermath, or scene continuation",
+            "4. If the player is doing something purely narrative (talking, looking around), omit the tag.",
+            "",
+            "EXAMPLE — player says 'I stab the goblin with my dagger':",
+            "  CORRECT: [ACTION: attack=Dagger]",
+            "           You dart forward, driving your dagger toward the goblin's side.",
+            "  WRONG:   [ACTION: attack=Dagger]",
+            "           You dart forward... the dagger bites deep into its flesh! The goblin howls.",
+            "           What do you do next?",
             "",
         ]
 
