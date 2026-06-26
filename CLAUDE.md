@@ -746,6 +746,20 @@ Release pipeline once Stage 5 is complete.
 
 ---
 
+### Stage 8 — Code Audit & Cleanup
+
+A full pass over the codebase after Stage 7 content work settles. Goal: delete dead code, improve efficiency, and keep the repo clean.
+
+- **Delete legacy files** — any root-level or duplicate files that survived prior cleanup passes
+- **Rewrite inefficient code** — audit all models and controllers for O(n²) loops, redundant recomputation, unnecessary data copies, or overly complex logic that can be simplified without changing behavior
+- **Consolidate duplication** — find repeated patterns across files (tag parsing, sidebar rendering, dialog scaffolding) and extract shared helpers where the abstraction pays for itself
+- **Trim dead imports** — remove any `import` statements that are no longer used
+- **Schema cleanup** — audit `empty_character()` for fields that are defined but never read anywhere in the codebase
+- **Test coverage gaps** — run coverage report and add tests for any untested branches in models/
+- **Dependency audit** — check `requirements.txt` (or equivalent) for packages that are installed but not imported
+
+---
+
 ## Steam — Technical Reference
 
 Notes for when Steam distribution becomes relevant (Stage 6). Do not build any of this until Stage 5 is complete and the user explicitly asks.
