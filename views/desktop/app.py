@@ -252,12 +252,22 @@ class GameApp:
         self._skills_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._skills_frame.pack(anchor="w", padx=10, pady=(0,4), fill="x")
 
-        # ATTACKS
-        _sec("ATTACKS")
+        # SPELLCASTING (compact: DC / ATK / slot counts — only populated for casters)
+        _sec("SPELLCASTING")
+        self._spells_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._spells_frame.pack(fill="x", padx=6, pady=(0,4))
+
+        # ACTIONS (weapons + spells-as-actions + standard actions)
+        _sec("ACTIONS")
         self._attacks_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._attacks_frame.pack(fill="x", padx=6, pady=(0,4))
 
-        # FEATURES
+        # BONUS ACTIONS
+        _sec("BONUS ACTIONS")
+        self._bonus_frame = tk.Frame(self._sb_inner, bg=PANEL)
+        self._bonus_frame.pack(fill="x", padx=6, pady=(0,4))
+
+        # FEATURES (non-BA charge tracking: Arcane Recovery etc.)
         _sec("FEATURES")
         self._features_frame = tk.Frame(self._sb_inner, bg=PANEL)
         self._features_frame.pack(fill="x", padx=6, pady=(0,4))
@@ -487,119 +497,8 @@ class GameApp:
         for w in self._input_frame.winfo_children():
             w.destroy()
 
-        uses        = self.char.get("feature_uses", {}) if self.char else {}
-        attack_opts = self._get_attack_options()
-
-        # ── Weapon & feature strip (one line) ─────────────────────────────────
-        strip = tk.Frame(self._input_frame, bg=PANEL)
-        strip.pack(fill="x", padx=6, pady=(4, 0))
-
-        weapon_parts = []
-        for opt in attack_opts:
-            if opt.get("mode") == "offhand":
-                weapon_parts.append(f"⚔ {opt['label']} {opt['bonus']:+d}  [BA]")
-            else:
-                weapon_parts.append(f"⚔ {opt['label']} {opt['bonus']:+d}")
-        feat_parts = []
-        for fname, data in uses.items():
-            if fname in self._COMBAT_FEATURES:
-                cur = data.get("current", 0)
-                mx  = data.get("max", 1)
-                feat_parts.append(f"★ {fname} {cur}/{mx}")
-
-        strip_text = "   ·   ".join(weapon_parts)
-        if feat_parts:
-            strip_text += ("   │   " if weapon_parts else "") + "   ·   ".join(feat_parts)
-        if not strip_text:
-            strip_text = "No weapons equipped"
-
-        tk.Label(strip, text=strip_text, font=("Segoe UI", 8),
-                 bg=PANEL, fg=FG).pack(anchor="w")
-
-        # ── Spell tray (always-visible scrollable list, combat only) ──────────
-        sc = self.char.get("spellcasting", {}) if self.char else {}
-        if sc.get("enabled", False):
-            spells = get_available_combat_spells(self.char)
-            # Also include spells with 0 slots so player sees them (greyed)
-            known = list(dict.fromkeys(
-                sc.get("spells_prepared", []) + sc.get("spells_known", [])))
-            from models.spells import SPELLS as _ALL_SPELLS, spell_damage_notation
-            all_combat = []
-            for name in known:
-                sp = _ALL_SPELLS.get(name)
-                if not sp:
-                    continue
-                if sp["level"] == 0:
-                    all_combat.append({"name": name, "spell": sp,
-                                       "level": 0, "slots_left": None, "available": True})
-                else:
-                    sc_slots = sc.get("slots", {})
-                    total_avail = sum(
-                        max(0, v.get("total", 0) - v.get("used", 0))
-                        for k, v in sc_slots.items() if int(k) >= sp["level"])
-                    all_combat.append({"name": name, "spell": sp,
-                                       "level": sp["level"],
-                                       "slots_left": total_avail,
-                                       "available": total_avail > 0})
-            all_combat.sort(key=lambda s: (s["level"], s["name"]))
-
-            if all_combat:
-                tray_outer = tk.Frame(self._input_frame, bg=PANEL)
-                tray_outer.pack(fill="x", padx=6, pady=(2, 0))
-
-                ICON = {"attack": "⚔", "save": "⊕", "auto": "★"}
-                SAVE_AB = {"dex": "DEX", "con": "CON", "wis": "WIS",
-                           "str": "STR", "int": "INT", "cha": "CHA"}
-                player_level = self.char.get("level", 1)
-                rows = []
-                for entry in all_combat:
-                    sp    = entry["spell"]
-                    icon  = ICON.get(sp["delivery"], "·")
-                    sab   = SAVE_AB.get(sp.get("save_ability") or "", "")
-                    dtype = f"{icon} {sp['delivery']}" + (f" {sab}" if sab else "")
-                    if entry["level"] == 0:
-                        slot_str = "cantrip    "
-                    else:
-                        n = entry["slots_left"]
-                        slot_str = f"L{entry['level']}  {n} slot{'s' if n != 1 else ''}  "
-                    rows.append((entry["name"], slot_str, dtype, entry["available"]))
-
-                tray_h = min(6, len(rows))
-                canvas = tk.Canvas(tray_outer, bg=INPUT_BG, highlightthickness=0,
-                                   height=tray_h * 18)
-                vsb    = tk.Scrollbar(tray_outer, orient="vertical", command=canvas.yview,
-                                      bg=PANEL, troughcolor=INPUT_BG, width=10)
-                canvas.configure(yscrollcommand=vsb.set)
-                vsb.pack(side="right", fill="y")
-                canvas.pack(side="left", fill="x", expand=True)
-
-                inner = tk.Frame(canvas, bg=INPUT_BG)
-                canvas.create_window((0, 0), window=inner, anchor="nw")
-
-                for spell_name, slot_str, dtype, avail in rows:
-                    fg_col  = FG if avail else DIM
-                    row_f   = tk.Frame(inner, bg=INPUT_BG)
-                    row_f.pack(fill="x", padx=4, pady=0)
-                    tk.Label(row_f, text=f"✦ {spell_name:<22}", font=("Segoe UI", 8),
-                             bg=INPUT_BG, fg=fg_col, anchor="w").pack(side="left")
-                    tk.Label(row_f, text=f"{slot_str:<16}", font=("Segoe UI", 8),
-                             bg=INPUT_BG, fg=fg_col, anchor="w").pack(side="left")
-                    tk.Label(row_f, text=dtype, font=("Segoe UI", 8),
-                             bg=INPUT_BG, fg=fg_col if avail else DIM, anchor="w").pack(side="left")
-
-                inner.update_idletasks()
-                canvas.configure(scrollregion=canvas.bbox("all"))
-                canvas.bind("<MouseWheel>",
-                            lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))
-
-        # ── Input row ─────────────────────────────────────────────────────────
         row = tk.Frame(self._input_frame, bg=PANEL)
-        row.pack(fill="x", padx=6, pady=(2, 4))
-
-        tk.Button(row, text="⚔ Actions", font=FONT_SM,
-                  bg=BTN_BG, fg=ACCENT, relief="flat", bd=0, padx=8, pady=3,
-                  activebackground=ACCENT, activeforeground="#1a1a2e",
-                  command=self._open_action_panel).pack(side="left", padx=(0, 4))
+        row.pack(fill="x", padx=6, pady=(4, 4))
 
         self._combat_entry = tk.Entry(
             row, bg=INPUT_BG, fg=FG, font=FONT_BODY,
@@ -2127,9 +2026,16 @@ class GameApp:
                      font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w")
 
         # Attacks (state-aware)
-        self._refresh_attacks()
+        # Spellcasting stats (DC / ATK / slot pips)
+        self._refresh_spells()
 
-        # Feature charges
+        # Actions (weapons + spells + standard)
+        self._refresh_actions()
+
+        # Bonus actions
+        self._refresh_bonus_actions()
+
+        # Feature charges (non-BA)
         self._refresh_features()
 
         # Combat order
@@ -2159,39 +2065,210 @@ class GameApp:
         current = gs.current_combatant(self.session)
         return bool(current and current.get("is_player", False))
 
-    def _refresh_attacks(self):
+    # ── helpers shared by action-panel and sidebar refresh ───────────────────
+
+    def _action_blocked_state(self):
+        """Return (action_blocked: bool, reason: str) based on character conditions."""
+        if not self.session:
+            return False, ""
+        INCAP = {"Stunned", "Paralyzed", "Incapacitated", "Unconscious"}
+        player_comb = next(
+            (c for c in self.session.get("initiative_order", []) if c.get("is_player")), None)
+        p_conds = set(player_comb.get("conditions", []) if player_comb
+                      else self.session.get("conditions", []))
+        blocked = bool(INCAP & p_conds)
+        reason  = f"Condition: {', '.join(INCAP & p_conds)}" if blocked else ""
+        return blocked, reason
+
+    # ── Sidebar refresh methods ───────────────────────────────────────────────
+
+    def _refresh_spells(self):
+        """Compact spellcasting stats: DC, ATK, slot pips. Hidden for non-casters."""
+        for w in self._spells_frame.winfo_children():
+            w.destroy()
+        if not self.char:
+            return
+        sc = self.char.get("spellcasting", {})
+        if not sc.get("enabled"):
+            return
+        dc  = sc.get("spell_save_dc", "?")
+        atk = sc.get("attack_bonus", 0)
+        tk.Label(self._spells_frame, text=f"Save DC {dc}  •  Atk {atk:+d}",
+                 font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4, pady=(0,2))
+        slots   = sc.get("slots", {})
+        active  = sorted((int(l), v) for l, v in slots.items() if v.get("total", 0) > 0)
+        if active:
+            row_f = tk.Frame(self._spells_frame, bg=PANEL)
+            row_f.pack(anchor="w", padx=4, fill="x")
+            for lvl, data in active:
+                total = data.get("total", 0)
+                used  = data.get("used", 0)
+                cur   = total - used
+                pips  = "●" * cur + "○" * used
+                col   = FG if cur > 0 else DIM
+                tk.Label(row_f, text=f"L{lvl}{pips} ",
+                         font=("Segoe UI", 8), bg=PANEL, fg=col).pack(side="left")
+
+    def _refresh_actions(self):
+        """Weapons, action-cast spells, standard actions — greyed when unavailable."""
         for w in self._attacks_frame.winfo_children():
             w.destroy()
         if not self.char:
             return
-        attacks = self.char.get("attacks", [])
-        if not attacks:
-            tk.Label(self._attacks_frame, text="No attacks configured.",
+
+        blocked, blocked_reason = self._action_blocked_state()
+
+        def _sub(text):
+            tk.Label(self._attacks_frame, text=text,
+                     font=("Segoe UI", 8, "bold"), bg=PANEL, fg=DIM).pack(
+                         anchor="w", padx=4, pady=(4,0))
+
+        def _row(text, avail, reason=""):
+            fg_col = FG if avail else DIM
+            lbl = tk.Label(self._attacks_frame, text=text, font=FONT_SM,
+                           bg=PANEL, fg=fg_col, anchor="w", justify="left",
+                           wraplength=270, padx=4)
+            lbl.pack(fill="x")
+            if not avail and reason:
+                _Tooltip(lbl, lambda r=reason: r)
+
+        # ── Weapons ──────────────────────────────────────────────────────────
+        attacks     = self.char.get("attacks", [])
+        main_atks   = [a for a in attacks
+                       if not a.get("_offhand")]
+        attack_opts = self._get_attack_options()
+        main_opts   = [o for o in attack_opts if o.get("mode") != "offhand"]
+        if main_opts:
+            _sub("── Weapons")
+            for opt in main_opts:
+                text = (f"⚔ {opt['label']}  {opt['bonus']:+d}"
+                        f"  {opt['damage']} {opt.get('dmg_type','')}")
+                _row(text, avail=not blocked,
+                     reason=blocked_reason or "")
+        elif not attacks:
+            _sub("── Weapons")
+            _row("No weapons equipped",
+                 avail=False, reason="Add a weapon in the character builder")
+
+        # ── Spells (action-cast) ──────────────────────────────────────────────
+        sc = self.char.get("spellcasting", {})
+        if sc.get("enabled"):
+            from models.spells import SPELLS as _SP
+            sc_slots = sc.get("slots", {})
+            prepared = list(dict.fromkeys(
+                sc.get("spells_prepared", []) + sc.get("spells_known", [])))
+            SAVE_AB = {"dex":"DEX","con":"CON","wis":"WIS",
+                       "str":"STR","int":"INT","cha":"CHA"}
+            ICON = {"attack":"⚔","save":"⊕","auto":"★"}
+
+            # Build list: (level, name, delivery_str, available, reason)
+            spell_rows = []
+            for item in prepared:
+                name = item["name"] if isinstance(item, dict) else item
+                lvl  = item.get("level", _SP[name]["level"] if name in _SP else 99) \
+                       if isinstance(item, dict) else (_SP[name]["level"] if name in _SP else 99)
+                sp   = _SP.get(name)
+                if sp:
+                    icon = ICON.get(sp["delivery"], "·")
+                    sab  = SAVE_AB.get(sp.get("save_ability") or "", "")
+                    dtype = f"{icon} {sab}" if sab else icon
+                else:
+                    dtype = "·"
+                if lvl == 0:
+                    slots_str = "cantrip"
+                    avail = not blocked
+                    reason = blocked_reason
+                else:
+                    avail_slots = sum(
+                        max(0, v.get("total",0) - v.get("used",0))
+                        for k, v in sc_slots.items() if int(k) >= lvl)
+                    avail = avail_slots > 0 and not blocked
+                    if blocked:
+                        reason = blocked_reason
+                    elif avail_slots == 0:
+                        reason = f"No L{lvl}+ spell slots remaining"
+                    else:
+                        reason = ""
+                    slots_str = f"L{lvl}"
+                spell_rows.append((lvl, name, slots_str, dtype, avail, reason))
+
+            spell_rows.sort(key=lambda x: (x[0], x[1]))
+            if spell_rows:
+                _sub("── Spells")
+                for (_, name, slots_str, dtype, avail, reason) in spell_rows:
+                    _row(f"✦ {name}  {slots_str}  {dtype}",
+                         avail=avail, reason=reason)
+
+        # ── Standard actions ──────────────────────────────────────────────────
+        _sub("── Standard")
+        for std in ("Dash", "Dodge", "Disengage", "Hide"):
+            _row(f"◈ {std}", avail=not blocked, reason=blocked_reason)
+
+    def _refresh_bonus_actions(self):
+        """Off-hand attacks and bonus-action features, greyed when unavailable."""
+        for w in self._bonus_frame.winfo_children():
+            w.destroy()
+        if not self.char:
+            tk.Label(self._bonus_frame, text="—",
                      font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
             return
 
-        for atk in attacks:
-            name     = atk["name"]
-            bonus    = atk.get("attack_bonus", 0)
-            damage   = atk.get("damage", "—")
-            dmg_type = atk.get("damage_type", "")
-            notes    = atk.get("notes", "")
-            tip      = f"{damage}  {dmg_type}" + (f"\n{notes}" if notes else "")
+        blocked, blocked_reason = self._action_blocked_state()
+        any_shown = False
 
-            row = tk.Frame(self._attacks_frame, bg=PANEL)
-            row.pack(fill="x", pady=2)
+        def _row(text, avail, reason=""):
+            nonlocal any_shown
+            any_shown = True
+            fg_col = FG if avail else DIM
+            lbl = tk.Label(self._bonus_frame, text=text, font=FONT_SM,
+                           bg=PANEL, fg=fg_col, anchor="w", padx=4)
+            lbl.pack(fill="x")
+            if not avail and reason:
+                _Tooltip(lbl, lambda r=reason: r)
 
-            name_lbl = tk.Label(row, text=f"{name}  {bonus:+d}",
-                                font=FONT_SM, bg=PANEL, fg=FG,
-                                anchor="w", padx=4, pady=3)
-            name_lbl.pack(side="left", fill="x", expand=True)
+        # Off-hand attacks
+        attack_opts = self._get_attack_options()
+        for opt in (o for o in attack_opts if o.get("mode") == "offhand"):
+            text = (f"⚔ {opt['label']} (off-hand)  {opt['bonus']:+d}"
+                    f"  {opt['damage']} {opt.get('dmg_type','')}")
+            _row(text, avail=not blocked, reason=blocked_reason)
 
-            dmg_lbl = tk.Label(row, text=damage,
-                               font=("Segoe UI", 8), bg=PANEL, fg=DIM)
-            dmg_lbl.pack(side="right", padx=6)
+        # Bonus-action class features
+        uses = self.char.get("feature_uses", {})
+        for fname, data in uses.items():
+            if fname not in self._BONUS_ACTION_FEATURES:
+                continue
+            cur   = data.get("current", 0)
+            mx    = data.get("max", 1)
+            avail = cur > 0 and not blocked
+            pips  = "●" * cur + "○" * (mx - cur) if mx <= 10 else f"{cur}/{mx}"
+            if blocked:
+                reason = blocked_reason
+            elif cur == 0:
+                reason = f"No charges remaining — use a rest to recover"
+            else:
+                reason = ""
+            tip = f"{self._COMBAT_FEATURES.get(fname, fname)}"
+            lbl = tk.Label(self._bonus_frame,
+                           text=f"★ {fname}  {pips}",
+                           font=FONT_SM, bg=PANEL,
+                           fg=FG if avail else DIM,
+                           anchor="w", padx=4)
+            lbl.pack(fill="x")
+            any_shown = True
+            _Tooltip(lbl, lambda t=tip, r=reason, a=avail:
+                     (r if not a else t))
+            if avail:
+                use_btn = tk.Button(
+                    self._bonus_frame, text="Use", font=("Segoe UI", 8),
+                    bg=BTN_BG, fg=FG, relief="flat", bd=0, padx=6, pady=2,
+                    activebackground=ACCENT, activeforeground="#1a1a2e",
+                    command=lambda n=fname: self._use_feature(n))
+                use_btn.pack(anchor="e", padx=4)
 
-            _Tooltip(name_lbl, lambda t=tip: t)
-            _Tooltip(dmg_lbl,  lambda t=tip: t)
+        if not any_shown:
+            tk.Label(self._bonus_frame, text="—",
+                     font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
 
     def _set_input_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
@@ -2261,11 +2338,13 @@ class GameApp:
             fg="#1a1a2e" if insp else DIM)
 
     def _refresh_features(self):
+        """Non-bonus-action feature charges (Arcane Recovery, etc.)."""
         for w in self._features_frame.winfo_children():
             w.destroy()
         if not self.char:
             return
-        uses = self.char.get("feature_uses", {})
+        uses = {k: v for k, v in self.char.get("feature_uses", {}).items()
+                if k not in self._BONUS_ACTION_FEATURES}
         if not uses:
             tk.Label(self._features_frame, text="—",
                      font=FONT_SM, bg=PANEL, fg=DIM).pack(anchor="w", padx=4)
@@ -2278,9 +2357,8 @@ class GameApp:
             row = tk.Frame(self._features_frame, bg=PANEL)
             row.pack(fill="x", pady=2)
 
-            # Pip display (≤10) or numeric (>10)
             if max_u <= 10:
-                pips = "●" * current + "○" * (max_u - current)
+                pips   = "●" * current + "○" * (max_u - current)
                 pip_fg = ACCENT if current > 0 else DIM
                 pip_lbl = tk.Label(row, text=pips, font=("Segoe UI", 9),
                                    bg=PANEL, fg=pip_fg)
@@ -2314,6 +2392,7 @@ class GameApp:
         self._display(f"  Used {name}. ({uses[name]['current']}/{uses[name]['max']} remaining)\n\n",
                       "system")
         self._refresh_features()
+        self._refresh_bonus_actions()
 
     # ── Rest dialogs ──────────────────────────────────────────────────────────
 
