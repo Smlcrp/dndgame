@@ -23,9 +23,11 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `models/adventure.py` | ✅ Complete | 8 adventure templates with structured story arcs |
 | `models/companions.py` | ✅ Complete | Full companion system — 10 templates, combat AI, spell slots, death saves |
 | `models/spells.py` | ✅ Complete | ~60 combat spells (cantrips–level 9) with scaling, upcasting, delivery types |
+| `views/desktop/character_builder/ddb_import.py` | ✅ Complete | D&D Beyond character importer — paste URL or ID to import |
+| `tests/` | ✅ Complete | 373 tests across all model layers (dice, character, combat, game state, progression, adventure, DM tag parsing, integration) |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** D&D Beyond character import — paste a DDB character URL to import a fully built character directly into the game.
+> **Next milestone:** QA validation pass — full test run, corruption check, and repo clean-up before the main menu redesign.
 
 ---
 
@@ -219,6 +221,40 @@ Every picker is a filterable list. Here's the race picker — 28 options with a 
 - AC calculated from equipped armor (with Barbarian/Monk unarmored defense)
 - Attacks auto-generated from equipped weapons with proficiency and modifier applied
 - Speed set by race
+
+### D&D Beyond Character Import
+
+Instead of building a character manually, you can import one directly from D&D Beyond. On the character select screen, click **⬇ DDB Import**, then paste your character URL or ID:
+
+```
+https://www.dndbeyond.com/characters/12345678
+```
+
+Private characters require a **CobaltSession** token (available from your DDB browser cookies). Public characters import with no token.
+
+On import the character is automatically migrated to the current schema and validated before being saved. If validation fails an error is shown in the dialog.
+
+---
+
+## Test Suite
+
+```
+python -m pytest tests/ -q
+```
+
+373 tests covering all model layers:
+
+| File | What it tests |
+|---|---|
+| `tests/test_dice.py` | All dice functions — notation parsing, advantage/disadvantage, crits, death saves |
+| `tests/test_character.py` | Modifier math, skill/save bonuses, HP ops, temp HP, spell slots, rest, schema migration and validation |
+| `tests/test_game_state.py` | Session state, damage/healing, conditions, combat setup, turn advance, spell slot tracking |
+| `tests/test_combat.py` | Attack resolution (nat20/nat1/hit/miss), death save arcs, XP accounting, combat summary |
+| `tests/test_progression.py` | XP thresholds, ASI/subclass triggers, feature charges, recharge types across all 13 classes |
+| `tests/test_adventure.py` | Adventure generation, beat progression, XP totals, prompt block content |
+| `tests/test_dm.py` | All 9 DM tag types parsed and stripped correctly; multi-tag responses; narration cleaning |
+| `tests/test_integration.py` | Full combat round, death save arc, adventure XP into level progression, schema round-trip |
+| `tests/test_companions.py` | Companion HP, rests, spell slots, death saves (87 tests — existing) |
 
 ---
 
@@ -536,6 +572,37 @@ if self.state in ("COMBAT", "DEAD"):
     self._display("  [DEV] Cannot enter Story Mode in current state.\n\n", "system")
     return
 ```
+
+---
+
+### 14. `[ACTION: dodge]` / `[ACTION: dash]` / `[ACTION: disengage]` / `[ACTION: hide]` crash in `_parse_events`
+
+**Where:** `models/dm.py` → `_parse_events()` → ACTION tag parser.
+
+**Symptom:** When the DM emitted a non-`=` action tag such as `[ACTION: dodge]`, `_parse_events` raised `ValueError: not enough values to unpack`. The combat action was never processed and an unhandled exception propagated silently through the Tkinter callback chain.
+
+**Root cause:** The dict comprehension that builds the `pairs` mapping had `if "=" in part` as a trailing filter on the inner `for k, v in [part.split("=", 1)]` clause. In Python, a trailing `if` in a comprehension applies after the inner `for` unpacking — so the unpacking was attempted before the guard ran. For a bare word like `"dodge"`, `split("=", 1)` returns a one-element list, and unpacking it into `k, v` fails immediately.
+
+**Fix:** Moved the `if "=" in part` guard to filter the outer `for part in ...` loop, before the inner destructuring:
+```python
+pairs = {k.strip().lower(): v.strip()
+         for part in content.split(",")
+         if "=" in part
+         for k, v in [part.split("=", 1)]}
+```
+The same fix was applied to the `[BONUS:]` tag parser which had the identical pattern.
+
+---
+
+### 15. DDB import skill proficiencies stored as lowercase_underscore — silent skill check failures
+
+**Where:** `views/desktop/character_builder/ddb_import.py` → `SKILL_MAP`.
+
+**Symptom:** Characters imported from D&D Beyond would silently fail all proficiency checks during play. The DM's passive score calculations, the skill check proficiency test in `app.py`, and the DM system prompt's passive perception/investigation/insight would all treat the character as unproficient in every skill regardless of their actual sheet.
+
+**Root cause:** `SKILL_MAP` mapped D&D Beyond's hyphenated keys to lowercase_underscore values (`"acrobatics"`, `"animal_handling"`, `"sleight_of_hand"`). The rest of the game stores and checks skill proficiencies in Title Case (`"Acrobatics"`, `"Animal Handling"`, `"Sleight of Hand"`) — matching `ALL_SKILLS` in `dnd_data.py`.
+
+**Fix:** Updated all 18 `SKILL_MAP` values to Title Case, matching `ALL_SKILLS` exactly.
 
 ---
 

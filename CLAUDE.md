@@ -49,6 +49,18 @@ dndgame/
 │       ├── __init__.py
 │       └── api.py            # Flask/FastAPI stub — same controller calls, JSON responses
 │
+├── tests/                    # pytest suite — 373 tests
+│   ├── conftest.py           # sys.path setup
+│   ├── test_dice.py
+│   ├── test_character.py
+│   ├── test_game_state.py
+│   ├── test_combat.py
+│   ├── test_progression.py
+│   ├── test_adventure.py
+│   ├── test_dm.py
+│   ├── test_integration.py
+│   └── test_companions.py
+│
 └── data/
     ├── characters/           # Saved character JSON files (gitignored)
     ├── sessions/             # Saved session JSON files (gitignored)
@@ -202,6 +214,10 @@ Main game interface. `GameApp` class.
 
 - **Tkinter swallows callback exceptions silently** — Any exception raised inside a Tkinter event callback (button click, etc.) is caught by Tkinter, printed to stderr, and the UI stays open with no visible feedback to the user. If `begin()` or any callback appears to do nothing, check stderr or add a try/except with explicit error display.
 
+- **`_parse_events` dict comprehension guard order** — In `dm.py:_parse_events`, the `pairs` dict used to parse `[ACTION:]` and `[BONUS:]` tag content has `if "=" in part` as a filter on the outer `for part in content.split(",")` loop. Do NOT move it to a trailing position after the inner `for k, v in [part.split("=", 1)]` — the inner destructuring runs before any trailing `if`, causing a `ValueError` for bare-word entries like `[ACTION: dodge]`.
+
+- **`skill_proficiencies` must be Title Case** — The entire game stores and checks skill proficiencies as Title Case strings (`"Acrobatics"`, `"Sleight of Hand"`) matching `ALL_SKILLS` in `dnd_data.py`. The model layer's `SKILLS` dict uses lowercase_underscore keys but `skill_bonus()` should only be called with those keys for derived-stat calculations, not for checking `skill_proficiencies`. Do not write lowercase_underscore values into `skill_proficiencies`.
+
 ---
 
 ## Coding Conventions
@@ -322,6 +338,33 @@ Every character loaded from disk is migrated to the current schema and validated
 - **`models/character.py` — `load_character()`** — now calls `migrate_character` then `validate_character` on every load. Old manual `setdefault` calls removed; `migrate_character` covers them.
 - **`views/desktop/character_builder/character_builder_app.py`** — spellcasting save now explicitly includes `"spells_prepared": []` so the full schema is preserved instead of silently dropping the field.
 - **Audit result:** Zero crash risks found. All fields accessed by game code are present in `empty_character()`. All direct bracket accesses (`char["hp"]`, `char["class"]`, etc.) are safe. Builder correctly populates all required fields.
+
+---
+
+### ✅ DONE — D&D Beyond Character Import (Roadmap Item 4)
+
+- **`views/desktop/character_builder/ddb_import.py` — `SKILL_MAP` fix** — all 18 skill values changed from lowercase_underscore (`"acrobatics"`, `"sleight_of_hand"`) to Title Case (`"Acrobatics"`, `"Sleight of Hand"`) to match `ALL_SKILLS` in `dnd_data.py` and the rest of the game's `skill_proficiencies` format. Without this fix, imported characters silently failed all skill proficiency checks.
+- **`views/desktop/app.py` — import UI** — "⬇ DDB Import" button added to the character select row (alongside New Character and Delete). Clicking opens a centered `Toplevel` dialog with a URL/ID field, a masked CobaltSession token field (for private characters), status label, and Import/Cancel buttons. Import runs in a daemon thread: `import_from_ddb()` → `migrate_character()` → `validate_character()` → `save_character()`, then the character list refreshes automatically. Success message shown for 1.4 seconds before the dialog closes.
+- **`models/character.py`** — `migrate_character` and `validate_character` imported into `app.py` and wired into the import pipeline so every DDB import is schema-enforced on save.
+
+---
+
+### ✅ DONE — Comprehensive Test Suite (Roadmap Item 5)
+
+373 tests total (87 existing companion tests + 286 new). All pass. Run with: `python -m pytest tests/ -q`
+
+**New test files:**
+- `tests/conftest.py` — central `sys.path` setup so no per-file boilerplate needed
+- `tests/test_dice.py` — `roll`, `roll_dice` (notation parsing, bounds), `d20_check` (advantage/disadvantage, nat20/nat1), `critical_damage` (doubled dice), `hit_die` (minimum 1 guarantee), `death_save`, `initiative`
+- `tests/test_character.py` — modifier math, modifier_str, proficiency_bonus by level, `skill_bonus` (no prof / proficient / expertise / override / invalid), `saving_throw_bonus`, `apply_damage` (temp absorption, bleedthrough, floor-zero), `apply_healing` (cap), `add_temp_hp` (keep higher), `is_unconscious`, spell slot use/exhaust/restore, `short_rest` (con mod, min heal, too-many-dice guard), `long_rest` (HP restore, temp clear, condition clear, death save reset, hit dice recovery), `migrate_character` (fills gaps, idempotent, non-destructive), `validate_character` (all error paths, error message includes character name)
+- `tests/test_game_state.py` — `empty_session`, `apply_damage` (temp absorption, floor-zero, zero-damage noop), `apply_healing` (cap), spell slot use/restore by level, `long_rest` / `short_rest`, `start_combat` (initiative sort, in_combat flag, round=1, conditions init), `end_combat`, `advance_turn` (wrap + round increment), `current_combatant`, `apply_combat_damage` / `apply_combat_healing`, `add_condition` / `remove_condition` (dedup), `living_combatants`, `enemies_alive` (companion not counted, player not counted)
+- `tests/test_combat.py` — `build_enemy`, `resolve_attack` (nat20 hit, nat1 miss, hit above AC, miss below AC, pre_damage, overkill, result shape, unknown target), `player_attack` (weapon not found, valid hit), `enemy_attack` (valid, not found, no attacks), `handle_death_save` (all 6 outcomes), `xp_from_combat` (dead enemies only, player excluded, multiple, empty), `combat_summary`
+- `tests/test_progression.py` — `level_from_xp` (all 20 thresholds), `xp_for_level`, `xp_to_next_level`, `is_asi_level` (Fighter has level 6, standard classes, unknown), `get_subclass_trigger` (all known classes, unknown defaults 3), `current_max_uses` (fixed int, level-based, cha_mod min-1, int_mod, 5x_level, scaling override, unknown feature/class), `recharges_on_short_rest` (short/long/short_rest_at threshold), `feature_charges_gained_at`
+- `tests/test_adventure.py` — `generate_adventure` (required keys, beat=0, nonempty beats, XP list, climax_xp, antagonist keys, non-deterministic), `advance_beat` (increments, positive XP, capped at 4, repeated noop, full arc), `adventure_prompt_block` (None → "", title/antagonist in block, stage labels for all beats, [BEAT]/[CLIMAX]/[BREAK] instructions present)
+- `tests/test_dm.py` — all 9 tag types: `[CHECK:]` (skill, dc, case-insensitive, multi-word skill), `[COMBAT:]` (count, multiple enemies, no-count default, latin-x), `[SCENE:]`, `[XP:]`, `[BEAT]` / `[CLIMAX]` / `[BREAK]` (case-insensitive), `[COMPANION:]`, `[ACTION:]` (attack/mode, spell/slot, feature, dodge/dash/disengage/hide), `[BONUS:]` (attack, feature); narration cleaning (tags stripped, excessive newlines collapsed, all types together)
+- `tests/test_integration.py` — full combat round (kill enemy → XP), player miss (enemy alive), crit (doubled dice), death save arc (stabilize / die / nat1 → dead / nat20 revive), full adventure beat sequence, beat XP → level-up threshold, schema round-trip (`migrate_character` + `validate_character` on sparse char)
+
+**Bug found and fixed by tests:** `[ACTION: dodge]` / `[ACTION: dash]` / `[ACTION: disengage]` / `[ACTION: hide]` crashed with `ValueError` in `dm.py:_parse_events` — `if "=" in part` guard was in the wrong position in the dict comprehension, running after the inner for-loop destructuring instead of before. Same fix applied to `[BONUS:]` parser. (Bug would have silently crashed any combat turn where the DM chose a non-attack action.)
 
 ---
 
@@ -468,10 +511,12 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 Complete the character progression system (Phases 2 & 3 — sidebar XP bar, feature charge display, rest buttons, DEV panel). This is the priority because UI polish and packaging work should wrap around a mechanically finished game.
 
 Remaining mechanical work:
+- QA validation pass (roadmap item 6) — run all 373 tests, full corruption check, verify repo clean
+- Main menu redesign — single-window splash (roadmap item 7)
+- Game mechanics audit vs D&D 5e (roadmap item 8)
+- Adventure length presets — Epic / Quest / One Shot (roadmap item 9)
 - Character Progression Phase 2 (sidebar: XP bar, feature charge pips, Inspiration toggle, rest buttons)
 - Character Progression Phase 3 (DEV panel: award XP, level jump, set HP, test combat)
-- D&D Beyond character import (roadmap item 4)
-- Adventure length presets — Epic / Quest / One Shot (roadmap item 9)
 - Multiclassing (defer until single-class leveling is solid)
 
 ### Stage 2 — Electron + Flask Migration (confirmed plan)

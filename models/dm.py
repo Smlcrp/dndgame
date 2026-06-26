@@ -413,7 +413,8 @@ NARRATION RULES — READ CAREFULLY:
             content = m.group(1).strip()
             pairs   = {k.strip().lower(): v.strip()
                        for part in content.split(",")
-                       for k, v in [part.split("=", 1)] if "=" in part}
+                       if "=" in part
+                       for k, v in [part.split("=", 1)]}
             first   = content.split(",")[0].split("=")[0].strip().lower()
             ev      = {"type": "action_taken"}
             if first in ("dodge", "dash", "disengage", "hide"):
@@ -437,7 +438,8 @@ NARRATION RULES — READ CAREFULLY:
             content = m.group(1).strip()
             pairs   = {k.strip().lower(): v.strip()
                        for part in content.split(",")
-                       for k, v in [part.split("=", 1)] if "=" in part}
+                       if "=" in part
+                       for k, v in [part.split("=", 1)]}
             ev = {"type": "bonus_action_taken"}
             if "attack" in pairs:
                 ev["action"] = "attack"

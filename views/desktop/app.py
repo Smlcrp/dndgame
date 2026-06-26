@@ -8,7 +8,7 @@ _root = Path(__file__).parent.parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from models.character import load_character, save_character, list_characters, modifier, proficiency_bonus, reset_to_level1
+from models.character import load_character, save_character, list_characters, modifier, proficiency_bonus, reset_to_level1, migrate_character, validate_character
 import models.game_state as gs
 import models.combat as cb
 import models.dm as dm_module
@@ -1009,6 +1009,12 @@ class GameApp:
                   fg=ACCENT, relief="flat", bd=0, padx=8, pady=5,
                   activebackground=ACCENT, activeforeground="#1a1a2e",
                   command=new_char).pack(side="left", padx=(0, 4))
+        tk.Button(btn_row, text="⬇ DDB Import", font=FONT_SM, bg=BTN_BG,
+                  fg=BLUE, relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=BLUE,
+                  command=lambda: self._open_ddb_import_dialog(
+                      d, lambda name: _populate(select_last=True)
+                  )).pack(side="left", padx=(0, 4))
         tk.Button(btn_row, text="Delete", font=FONT_SM, bg=BTN_BG, fg=RED,
                   relief="flat", bd=0, padx=8, pady=5,
                   activebackground="#5a1e1e", activeforeground=FG,
@@ -1037,6 +1043,95 @@ class GameApp:
         self._start_adventure(new=True)
 
     # ── Page 2c: Next Adventure (leveled characters only) ─────────────────────
+
+    def _open_ddb_import_dialog(self, parent, on_success):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Import from D&D Beyond")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        dlg.update_idletasks()
+        w, h = 440, 280
+        px = parent.winfo_x() + (parent.winfo_width()  - w) // 2
+        py = parent.winfo_y() + (parent.winfo_height() - h) // 2
+        dlg.geometry(f"{w}x{h}+{px}+{py}")
+
+        tk.Label(dlg, text="Import from D&D Beyond", font=FONT_HDR,
+                 bg=BG, fg=ACCENT).pack(pady=(14, 2))
+        tk.Label(dlg, text="Paste your character URL or ID:",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", padx=18, pady=(6, 0))
+
+        url_var = tk.StringVar()
+        url_entry = tk.Entry(dlg, textvariable=url_var, bg=INPUT_BG, fg=FG,
+                             font=FONT_BODY, insertbackground=FG, relief="flat", bd=4)
+        url_entry.pack(fill="x", padx=18, pady=(2, 10))
+        url_entry.focus_set()
+
+        tk.Label(dlg, text="CobaltSession token  (private characters only):",
+                 font=FONT_SM, bg=BG, fg=DIM).pack(anchor="w", padx=18)
+        token_var = tk.StringVar()
+        tk.Entry(dlg, textvariable=token_var, bg=INPUT_BG, fg=DIM,
+                 font=FONT_SM, insertbackground=FG, relief="flat", bd=4,
+                 show="*").pack(fill="x", padx=18, pady=(2, 0))
+
+        status_var = tk.StringVar()
+        status_lbl = tk.Label(dlg, textvariable=status_var, font=FONT_SM,
+                              bg=BG, fg=RED, wraplength=400)
+        status_lbl.pack(padx=18, pady=(8, 0))
+
+        btn_row = tk.Frame(dlg, bg=BG)
+        btn_row.pack(fill="x", padx=18, pady=(10, 16))
+        tk.Button(btn_row, text="Cancel", font=FONT_SM, bg=BTN_BG, fg=DIM,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=FG,
+                  command=dlg.destroy).pack(side="right", padx=(4, 0))
+        import_btn = tk.Button(btn_row, text="Import →", font=FONT_SM,
+                               bg=ACCENT, fg="#1a1a2e", relief="flat", bd=0,
+                               padx=12, pady=5,
+                               activebackground="#e0c060", activeforeground="#1a1a2e")
+        import_btn.pack(side="right")
+
+        def _do_import():
+            url   = url_var.get().strip()
+            token = token_var.get().strip()
+            if not url:
+                status_var.set("Paste a character URL or ID first.")
+                status_lbl.config(fg=RED)
+                return
+            status_var.set("Importing…")
+            status_lbl.config(fg=DIM)
+            import_btn.config(state="disabled")
+
+            def _run():
+                try:
+                    from views.desktop.character_builder.ddb_import import import_from_ddb
+                    char = import_from_ddb(url, token)
+                    char = migrate_character(char)
+                    validate_character(char)
+                    save_character(char)
+                    name = char["name"]
+                    self.root.after(0, lambda: _done(name))
+                except Exception as e:
+                    msg = str(e) or repr(e)
+                    self.root.after(0, lambda: _fail(msg))
+
+            def _done(name):
+                status_var.set(f"✓  {name} imported.")
+                status_lbl.config(fg=GREEN)
+                import_btn.config(state="normal")
+                on_success(name)
+                dlg.after(1400, dlg.destroy)
+
+            def _fail(msg):
+                status_var.set(msg)
+                status_lbl.config(fg=RED)
+                import_btn.config(state="normal")
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        import_btn.config(command=_do_import)
+        url_entry.bind("<Return>", lambda e: _do_import())
 
     def _show_next_adventure_page(self, d):
         self._clear_body()
