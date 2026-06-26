@@ -1509,6 +1509,7 @@ class GameApp:
 
     def _enter_story_mode(self, location):
         self._story_mode = True
+        self.session["story_mode"] = True
         self._story_mode_label.pack(side="right", padx=(0, 4))
         self._set_input_enabled(False)
         self._display("── Story Mode ──\n\n", "header")
@@ -1518,13 +1519,13 @@ class GameApp:
             "Describe this location vividly — sights, sounds, smells, the people or atmosphere "
             "present. Make it feel alive and specific to where they are. "
             "End with the character taking stock of their surroundings, ready to act. "
-            "Do not emit any [COMBAT:], [CHECK:], or [XP:] tags yet. "
-            "This is a purely narrative opening scene."
+            "Do not emit any tags. This is a purely narrative scene — no mechanics, no companions, no dice."
         )
         self._dm_call(opening)
 
     def _exit_story_mode(self):
         self._story_mode = False
+        self.session.pop("story_mode", None)
         try:
             self._story_mode_label.pack_forget()
         except Exception:

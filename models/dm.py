@@ -239,11 +239,31 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
         passive_inv  = 10 + mods["INT"] + (pb_val if "Investigation" in skills else 0)
         passive_ins  = 10 + mods["WIS"] + (pb_val if "Insight"       in skills else 0)
 
-        in_combat       = session.get("in_combat", False) if session else False
+        story_mode      = session.get("story_mode", False) if session else False
+        in_combat       = (session.get("in_combat", False) if session else False) and not story_mode
         combat_block    = self._build_combat_prompt_block(character) if in_combat else ""
         companions      = session.get("companions", []) if session else []
-        party_block     = self._build_party_block(character, companions)
-        knowledge_block = self._build_knowledge_checks_block(character)
+        party_block     = "" if story_mode else self._build_party_block(character, companions)
+        knowledge_block = "" if story_mode else self._build_knowledge_checks_block(character)
+        enemy_block     = "" if story_mode else enemy_list_for_dm(level)
+        adventure_block = "" if story_mode else adventure_prompt_block(
+            session.get("adventure") if session else None)
+
+        if story_mode:
+            story_mode_block = """
+
+━━━ STORY MODE — PURE NARRATIVE ━━━
+This is a solo text adventure story. All D&D game mechanics are suspended.
+HARD RULES — follow without exception:
+- NEVER emit [COMBAT:], [CHECK:], [XP:], [BEAT], [CLIMAX], [BREAK], or [COMPANION:] tags.
+- NEVER introduce companions or suggest the player gains a party member. The player is always alone.
+- NEVER call for dice rolls or skill checks. Narrate all outcomes through story logic and context.
+- NEVER reference hit points, spell slots, class features, ability scores, or any game statistics.
+- If violence occurs, narrate it cinematically — there is no dice-based combat engine running.
+- Focus entirely on atmosphere, character, consequence, and drama. Pure storytelling only.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+        else:
+            story_mode_block = ""
 
         # Scene continuity anchor — included on every non-first exchange so the
         # local model cannot pattern-match to a scene opener and restart the story.
@@ -306,7 +326,7 @@ NARRATION RULES — READ CAREFULLY:
 11. Keep responses focused. One scene at a time.
 12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
 
-{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{knowledge_block}{combat_block}{scene_anchor}"""
+{enemy_block}{adventure_block}{party_block}{knowledge_block}{story_mode_block}{combat_block}{scene_anchor}"""
 
     def _build_party_block(self, character, companions):
         """System prompt section describing party members and companion introduction rules."""
