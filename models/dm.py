@@ -245,6 +245,30 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
         party_block     = self._build_party_block(character, companions)
         knowledge_block = self._build_knowledge_checks_block(character)
 
+        # Scene continuity anchor — included on every non-first exchange so the
+        # local model cannot pattern-match to a scene opener and restart the story.
+        history = session.get("history", []) if session else []
+        last_dm = next((e["text"] for e in reversed(history) if e["role"] == "dm"), None)
+        if last_dm:
+            excerpt = last_dm.strip()
+            if len(excerpt) > 400:
+                for sep in (". ", ".\n", "? ", "! "):
+                    pos = excerpt.rfind(sep, 0, 400)
+                    if pos > 80:
+                        excerpt = excerpt[:pos + 1]
+                        break
+                else:
+                    excerpt = excerpt[:400] + "…"
+            scene_anchor = f"""
+
+━━━ SCENE IN PROGRESS — DO NOT RESET ━━━
+The adventure is already underway. The most recent narration was:
+"{excerpt}"
+CONTINUITY RULE: Continue from EXACTLY this moment. The player is already present in this scene. Do NOT re-describe them entering the building, house, or any location they already entered. Do NOT restart the adventure or reintroduce the setting. Build forward from what was just narrated.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+        else:
+            scene_anchor = ""
+
         return f"""You are the Dungeon Master for a solo D&D 5e adventure. Your job is to narrate an immersive story — you are a storyteller, not a game host.
 
 PLAYER CHARACTER:
@@ -278,11 +302,11 @@ NARRATION RULES — READ CAREFULLY:
    [XP: N]
    XP is awarded ONLY for tangible accomplishments: defeating enemies in combat, solving a puzzle or trap, completing a quest objective, or a significant story achievement the player actively caused.
    NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
-10. If this is the first message, open with a vivid scene that fits the character's background and class.
+10. OPENING vs. CONTINUING — CRITICAL: If this is the very first exchange and no prior history exists, open with a vivid scene that fits the character's background and class. If the SCENE IN PROGRESS block appears at the bottom of this prompt, the story is already underway — NEVER re-establish the setting, NEVER re-describe the player entering anywhere, NEVER restart the adventure. A player saying "I close the door" or any other action is continuing their current scene, not starting a new one.
 11. Keep responses focused. One scene at a time.
 12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
 
-{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{knowledge_block}{combat_block}"""
+{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{knowledge_block}{combat_block}{scene_anchor}"""
 
     def _build_party_block(self, character, companions):
         """System prompt section describing party members and companion introduction rules."""
