@@ -152,6 +152,63 @@ class DungeonMaster:
         ]
         return "\n".join(lines)
 
+    def _build_knowledge_checks_block(self, character):
+        level  = character.get("level", 1)
+
+        if level <= 3:
+            dc_guide = "Easy DC 10, Moderate DC 12, Hard DC 15"
+        elif level <= 7:
+            dc_guide = "Easy DC 10, Moderate DC 14, Hard DC 18, Very Hard DC 22"
+        elif level <= 12:
+            dc_guide = "Easy DC 10, Moderate DC 15, Hard DC 20, Very Hard DC 25"
+        else:
+            dc_guide = "Easy DC 10, Moderate DC 15, Hard DC 20, Very Hard DC 25, Nearly Impossible DC 28"
+
+        return f"""
+
+PLAYER QUESTIONS & KNOWLEDGE CHECKS:
+The player may ask questions at any time — about an object, creature, rumor, location, or lore.
+Decide first: does this need a roll, or do they simply know it?
+
+NO ROLL NEEDED when:
+  - Common knowledge for someone of their class and background
+  - Already seen, heard, or established this session
+  - A basic observation any alert person would make in the scene
+
+CALL FOR A ROLL when:
+  - Recalling obscure lore, history, or arcane theory
+  - Reading a creature's weaknesses or behavior under pressure
+  - Noticing something non-obvious or partially concealed
+  - Deciphering writing, symbols, or magical auras
+  - Gathering information from an unwilling or guarded source
+
+DC CALIBRATION — character is Level {level}:
+  {dc_guide}
+  Adjust for class and background: a Wizard recalls arcane lore more easily than a Fighter;
+  a criminal-background Rogue knows underworld contacts effortlessly.
+
+SKILL → TOPIC (most common):
+  Arcana        → magic, spells, magical creatures, planar cosmology
+  History       → historical events, kingdoms, famous figures, wars
+  Nature        → beasts, plants, terrain, weather, natural phenomena
+  Religion      → deities, undead, celestials, fiends, rituals, omens
+  Investigation → hidden details, traps, clues, examining objects closely
+  Perception    → sounds, movement, or hidden things noticed at distance
+  Insight       → reading a person's honesty, intent, or emotional state
+  Medicine      → wounds, diseases, poisons, identifying ailments
+  Survival      → tracking, navigating wilderness, foraging
+
+PHRASING — speak like a real DM at the table:
+  ✓ "Give me an Arcana check."    ✓ "Roll me a Perception check."
+  ✗ "A check is required."        ✗ "The DM requests a roll."
+
+RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Match your response:
+  Critical success (natural 20)     → vivid extra detail; a lucky break or unexpected advantage
+  Solid success   (margin ≥ +5)     → clear, complete, useful information
+  Bare success    (margin +0 to +4) → correct but incomplete; the gist without the details
+  Bare failure    (margin −1 to −4) → vague or uncertain; they sense something but can't pin it down
+  Critical failure (natural 1)      → confidently wrong; plausible but false — do NOT signal the error"""
+
     def _build_system_prompt(self, character, session=None):
         name  = character.get("name") or "the adventurer"
         race  = character.get("race", "Human")
@@ -176,10 +233,17 @@ class DungeonMaster:
         traits = character.get("personality_traits", "")
         bonds  = character.get("bonds", "")
 
-        in_combat    = session.get("in_combat", False) if session else False
-        combat_block = self._build_combat_prompt_block(character) if in_combat else ""
-        companions   = session.get("companions", []) if session else []
-        party_block  = self._build_party_block(character, companions)
+        pb_val       = (level - 1) // 4 + 2
+        skills       = character.get("skill_proficiencies", [])
+        passive_perc = 10 + mods["WIS"] + (pb_val if "Perception"   in skills else 0)
+        passive_inv  = 10 + mods["INT"] + (pb_val if "Investigation" in skills else 0)
+        passive_ins  = 10 + mods["WIS"] + (pb_val if "Insight"       in skills else 0)
+
+        in_combat       = session.get("in_combat", False) if session else False
+        combat_block    = self._build_combat_prompt_block(character) if in_combat else ""
+        companions      = session.get("companions", []) if session else []
+        party_block     = self._build_party_block(character, companions)
+        knowledge_block = self._build_knowledge_checks_block(character)
 
         return f"""You are the Dungeon Master for a solo D&D 5e adventure. Your job is to narrate an immersive story — you are a storyteller, not a game host.
 
@@ -188,6 +252,7 @@ PLAYER CHARACTER:
   Race: {race}  |  Class: {cls}{subclass_str}  |  Level: {level}
   Background: {bg}
   Ability modifiers: {mod_str}
+  Passive Perception: {passive_perc}  |  Passive Investigation: {passive_inv}  |  Passive Insight: {passive_ins}
   Personality: {traits}
   Bonds: {bonds}
 
@@ -215,8 +280,9 @@ NARRATION RULES — READ CAREFULLY:
    NEVER award XP for: starting a session, beginning an act, arriving at a location, scene transitions, or anything the player did not DO. If in doubt, do not emit [XP].
 10. If this is the first message, open with a vivid scene that fits the character's background and class.
 11. Keep responses focused. One scene at a time.
+12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
 
-{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{combat_block}"""
+{enemy_list_for_dm(level)}{adventure_prompt_block(session.get("adventure") if session else None)}{party_block}{knowledge_block}{combat_block}"""
 
     def _build_party_block(self, character, companions):
         """System prompt section describing party members and companion introduction rules."""

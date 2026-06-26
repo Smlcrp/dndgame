@@ -48,6 +48,8 @@ FONT_BODY  = ("Segoe UI", 10)
 FONT_SM    = ("Segoe UI",  9)
 FONT_MONO  = ("Consolas", 10)
 
+_EXPLORE_PLACEHOLDER = "What do you do? You can also ask questions."
+
 ABILITY_KEYS = [
     ("STR", "strength"), ("DEX", "dexterity"), ("CON", "constitution"),
     ("INT", "intelligence"), ("WIS", "wisdom"), ("CHA", "charisma"),
@@ -360,6 +362,22 @@ class GameApp:
         self._dev_panel   = None
         self._story_mode  = False
 
+    def _on_input_focus_in(self, _event=None):
+        if hasattr(self, "_input_var") and self._input_var.get() == _EXPLORE_PLACEHOLDER:
+            self._input_var.set("")
+            try:
+                self._input_entry.config(fg=FG)
+            except (tk.TclError, AttributeError):
+                pass
+
+    def _on_input_focus_out(self, _event=None):
+        if hasattr(self, "_input_var") and not self._input_var.get():
+            self._input_var.set(_EXPLORE_PLACEHOLDER)
+            try:
+                self._input_entry.config(fg=DIM)
+            except (tk.TclError, AttributeError):
+                pass
+
     def _build_explore_input(self):
         for w in self._input_frame.winfo_children():
             w.destroy()
@@ -371,7 +389,9 @@ class GameApp:
             bg=INPUT_BG, fg=FG, font=FONT_BODY, insertbackground=FG,
             relief="flat", bd=4)
         self._input_entry.pack(side="left", fill="x", expand=True, padx=4)
-        self._input_entry.bind("<Return>", lambda e: self._send_action())
+        self._input_entry.bind("<Return>",   lambda e: self._send_action())
+        self._input_entry.bind("<FocusIn>",  self._on_input_focus_in)
+        self._input_entry.bind("<FocusOut>", self._on_input_focus_out)
         tk.Button(self._input_frame, text="Send", font=FONT_SM, bg=BTN_BG,
                   fg=FG, relief="flat", bd=0, padx=10, pady=4,
                   activebackground=ACCENT, activeforeground="#1a1a2e",
@@ -1193,7 +1213,7 @@ class GameApp:
         if self.state != "EXPLORING":
             return
         action = self._input_var.get().strip()
-        if not action:
+        if not action or action == _EXPLORE_PLACEHOLDER:
             return
         self._input_var.set("")
         self._set_input_enabled(False)
@@ -2223,20 +2243,25 @@ class GameApp:
                 f"  Rolled {pre_roll['kept']} + {total_mod:+d} = {result} "
                 f"vs DC {dc} — {'SUCCESS' if success else 'FAILURE'}\n\n",
                 "hit" if success else "danger")
+            d20_val   = pre_roll["kept"]
+            total_val = pre_roll["total"]
+            margin    = total_val - dc
+
             if pre_roll["nat20"]:
-                result_tag = "CRITICAL SUCCESS"
-                instruction = "The player rolled a natural 20 — a spectacular success. Reward them with something extra: exceptional information, a bonus, or a lucky break beyond what they expected."
+                tier = "CRITICAL SUCCESS (natural 20)"
             elif pre_roll["nat1"]:
-                result_tag = "CRITICAL FAILURE"
-                instruction = "The player rolled a natural 1 — a catastrophic failure. Punish them: something goes wrong beyond just failing, an unexpected complication, embarrassment, or consequence."
+                tier = "CRITICAL FAILURE (natural 1)"
             elif success:
-                result_tag = "SUCCESS"
-                instruction = "Narrate a clean success."
+                tier = "SOLID SUCCESS" if margin >= 5 else "BARE SUCCESS"
             else:
-                result_tag = "FAILURE"
-                instruction = "Narrate a clean failure."
-            outcome = (f"[{skill} check: {result_tag}] "
-                       f"{instruction} Do not mention the roll value, the DC, or any game stats.")
+                tier = "BARE FAILURE" if margin >= -4 else "FAILURE"
+
+            outcome = (
+                f"[{skill} check: {tier}] "
+                f"d20={d20_val}, total={total_val}, DC={dc}, margin={margin:+d}. "
+                f"Apply the matching result quality tier from your instructions. "
+                f"Do not mention the roll, the DC, or any game statistics in your narration."
+            )
             self._set_input_enabled(False)
             self._dm_call(outcome)
 

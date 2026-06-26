@@ -201,14 +201,74 @@ def save_character(char: dict) -> Path:
     return path
 
 
+def migrate_character(char: dict) -> dict:
+    defaults = empty_character()
+    for key, default in defaults.items():
+        if key not in char:
+            char[key] = default
+        elif isinstance(default, dict) and isinstance(char[key], dict):
+            for subkey, subdefault in default.items():
+                if subkey not in char[key]:
+                    char[key][subkey] = subdefault
+                elif isinstance(subdefault, dict) and isinstance(char[key][subkey], dict):
+                    for k, v in subdefault.items():
+                        char[key][subkey].setdefault(k, v)
+    return char
+
+
+def validate_character(char: dict) -> None:
+    name = char.get("name", "?")
+
+    def _err(msg):
+        raise ValueError(f"Character '{name}': {msg}")
+
+    hp = char.get("hp", {})
+    if not isinstance(hp, dict):
+        _err(f"'hp' must be a dict, got {type(hp).__name__}")
+    for k in ("max", "current", "temp"):
+        if not isinstance(hp.get(k), int):
+            _err(f"'hp.{k}' must be an int")
+    if hp["max"] < 1:
+        _err("'hp.max' must be at least 1")
+
+    ab = char.get("abilities", {})
+    if not isinstance(ab, dict):
+        _err(f"'abilities' must be a dict, got {type(ab).__name__}")
+    for key in ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"):
+        if not isinstance(ab.get(key), int):
+            _err(f"'abilities.{key}' must be an int")
+
+    if not isinstance(char.get("level"), int) or not (1 <= char["level"] <= 20):
+        _err("'level' must be an int between 1 and 20")
+    if not isinstance(char.get("experience"), int) or char["experience"] < 0:
+        _err("'experience' must be a non-negative int")
+
+    hd = char.get("hit_dice", {})
+    if not isinstance(hd, dict):
+        _err(f"'hit_dice' must be a dict, got {type(hd).__name__}")
+    if not isinstance(hd.get("total"), int) or hd["total"] < 1:
+        _err("'hit_dice.total' must be a positive int")
+
+    sc = char.get("spellcasting", {})
+    if not isinstance(sc, dict):
+        _err(f"'spellcasting' must be a dict, got {type(sc).__name__}")
+    if not isinstance(sc.get("enabled"), bool):
+        _err("'spellcasting.enabled' must be a bool")
+
+    for field in ("skill_proficiencies", "saving_throw_proficiencies",
+                  "attacks", "equipment", "features", "conditions"):
+        if not isinstance(char.get(field), list):
+            _err(f"'{field}' must be a list")
+
+
 def load_character(name: str) -> dict:
     path = CHARACTERS_DIR / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"No character named '{name}' found.")
     with open(path) as f:
         char = json.load(f)
-    char.setdefault("feature_uses", {})
-    char.setdefault("inspiration", False)
+    char = migrate_character(char)
+    validate_character(char)
     return char
 
 

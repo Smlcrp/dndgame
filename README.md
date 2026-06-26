@@ -21,9 +21,11 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
 | `models/enemies.py` | ✅ Complete | Comprehensive SRD enemy list CR 0–30 (~160 monsters) |
 | `models/adventure.py` | ✅ Complete | 8 adventure templates with structured story arcs |
+| `models/companions.py` | ✅ Complete | Full companion system — 10 templates, combat AI, spell slots, death saves |
+| `models/spells.py` | ✅ Complete | ~60 combat spells (cantrips–level 9) with scaling, upcasting, delivery types |
 | `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
 
-> **Next milestone:** Character Progression Phase 2 & 3 (XP bar, feature charges, rest buttons, full DEV panel).
+> **Next milestone:** D&D Beyond character import — paste a DDB character URL to import a fully built character directly into the game.
 
 ---
 
@@ -115,6 +117,20 @@ Story Mode is useful for exploring social scenarios, lore conversations, and nar
 
 ---
 
+### Companion System
+
+During play the DM can add companions to your party (up to 3 — party of 4 total). When the DM introduces a companion, it emits a `[COMPANION: Name]` tag and the companion joins automatically.
+
+- **10 pre-built companions** — each with a real class (Fighter, Rogue, Cleric, Wizard, Ranger, Paladin, Druid, Bard, Barbarian, Monk), full 5e stat block, and a name, personality traits, ideal, bond, and flaw.
+- **No duplicate classes** — the DM is instructed not to offer a companion class the player already has.
+- **Combat AI** — companions act autonomously on their initiative turn. Each class has its own tactical role: strikers attack, healers prioritise low-HP allies, controllers target debuffs, supports buff the party.
+- **Spell slots** — full and half casters track their own slots through combat and rests.
+- **Death saves** — companions that drop to 0 HP make death saving throws on their turn. Nat-20 revives at 1 HP; 3 failures = dead. Dead companions' party cards linger until the next scene change.
+- **Levels together** — companions always level up when the player does.
+- **Party tab** — a dedicated PARTY tab in the sidebar shows all companion cards with live HP bars, AC, feature pips, spell slot pips, and death save counters.
+
+---
+
 ## Architecture
 
 The project follows a clean MVC structure so the same game logic can power a future web frontend with no rewriting.
@@ -128,15 +144,21 @@ dndgame/
 │   ├── dice.py
 │   ├── game_state.py
 │   ├── combat.py
-│   └── dm.py
+│   ├── dm.py
+│   ├── progression.py
+│   ├── adventure.py
+│   ├── enemies.py
+│   ├── companions.py
+│   └── spells.py
 │
 ├── controllers/              # Orchestrates models, returns plain dicts
 │   └── game_controller.py   # Same functions called by Tkinter or Flask
 │
 ├── views/
 │   ├── desktop/              # Tkinter desktop app
-│   │   ├── app.py            # GameApp — pure UI, calls controller
+│   │   │   ├── app.py            # GameApp — pure UI, calls controller
 │   │   ├── d20_roller.py     # 3D animated d20
+│   │   ├── dice_roller.py    # 3D animated d4/d6/d8/d10/d12/d20
 │   │   └── character_builder/
 │   │       ├── character_builder_app.py
 │   │       ├── dnd_data.py
@@ -221,7 +243,9 @@ Other models that work well: `llama3.1`, `mistral`, `gemma2`
 
 ### `models/character.py`
 Character data model used by both the builder and the game engine.
-- `empty_character()` — blank character dict
+- `empty_character()` — canonical character dict; single source of truth for all field defaults and types
+- `migrate_character(char)` — silently upgrades any saved character to the current schema; called automatically on every load so old saves never break
+- `validate_character(char)` — raises `ValueError` naming the character and the exact bad field before any game logic runs; catches wrong `hp` shape, bad level range, missing ability keys, non-list list fields, etc.
 - `save_character(char)` / `load_character(name)` / `list_characters()`
 - `modifier(score)` — D&D ability modifier formula
 - `proficiency_bonus(level)` — standard 5e proficiency progression
@@ -254,22 +278,32 @@ Turn-based combat engine. Uses `dice.py` and `game_state.py`.
 
 ### `models/dm.py`
 AI Dungeon Master. Runs via Ollama (local).
-- Builds a system prompt from the character sheet for personalized narration
+- Builds a full system prompt including: character block with ability mods and passive Perception/Investigation/Insight scores; 12 narration rules; level-appropriate enemy list; adventure arc; party block; knowledge checks block; combat block (when in combat)
+- **Knowledge checks** — the DM knows when to ask for a roll vs narrate freely, which skill maps to which topic (Arcana→magic, History→kingdoms, Insight→reading people, etc.), DC calibration by character level, and a 5-tier result quality scale: nat-20 = vivid bonus detail, solid pass = clear complete info, bare pass = gist only, bare fail = vague/uncertain, nat-1 = confidently wrong
+- **Passive scores** — Passive Perception, Investigation, and Insight injected into the character block; rule 12 tells the DM to use them for automatic awareness in scene descriptions without ever saying "passive check"
 - Maintains full session history for context continuity
 - Parses structured game events from DM responses:
   - `[COMBAT: Goblin×2, Hobgoblin×1]` — triggers the combat engine
-  - `[CHECK: Perception DC13]` — requests a skill check
+  - `[CHECK: Perception DC13]` — requests a skill check (sent back with d20, total, DC, margin, and tier label)
   - `[SCENE: The Village Square]` — updates the current location
+  - `[XP: 150]` — awards experience points
+  - `[BEAT]` — advances the story arc and awards beat XP
+  - `[CLIMAX]` — triggers the final confrontation sequence
+  - `[BREAK]` — displays a natural session break banner
+  - `[COMPANION: Lirien Dawnwhisper]` — adds a companion to the party
+  - `[ACTION: attack=Longsword]` / `[BONUS: feature=Second Wind]` — DM-driven action tags
 - `from_config()` — loads backend settings from `data/dm_config.json`
 
 ### `controllers/game_controller.py`
 Orchestrates model calls and returns plain dicts. Called identically by the Tkinter UI and future web API.
 - `setup_combat(session, char, enemy_specs, d20_initiative)` — builds initiative order
+- `build_enemy_list(enemy_specs, player_level)` — resolves enemy specs to full stat blocks from `models/enemies.py`
 - `process_attack(session, char, weapon_name, target_name, d20_value)` — resolves attack
+- `process_spell_cast(session, char, spell_name, target_name, slot_level, ...)` — resolves spell by delivery type
 - `process_skill_check(char, skill, dc, d20_value)` — resolves skill check
-- `process_enemy_turn(session)` — runs one enemy action
-- `process_death_save(session)` — rolls and resolves a death save
-- `ENEMY_STATS` — stat blocks for 20 monster types
+- `process_xp_award(session, char, amount)` — awards XP and triggers level-up if threshold crossed
+- `process_short_rest(session, char, dice_spent)` — heals via hit dice, recharges short-rest features
+- `process_long_rest(session, char)` — full HP, all slots and features restored
 
 ---
 

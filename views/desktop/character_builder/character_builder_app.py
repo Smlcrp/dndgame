@@ -1148,6 +1148,7 @@ class CharacterBuilderApp:
                 "enabled": True, "ability": sc_ability,
                 "spell_save_dc": save_dc, "attack_bonus": atk_bonus,
                 "slots": slots_dict, "spells_known": spells_known,
+                "spells_prepared": [],
             }
             self._mark_done("Spellcasting", True)
             self._refresh_preview()

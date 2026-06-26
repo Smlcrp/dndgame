@@ -19,12 +19,18 @@ dndgame/
 │   ├── dice.py
 │   ├── game_state.py
 │   ├── combat.py
-│   └── dm.py
+│   ├── dm.py
+│   ├── progression.py
+│   ├── adventure.py
+│   ├── enemies.py
+│   ├── companions.py
+│   └── spells.py
 │
 ├── controllers/              # Orchestrates models, returns plain dicts — no UI
 │   ├── __init__.py
 │   └── game_controller.py   # setup_combat, process_attack, process_skill_check,
-│                            #   process_enemy_turn, process_death_save, ENEMY_STATS
+│                            #   process_enemy_turn, process_death_save, process_xp_award,
+│                            #   process_short_rest, process_long_rest, process_spell_cast
 │
 ├── views/
 │   ├── desktop/              # Tkinter desktop app
@@ -71,7 +77,9 @@ process_death_save(session) -> {"outcome": str, "roll": int, "narrative": str}
 ## What Is COMPLETE
 
 ### `character.py`
-- `empty_character()` — returns blank character dict with all fields
+- `empty_character()` — canonical character dict; single source of truth for all field defaults
+- `migrate_character(char)` — fills any key missing from an old save with the correct default; called automatically on load so no existing save breaks
+- `validate_character(char)` — raises `ValueError` with a clear message on malformed data (wrong `hp` shape, bad `level` range, missing ability keys, etc.); called automatically on load
 - `save_character(char)` / `load_character(name)` / `list_characters()`
 - `modifier(score)` — D&D ability modifier formula
 - `proficiency_bonus(level)` — standard 5e proficiency progression
@@ -151,7 +159,10 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 
 - `DungeonMaster(model)`
 - `respond(session, character, player_input)` → `{"narration": str, "events": list}`
-- `_parse_events(raw_text)` — extracts `[CHECK: Skill DC##]`, `[COMBAT: Name×N]`, `[SCENE: Location]`
+- `_build_system_prompt(character, session)` — full system prompt including: character block with ability mods + passive Perception/Investigation/Insight; NARRATION RULES 1–12; enemy list; adventure arc; party block; knowledge checks block; combat block (if in combat)
+- `_build_knowledge_checks_block(character)` — tells the DM when to ask for a roll vs narrate freely, skill→topic mapping, DC calibration by level, natural phrasing, 5-tier result quality scale (nat-20=vivid, solid pass=clear, bare pass=gist, bare fail=vague, nat-1=confidently wrong)
+- `_build_combat_prompt_block(character)` — live combat context (weapons, spells, features) + action/bonus action tag instructions
+- `_parse_events(raw_text)` — extracts all tag types: `[CHECK:]`, `[COMBAT:]`, `[SCENE:]`, `[XP:]`, `[BEAT]`, `[CLIMAX]`, `[BREAK]`, `[COMPANION:]`, `[ACTION:]`, `[BONUS:]`
 - `from_config(path)` — loads model setting from config
 
 ### `d20_roller.py`
@@ -168,7 +179,7 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 ### `views/desktop/app.py`
 Main game interface. `GameApp` class.
 
-**Constants:** `ENEMY_STATS` (20 monsters), `_enemy_defaults(name, level)`, `SKILL_ABILITIES`
+**Constants:** `_EXPLORE_PLACEHOLDER`, `SKILL_ABILITIES`, `SKILL_ABILITY`
 
 **UI layout:** Header bar, narration Text (Consolas, INPUT_BG), sidebar (220px: HP bar, AC, speed, conditions, combat tracker), input area (explore: entry + Send; combat: attack buttons).
 
@@ -288,6 +299,29 @@ A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in heade
   - `[BREAK]` → `break_suggested` event — display session break banner in narration
 - `controllers/game_controller.py` — `start_adventure(session, char)` and `advance_beat(session)` public API.
 - `views/desktop/app.py` — `start_adventure()` called in `_launch_new_adventure`. `_advance_beat()` and `_show_break_point()` methods. Break point banner is embedded directly in the narration Text widget.
+
+---
+
+### ✅ DONE — Natural Conversation System (Roadmap Item 2)
+
+Player can ask the DM questions mid-scene and receive the full D&D roll experience.
+
+- **`models/dm.py` — `_build_knowledge_checks_block(character)`** — injected into every system prompt. Tells the DM: when no roll is needed (common knowledge, already established this session, obvious observation) vs when to call for one (obscure lore, reading a creature under pressure, hidden details, deciphering symbols). Skill→topic mapping (Arcana→magic, History→kingdoms, Perception→movement/distance, etc.). DC calibration scaled by character level. Natural phrasing examples ("Give me an Arcana check" ✓, "A check is required" ✗). Five-tier result quality scale: nat-20 = vivid extra detail, solid success (margin ≥+5) = clear complete info, bare success (margin 0–4) = gist only, bare failure (margin −1 to −4) = vague/uncertain, nat-1 = confidently wrong (no signal to the player).
+- **`models/dm.py` — passive scores** — `Passive Perception`, `Passive Investigation`, `Passive Insight` computed from ability mods + proficiency and injected into the character block. Rule 12 tells the DM to use these for automatic awareness during scene descriptions without ever saying "passive check."
+- **`views/desktop/app.py` — `_handle_skill_check`** — now sends `d20=N, total=N, DC=N, margin=+/-N` plus the matching tier label (CRITICAL SUCCESS / SOLID SUCCESS / BARE SUCCESS / BARE FAILURE / CRITICAL FAILURE) so the DM can apply the exact quality tier from the knowledge checks block.
+- **`views/desktop/app.py` — placeholder text** — input field shows "What do you do? You can also ask questions." when empty and unfocused. `_on_input_focus_in` / `_on_input_focus_out` handlers. Placeholder value guarded in `_send_action` so it can't be submitted.
+
+---
+
+### ✅ DONE — Character Schema Enforcement (Roadmap Item 3)
+
+Every character loaded from disk is migrated to the current schema and validated before the game starts.
+
+- **`models/character.py` — `migrate_character(char)`** — walks every key in `empty_character()` and fills any gap in a loaded save, including nested dicts (abilities, hp, spellcasting slots 1–9, currency, etc.). Safe to run on any save regardless of age — only fills, never overwrites.
+- **`models/character.py` — `validate_character(char)`** — raises `ValueError` naming the character and the exact bad field. Checks: `hp` is a dict with int values and `max ≥ 1`; all six abilities are ints; `level` is 1–20; `experience ≥ 0`; `hit_dice.total ≥ 1`; `spellcasting.enabled` is a bool; all list fields are actually lists.
+- **`models/character.py` — `load_character()`** — now calls `migrate_character` then `validate_character` on every load. Old manual `setdefault` calls removed; `migrate_character` covers them.
+- **`views/desktop/character_builder/character_builder_app.py`** — spellcasting save now explicitly includes `"spells_prepared": []` so the full schema is preserved instead of silently dropping the field.
+- **Audit result:** Zero crash risks found. All fields accessed by game code are present in `empty_character()`. All direct bracket accesses (`char["hp"]`, `char["class"]`, etc.) are safe. Builder correctly populates all required fields.
 
 ---
 
@@ -431,11 +465,13 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 ## Project Roadmap
 
 ### Stage 1 — Game Mechanics (current focus)
-Complete the character progression system (Phases 1–3 above). This is the priority because UI polish and packaging work should wrap around a mechanically finished game, not the other way around.
+Complete the character progression system (Phases 2 & 3 — sidebar XP bar, feature charge display, rest buttons, DEV panel). This is the priority because UI polish and packaging work should wrap around a mechanically finished game.
 
-Remaining mechanical work after progression:
-- Spell combat support (spellcasting attacks, save DCs) in `models/combat.py`
-- Expanded enemy roster and encounter tables
+Remaining mechanical work:
+- Character Progression Phase 2 (sidebar: XP bar, feature charge pips, Inspiration toggle, rest buttons)
+- Character Progression Phase 3 (DEV panel: award XP, level jump, set HP, test combat)
+- D&D Beyond character import (roadmap item 4)
+- Adventure length presets — Epic / Quest / One Shot (roadmap item 9)
 - Multiclassing (defer until single-class leveling is solid)
 
 ### Stage 2 — Electron + Flask Migration (confirmed plan)
