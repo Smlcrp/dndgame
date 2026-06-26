@@ -240,8 +240,14 @@ Story structure:
   Resolution: {adventure['resolution']}
 
 CURRENT STAGE: {stage}
-Steer the story toward this stage. Do not rush ahead — let each beat breathe and give the player time to engage. When the CURRENT STAGE is fully resolved and a natural pause occurs, emit one of these on its own line:
+Steer the story toward this stage. Do not rush ahead — let each beat breathe and give the player time to engage.
+
+BEAT RULES — read carefully:
+- [BEAT] means the player has COMPLETED the current stage through their own actions and choices. It takes multiple back-and-forth exchanges before a stage is ever complete.
+- NEVER emit [BEAT] in your opening scene or on the first response. The hook must actually play out.
+- NEVER emit [BEAT] just because you narrated something. The player must have done something meaningful to resolve it.
+- When the CURRENT STAGE is fully resolved (player has explored, fought, discovered, or decided their way through it) and a natural pause occurs, emit on its own line:
   [BEAT]    — this beat is complete, story moves to the next act
-  [CLIMAX]  — the story has reached the final confrontation (use in place of [BEAT] for the last act)
-When the scene reaches a natural resting point — a safe location, the end of a scene, after combat — where a real player could comfortably stop and save for the night, also emit:
+  [CLIMAX]  — the story has reached the final confrontation (use instead of [BEAT] for the last act)
+When the scene reaches a natural resting point where a real player could comfortably stop, also emit:
   [BREAK]   — a suggested session pause; the story continues if the player wants to keep going"""

@@ -1198,9 +1198,17 @@ class GameApp:
                 self._handle_skill_check(ev["skill"], ev["dc"])
                 return
             elif ev["type"] == "xp_award":
-                pending_xp += ev["amount"]
+                # Ignore XP if player hasn't acted yet (guards against DM awarding on opening scene)
+                player_turns = sum(1 for h in self.session.get("history", [])
+                                   if h.get("role") == "player")
+                if player_turns > 0:
+                    pending_xp += ev["amount"]
             elif ev["type"] == "beat_complete":
-                beat_done = True
+                # Ignore beat advance if player hasn't acted yet
+                player_turns = sum(1 for h in self.session.get("history", [])
+                                   if h.get("role") == "player")
+                if player_turns > 0:
+                    beat_done = True
             elif ev["type"] == "climax_reached":
                 climax_done = True
             elif ev["type"] == "break_suggested":
