@@ -735,7 +735,7 @@ class GameApp:
                 else:
                     lbl = weapon
                 self._do_player_attack(weapon, damage_override=dmg_ovr,
-                                       label=lbl, skip_dm_call=True)
+                                       label=lbl, skip_dm_call=False)
 
             elif act == "spell":
                 from models.spells import SPELLS
@@ -758,7 +758,7 @@ class GameApp:
                 living = [c for c in self.session["initiative_order"]
                           if not c["is_player"] and c["hp"] > 0]
                 target = living[0]["name"] if living else ""
-                self._do_player_spell(spell_name, spell_data, slot, target, skip_dm_call=True)
+                self._do_player_spell(spell_name, spell_data, slot, target, skip_dm_call=False)
 
             elif act == "feature":
                 feat_ok = self._apply_combat_feature(action_ev.get("feature", ""))
@@ -1410,12 +1410,14 @@ class GameApp:
             if skip_dm_call:
                 _advance_turn()
             else:
-                base    = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
                 prefix  = "CRITICAL HIT! " if result.get("critical") else ""
-                outcome = f"{prefix}Hit for {dmg} damage. {target} HP: {result['new_hp']}."
-                if result.get("killed"):
-                    outcome += f" {target} has been defeated!"
-                self._dm_call(f"{base} [{outcome}]", on_complete=_advance_turn)
+                outcome = (f"{prefix}The attack hits for {dmg} damage. "
+                           f"{target} HP: {result['new_hp']}."
+                           + (f" {target} has been defeated!" if result.get("killed") else ""))
+                self._dm_call(
+                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"{outcome}",
+                    on_complete=_advance_turn)
 
         def _after_roll():
             target_entry = next((c for c in self.session["initiative_order"]
@@ -1435,8 +1437,10 @@ class GameApp:
                 if skip_dm_call:
                     _advance_turn()
                 else:
-                    base = getattr(self, "_combat_last_action", None) or f"attack with {display_name}"
-                    self._dm_call(f"{base} [The attack misses.]", on_complete=_advance_turn)
+                    self._dm_call(
+                        f"[COMBAT RESULT — narrate this outcome dramatically in 1-2 sentences] "
+                        f"The attack with {display_name} misses {target}.",
+                        on_complete=_advance_turn)
                 return
 
             actual_notation = damage_override or weapon["damage"]
@@ -1620,9 +1624,10 @@ class GameApp:
                 else:
                     crit_tag = "CRITICAL HIT! " if result.get("critical") else ""
                     self._dm_call(
-                        f"{crit_tag}I cast {spell_name} and hit {target_name} for {dmg} "
-                        f"{spell_data['damage_type']} damage. HP remaining: {result['new_hp']}."
-                        + (" They have fallen!" if result.get("killed") else ""),
+                        f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                        f"{crit_tag}{spell_name} hits {target_name} for {dmg} "
+                        f"{spell_data['damage_type']} damage. {target_name} HP: {result['new_hp']}."
+                        + (" {target_name} has been defeated!" if result.get("killed") else ""),
                         on_complete=_advance_turn)
 
             def _after_spell_roll():
@@ -1640,8 +1645,10 @@ class GameApp:
                     if skip_dm_call:
                         _advance_turn()
                     else:
-                        self._dm_call(f"I cast {spell_name} but missed {target_name}.",
-                                      on_complete=_advance_turn)
+                        self._dm_call(
+                            f"[COMBAT RESULT — narrate this outcome dramatically in 1-2 sentences] "
+                            f"{spell_name} misses {target_name}.",
+                            on_complete=_advance_turn)
                     return
 
                 crit = nat20
@@ -1685,12 +1692,13 @@ class GameApp:
             if skip_dm_call:
                 _advance_turn()
             else:
-                dm_verb = "saved and took half damage" if result["saved"] else "failed their save"
+                dm_verb = "resisted" if result["saved"] else "failed to resist"
                 self._dm_call(
-                    f"I cast {spell_name}. {target_name} {dm_verb}."
-                    + (f" They took {dmg_tot} {spell_data['damage_type']} damage."
-                       f" HP remaining: {result['new_hp']}." if dmg_tot else "")
-                    + (" They have fallen!" if result.get("killed") else ""),
+                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"{spell_name}: {target_name} {dm_verb}."
+                    + (f" {dmg_tot} {spell_data['damage_type']} damage."
+                       f" {target_name} HP: {result['new_hp']}." if dmg_tot else "")
+                    + (" {target_name} has been defeated!" if result.get("killed") else ""),
                     on_complete=_advance_turn)
 
         else:  # auto
@@ -1715,12 +1723,13 @@ class GameApp:
                 _advance_turn()
             else:
                 self._dm_call(
-                    f"I cast {spell_name}"
-                    + (f" for {dmg_tot} {spell_data['damage_type']} damage" if dmg_tot else "")
-                    + (f". Effect: {spell_data['on_hit_effect']}" if not dmg_tot
-                       and spell_data.get("on_hit_effect") else "")
-                    + (f". {target_name} HP: {result['new_hp']}." if dmg_tot else ".")
-                    + (" They have fallen!" if result.get("killed") else ""),
+                    f"[COMBAT RESULT — narrate this outcome dramatically in 2-3 sentences] "
+                    f"{spell_name} hits {target_name}."
+                    + (f" {dmg_tot} {spell_data['damage_type']} damage."
+                       f" {target_name} HP: {result['new_hp']}." if dmg_tot else "")
+                    + (f" Effect: {spell_data['on_hit_effect']}."
+                       if not dmg_tot and spell_data.get("on_hit_effect") else "")
+                    + (" {target_name} has been defeated!" if result.get("killed") else ""),
                     on_complete=_advance_turn)
 
     def _show_damage_roll(self, notation, pre_dmg, is_crit, on_done):
