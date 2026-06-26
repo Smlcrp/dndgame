@@ -368,6 +368,60 @@ Every character loaded from disk is migrated to the current schema and validated
 
 ---
 
+### ✅ DONE — QA Validation Pass (Roadmap Item 6)
+
+373 tests, all passing in 0.5 s. Repo clean. Everything committed and pushed before starting items 7–9.
+
+---
+
+### ✅ DONE — Main Menu Redesign (Roadmap Item 7)
+
+Replaced the floating `tk.Toplevel` startup dialog with a full-screen inline `tk.Frame` that covers the main window. Key changes in `views/desktop/app.py`:
+
+- `_startup_dialog()` now creates `d = tk.Frame(self.root, bg=BG)` and places it full-screen with `d.place(relx=0, rely=0, relwidth=1, relheight=1)`. The frame is stored as `self._startup_frame` and destroyed when setup completes.
+- A centered 440-wide content panel is built inside `d` using a grid with column/row weights.
+- All `_show_*_page(d)` methods are unchanged — `d` is now the inline Frame (not a Toplevel) and all page navigation still works via the same `d` reference.
+- `grab_set()`, `d.title()`, `d.geometry()`, `d.resizable()` removed (not applicable to Frames).
+- All `messagebox.askyesno(..., parent=d)` calls changed to `parent=self.root` (messageboxes require a Toplevel-level parent).
+- DDB import dialog centering was already using `parent.winfo_x()` — changed to pass `self.root` instead of `d` as parent.
+- `_launch_new_adventure()`: `d.destroy()` changed to `self._startup_frame.destroy()`.
+
+---
+
+### ✅ DONE — Adventure Length Presets (Roadmap Item 9)
+
+Three adventure tiers selectable before each game. Full implementation across models, controller, and UI:
+
+**`models/adventure.py`:**
+- `PRESETS` dict: `{"One Shot": {"beats": 1, "estimate": "~1–2h"}, "Quest": {"beats": 3, "estimate": "~3–4h"}, "Epic": {"beats": 5, "estimate": "~5–8h"}}`
+- `generate_adventure(char, preset="Quest")` — backward-compatible new signature; `preset` stored in returned adventure dict
+- `_build_beats(template, count)` — generates beat list of the right length:
+  - One Shot: uses template's climax text as the single beat (goes straight to the confrontation)
+  - Quest: 3 template beats unchanged
+  - Epic: 5 beats — template beat 1, then 2 synthesized mid-act beats referencing the antagonist, then template beats 2 and 3
+- `_beat_xp_for_preset(preset)` — One Shot `[600]`, Quest `[150, 300, 500]`, Epic `[100, 150, 200, 300, 450]`
+- `_stage_labels(n_story_beats)` — dynamic stage labels (replaces hardcoded 6-entry list); builds HOOK + N ACT labels + CLIMAX + RESOLUTION; correctly names the final act "crisis point" and the one-shot single beat "FINAL ACT"
+- `advance_beat(adventure)` — now caps at `beat > n_story_beats` (dynamic, based on actual beat list length) instead of hardcoded `beat >= 4`
+- `adventure_prompt_block` — scope line injected after the title for One Shot and Epic presets:
+  - One Shot: "SCOPE: One-shot — deliver a complete, satisfying confrontation in a single compact session. Reach the climax briskly; do not pad."
+  - Epic: "SCOPE: Epic campaign — let each act breathe fully. Build subplots, deepen NPC relationships, and escalate tension gradually across multiple sessions."
+
+**`controllers/game_controller.py`:**
+- `start_adventure(session, char, preset="Quest")` — threads preset through to `generate_adventure`
+
+**`views/desktop/app.py`:**
+- New `_show_preset_page(d, back_fn=None)` method — shown after character selection:
+  - Three cards: Epic (~5–8h), Quest (~3–4h, highlighted gold by default), One Shot (~1–2h)
+  - Clicking a card selects it (ACCENT highlight); Begin → calls `_launch_new_adventure(d, preset)`
+  - Back button uses `back_fn` so both New Adventure and Next Adventure flows return to the right page
+- `_show_character_page`: `begin()` now routes to `_show_preset_page(d, back_fn=lambda: self._show_character_page(d))`
+- `_show_next_adventure_page`: same routing to preset page with its own back_fn
+- `_launch_new_adventure(d, preset="Quest")` — passes preset to `start_adventure()`
+
+All 373 tests still pass after these changes (the new signature is backward-compatible, Quest XP values unchanged).
+
+---
+
 ### NEXT NEXT — Character Progression (Phase 2 & 3)
 
 Build full D&D 5e character progression. Execute in three committed phases so context limits don't lose work.
@@ -511,10 +565,6 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 Complete the character progression system (Phases 2 & 3 — sidebar XP bar, feature charge display, rest buttons, DEV panel). This is the priority because UI polish and packaging work should wrap around a mechanically finished game.
 
 Remaining mechanical work:
-- QA validation pass (roadmap item 6) — run all 373 tests, full corruption check, verify repo clean
-- Main menu redesign — single-window splash (roadmap item 7)
-- Game mechanics audit vs D&D 5e (roadmap item 8)
-- Adventure length presets — Epic / Quest / One Shot (roadmap item 9)
 - Character Progression Phase 2 (sidebar: XP bar, feature charge pips, Inspiration toggle, rest buttons)
 - Character Progression Phase 3 (DEV panel: award XP, level jump, set HP, test combat)
 - Multiclassing (defer until single-class leveling is solid)

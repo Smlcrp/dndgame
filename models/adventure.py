@@ -176,31 +176,86 @@ _TEMPLATES = [
     },
 ]
 
-_BEAT_XP   = [150, 300, 500]
 _CLIMAX_XP = 800
 
+PRESETS = {
+    "One Shot": {"beats": 1, "estimate": "~1–2h"},
+    "Quest":    {"beats": 3, "estimate": "~3–4h"},
+    "Epic":     {"beats": 5, "estimate": "~5–8h"},
+}
 
-def generate_adventure(char):
-    """Return a fresh adventure dict for the given character."""
-    template = random.choice(_TEMPLATES)
+def _build_beats(template, beat_count):
+    base = list(template["beats"])   # always 3 entries per template
+    ant  = template["antagonist"]["name"]
+    if beat_count == 1:
+        return [template["climax"]]
+    if beat_count == 3:
+        return base
+    if beat_count == 5:
+        return [
+            base[0],
+            f"Complications deepen. {ant}'s reach extends further than expected — new obstacles and unexpected discoveries reshape the path forward.",
+            base[1],
+            f"Crisis point. {ant} is fully aware of the pursuit and makes a decisive, dangerous move.",
+            base[2],
+        ]
+    return base[:beat_count]
+
+def _beat_xp_for_preset(preset):
+    n = PRESETS.get(preset, PRESETS["Quest"])["beats"]
+    if n == 1:
+        return [600]
+    if n == 3:
+        return [150, 300, 500]
+    if n == 5:
+        return [100, 150, 200, 300, 450]
+    return [150, 300, 500]
+
+def _stage_labels(n_story_beats):
+    labels = ["HOOK — establish the situation, introduce the threat, draw the player in"]
+    for i in range(n_story_beats):
+        idx = i + 1
+        if idx == 1 and n_story_beats == 1:
+            labels.append("FINAL ACT — the confrontation; everything hinges on this moment")
+        elif idx == 1:
+            labels.append("ACT 1 — first significant encounter; stakes become real")
+        elif idx == n_story_beats:
+            labels.append(f"ACT {idx} — crisis point; the finale is within reach but the cost is high")
+        elif idx == n_story_beats - 1:
+            labels.append(f"ACT {idx} — complication and rising tension; things get harder before they get better")
+        else:
+            labels.append(f"ACT {idx} — the story deepens; complications escalate")
+    labels.append("CLIMAX — the final confrontation with the antagonist")
+    labels.append("RESOLUTION — aftermath, reward, and closure")
+    return labels
+
+
+def generate_adventure(char, preset="Quest"):
+    """Return a fresh adventure dict for the given character and preset."""
+    template  = random.choice(_TEMPLATES)
+    p         = PRESETS.get(preset, PRESETS["Quest"])
+    beats     = _build_beats(template, p["beats"])
+    beat_xp   = _beat_xp_for_preset(preset)
     return {
+        "preset":       preset,
         "title":        template["title"],
         "setting":      template["setting"],
         "hook":         template["hook"],
         "antagonist":   dict(template["antagonist"]),
-        "beats":        list(template["beats"]),
+        "beats":        beats,
         "climax":       template["climax"],
         "resolution":   template["resolution"],
-        "current_beat": 0,   # 0=hook, 1=beat1, 2=beat2, 3=beat3, 4=climax, 5=resolved
-        "beat_xp":      list(_BEAT_XP),
+        "current_beat": 0,
+        "beat_xp":      beat_xp,
         "climax_xp":    _CLIMAX_XP,
     }
 
 
 def advance_beat(adventure):
-    """Advance to the next beat. Returns the XP award for completing this beat (0 if none)."""
-    beat = adventure.get("current_beat", 0)
-    if beat >= 4:
+    """Advance to the next beat. Returns the XP award for this beat (0 if capped)."""
+    beat         = adventure.get("current_beat", 0)
+    n_story_beats = len(adventure.get("beats", []))
+    if beat > n_story_beats:
         return 0
     xp = adventure["beat_xp"][beat] if beat < len(adventure["beat_xp"]) else 0
     adventure["current_beat"] = beat + 1
@@ -212,21 +267,22 @@ def adventure_prompt_block(adventure):
     if not adventure:
         return ""
 
-    beat = adventure.get("current_beat", 0)
-    stage_labels = [
-        "HOOK — establish the situation, introduce the threat, draw the player in",
-        "ACT 1 — first significant encounter; stakes become real",
-        "ACT 2 — complication and rising tension; things get harder before they get better",
-        "ACT 3 — crisis point; the finale is within reach but the cost is high",
-        "CLIMAX — the final confrontation with the antagonist",
-        "RESOLUTION — aftermath, reward, and closure",
-    ]
-    stage = stage_labels[min(beat, 5)]
-    ant   = adventure["antagonist"]
-    beats = "\n".join(f"  Beat {i+1}: {b}" for i, b in enumerate(adventure["beats"]))
+    beat          = adventure.get("current_beat", 0)
+    preset        = adventure.get("preset", "Quest")
+    n_story_beats = len(adventure.get("beats", []))
+    labels        = _stage_labels(n_story_beats)
+    stage         = labels[min(beat, len(labels) - 1)]
+    ant           = adventure["antagonist"]
+    beats         = "\n".join(f"  Beat {i+1}: {b}" for i, b in enumerate(adventure["beats"]))
+
+    scope_lines = {
+        "One Shot": "SCOPE: One-shot — deliver a complete, satisfying confrontation in a single compact session. Reach the climax briskly; do not pad.",
+        "Epic":     "SCOPE: Epic campaign — let each act breathe fully. Build subplots, deepen NPC relationships, and escalate tension gradually across multiple sessions.",
+    }
+    scope_block = f"\n{scope_lines[preset]}" if preset in scope_lines else ""
 
     return f"""
-ADVENTURE: {adventure['title']}
+ADVENTURE: {adventure['title']}{scope_block}
 
 Hook: {adventure['hook']}
 

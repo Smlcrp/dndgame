@@ -268,9 +268,9 @@ def get_available_combat_spells(char):
     return get_combat_spells(char)
 
 
-def start_adventure(session, char):
+def start_adventure(session, char, preset="Quest"):
     """Generate and store a fresh adventure in the session. Returns the adventure dict."""
-    adv = generate_adventure(char)
+    adv = generate_adventure(char, preset=preset)
     session["adventure"] = adv
     return adv
 

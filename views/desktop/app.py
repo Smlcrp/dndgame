@@ -841,25 +841,33 @@ class GameApp:
     # ── Startup ────────────────────────────────────────────────────────────────
 
     def _startup_dialog(self):
-        d = tk.Toplevel(self.root)
-        d.title("D&D AI Dungeon Master")
-        d.configure(bg=BG)
-        d.grab_set()
-        d.resizable(False, False)
-        self.root.update_idletasks()
-        rx = self.root.winfo_x() + self.root.winfo_width()  // 2 - 220
-        ry = self.root.winfo_y() + self.root.winfo_height() // 2 - 200
-        d.geometry(f"440x400+{rx}+{ry}")
+        # Full-screen inline frame — no Toplevel, no grab_set
+        d = tk.Frame(self.root, bg=BG)
+        d.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self._startup_frame = d
 
-        tk.Frame(d, bg=ACCENT, height=4).pack(fill="x")
-        self._dlg_title = tk.Label(d, text="  ⚔  D&D AI DUNGEON MASTER",
+        # Center a fixed-width content panel using grid weight trick
+        outer = tk.Frame(d, bg=BG)
+        outer.pack(fill="both", expand=True)
+        outer.rowconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=0)
+        outer.rowconfigure(2, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.columnconfigure(1, weight=0)
+        outer.columnconfigure(2, weight=1)
+
+        panel = tk.Frame(outer, bg=BG, width=440)
+        panel.grid(row=1, column=1, sticky="n")
+
+        tk.Frame(panel, bg=ACCENT, height=4).pack(fill="x")
+        self._dlg_title = tk.Label(panel, text="  ⚔  D&D AI DUNGEON MASTER",
                                    font=FONT_HDR, bg=PANEL, fg=ACCENT, pady=8)
         self._dlg_title.pack(fill="x")
 
-        self._dlg_body = tk.Frame(d, bg=BG, padx=24, pady=16)
+        self._dlg_body = tk.Frame(panel, bg=BG, padx=24, pady=16)
         self._dlg_body.pack(fill="both", expand=True)
 
-        self._dlg_err = tk.Label(d, text="", font=FONT_SM, bg=BG, fg=RED)
+        self._dlg_err = tk.Label(panel, text="", font=FONT_SM, bg=BG, fg=RED)
         self._dlg_err.pack(pady=(0, 6))
 
         self._show_mode_page(d)
@@ -970,7 +978,7 @@ class GameApp:
             name = char_lb.get(sel[0])
             if not messagebox.askyesno("Delete Character",
                                        f"Permanently delete '{name}'?",
-                                       parent=d):
+                                       parent=self.root):
                 return
             char_file = _root / "data" / "characters" / f"{name}.json"
             if char_file.exists():
@@ -998,12 +1006,12 @@ class GameApp:
                     f"{char_name} has saved progress (Lv {level} {cls}, {xp} XP).\n\n"
                     f"Starting a New Adventure will permanently delete this progress.\n\n"
                     f"Proceed?",
-                    parent=d,
+                    parent=self.root,
                 ):
                     return
             reset_to_level1(self.char)
             save_character(self.char)
-            self._launch_new_adventure(d)
+            self._show_preset_page(d, back_fn=lambda: self._show_character_page(d))
 
         tk.Button(btn_row, text="+ New Character", font=FONT_SM, bg=BTN_BG,
                   fg=ACCENT, relief="flat", bd=0, padx=8, pady=5,
@@ -1013,7 +1021,7 @@ class GameApp:
                   fg=BLUE, relief="flat", bd=0, padx=8, pady=5,
                   activebackground=BTN_BG, activeforeground=BLUE,
                   command=lambda: self._open_ddb_import_dialog(
-                      d, lambda name: _populate(select_last=True)
+                      self.root, lambda name: _populate(select_last=True)
                   )).pack(side="left", padx=(0, 4))
         tk.Button(btn_row, text="Delete", font=FONT_SM, bg=BTN_BG, fg=RED,
                   relief="flat", bd=0, padx=8, pady=5,
@@ -1028,7 +1036,7 @@ class GameApp:
                   activebackground="#e0c060", activeforeground="#1a1a2e",
                   command=begin).pack(side="right")
 
-    def _launch_new_adventure(self, d):
+    def _launch_new_adventure(self, d, preset="Quest"):
         try:
             self.dm = dm_module.from_config()
         except Exception as e:
@@ -1038,9 +1046,67 @@ class GameApp:
         self.session = gs.empty_session(character_name=char_name,
                                         session_name=char_name)
         gs.init_hp(self.session, self.char)
-        start_adventure(self.session, self.char)
-        d.destroy()
+        start_adventure(self.session, self.char, preset)
+        self._startup_frame.destroy()
         self._start_adventure(new=True)
+
+    # ── Page 2d: Preset selection ──────────────────────────────────────────────
+
+    def _show_preset_page(self, d, back_fn=None):
+        self._clear_body()
+        self._dlg_title.config(text="  ⚔  CHOOSE YOUR ADVENTURE")
+
+        if back_fn is None:
+            back_fn = lambda: self._show_character_page(d)
+
+        tk.Label(self._dlg_body, text="How long do you want to play?",
+                 font=FONT_BODY, bg=BG, fg=DIM).pack(anchor="w", pady=(0, 10))
+
+        selected = {"preset": "Quest"}
+        cards    = {}
+
+        def select(name):
+            selected["preset"] = name
+            for n, (f, lbl_main, lbl_sub) in cards.items():
+                is_sel   = n == name
+                bg       = ACCENT  if is_sel else BTN_BG
+                fg_main  = "#1a1a2e" if is_sel else ACCENT
+                fg_sub   = "#1a1a2e" if is_sel else DIM
+                f.config(bg=bg)
+                lbl_main.config(bg=bg, fg=fg_main)
+                lbl_sub.config(bg=bg, fg=fg_sub)
+
+        PRESET_INFO = [
+            ("Epic",     "~5–8h",  "Five-act story with escalating stakes and a climactic showdown."),
+            ("Quest",    "~3–4h",  "Three-act adventure. A complete story in a single session."),
+            ("One Shot", "~1–2h",  "Get straight to the action. Fast and focused."),
+        ]
+
+        for name, est, desc in PRESET_INFO:
+            f = tk.Frame(self._dlg_body, bg=BTN_BG, padx=12, pady=10, cursor="hand2")
+            f.pack(fill="x", pady=4)
+            lbl_main = tk.Label(f, text=f"{name}  ·  {est}", font=FONT_HDR,
+                                bg=BTN_BG, fg=ACCENT)
+            lbl_main.pack(anchor="w")
+            lbl_sub  = tk.Label(f, text=desc, font=FONT_SM, bg=BTN_BG, fg=DIM)
+            lbl_sub.pack(anchor="w")
+            cards[name] = (f, lbl_main, lbl_sub)
+            for w in (f, lbl_main, lbl_sub):
+                w.bind("<Button-1>", lambda e, n=name: select(n))
+
+        select("Quest")
+
+        btn_row = tk.Frame(self._dlg_body, bg=BG)
+        btn_row.pack(fill="x", pady=(12, 0))
+        tk.Button(btn_row, text="← Back", font=FONT_SM, bg=BTN_BG, fg=DIM,
+                  relief="flat", bd=0, padx=8, pady=5,
+                  activebackground=BTN_BG, activeforeground=FG,
+                  command=back_fn).pack(side="left")
+        tk.Button(btn_row, text="Begin →", font=FONT_SM, bg=ACCENT, fg="#1a1a2e",
+                  relief="flat", bd=0, padx=12, pady=5,
+                  activebackground="#e0c060", activeforeground="#1a1a2e",
+                  command=lambda: self._launch_new_adventure(d, selected["preset"])
+                  ).pack(side="right")
 
     # ── Page 2c: Next Adventure (leveled characters only) ─────────────────────
 
@@ -1191,7 +1257,7 @@ class GameApp:
                 self._dlg_err.config(text="Select a character first.")
                 return
             self.char = chars[sel[0]]
-            self._launch_new_adventure(d)
+            self._show_preset_page(d, back_fn=lambda: self._show_next_adventure_page(d))
 
         tk.Button(btn_row, text="← Back", font=FONT_SM, bg=BTN_BG, fg=DIM,
                   relief="flat", bd=0, padx=8, pady=5,
