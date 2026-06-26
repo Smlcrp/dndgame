@@ -260,18 +260,18 @@ python -m pytest tests/ -q
 
 ## AI Dungeon Master Setup
 
-The DM runs locally via Ollama. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure it:
+The DM runs locally via Ollama — no API key, no cost, no data sent externally. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure it:
 
 1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
-2. Pull the recommended model: `ollama pull dolphin-llama3`
+2. Pull the recommended model: `ollama pull HammerAI/mistral-nemo-uncensored`
 3. Edit `data/dm_config.json`:
 ```json
 {
-  "model": "dolphin-llama3"
+  "model": "HammerAI/mistral-nemo-uncensored"
 }
 ```
 
-Other models that work well: `llama3.1`, `mistral`, `gemma2`
+See the [PC Requirements](#pc-requirements) section for model VRAM requirements and a 6 GB VRAM fallback option.
 
 ---
 
@@ -343,16 +343,61 @@ Orchestrates model calls and returns plain dicts. Called identically by the Tkin
 
 ---
 
-## Requirements
+## PC Requirements
 
+### Hardware
+
+| | Minimum | Recommended |
+|---|---|---|
+| **OS** | Windows 10, Linux, macOS | Windows 11 |
+| **GPU VRAM** | 5 GB | 8 GB |
+| **System RAM** | 8 GB | 16 GB |
+| **Storage** | 10 GB free | 15 GB free |
+
+**Tested on:** Windows 11 Pro — NVIDIA RTX 3060 Ti (8 GB VRAM), 16 GB RAM.
+
+---
+
+### GPU Support
+
+The AI Dungeon Master runs locally via Ollama. GPU acceleration is strongly recommended — CPU-only inference takes 30–60 seconds per DM response, which breaks the flow of play.
+
+| Backend | Supported hardware | Notes |
+|---|---|---|
+| **NVIDIA CUDA** | GTX 1000 series or newer | Best support; all platforms |
+| **AMD ROCm** | RX 5000 series or newer | Linux only; Windows support limited |
+| **Apple Silicon** | M1 / M2 / M3 | Unified memory — 8 GB or higher recommended |
+| **CPU only** | Any | Works but very slow — not recommended for real-time play |
+
+---
+
+### Model VRAM Requirements
+
+Two models are included in `dm_config.example.json`. Both are uncensored and run locally with no API cost.
+
+| Model | Disk size | VRAM needed | Context window | Notes |
+|---|---|---|---|---|
+| `HammerAI/mistral-nemo-uncensored` | 7.1 GB | ~7.5 GB | 1,000K | **Recommended** — 12B parameters, uncensored |
+| `HammerAI/hermes-3-llama-3.1:8b-q4_K_M` | 4.9 GB | ~5.5 GB | 128K | Fallback for 6 GB cards |
+
+The recommended model loads into approximately 7.5 GB of VRAM (weights + KV cache). On an 8 GB card such as the RTX 3060 Ti it fits with minimal CPU offloading. If you have a 6 GB card, use the Hermes 3 8B fallback instead.
+
+To pull a model:
+```
+ollama pull HammerAI/mistral-nemo-uncensored
+```
+
+---
+
+### Software
+
+- **Python 3.8+** (3.11 recommended)
+- **Ollama** — installed and running (`ollama serve` starts automatically on Windows after install)
+- **tkinter** — bundled with Python on Windows and macOS; Linux: `sudo apt install python3-tk`
+- **requests** library:
 ```
 pip install requests
 ```
-
-- Python 3.8+
-- `tkinter` (included with Python on Windows)
-- `requests` — for DM API calls (Ollama)
-- Ollama installed locally
 
 ## Bug Fixes
 
