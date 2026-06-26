@@ -1358,11 +1358,11 @@ class GameApp:
                 self._next_turn()
             else:
                 self._display("── Resuming session ──\n\n", "header")
-                for entry in self.session["history"][-6:]:
+                for entry in self.session["history"][-3:]:
                     tag = "player" if entry["role"] == "player" else "dm"
                     prefix = "> " if tag == "player" else ""
                     self._display(prefix + entry["text"] + "\n\n", tag)
-                self._set_input_enabled(True)
+                self._dm_recap_call()
         else:
             self._display("── Adventure begins ──\n\n", "header")
             self._set_input_enabled(False)
@@ -1391,6 +1391,27 @@ class GameApp:
                 msg = str(e) or repr(e)
                 self.root.after(0, lambda: self._handle_dm_error(msg, on_complete, on_action))
         threading.Thread(target=_thread, daemon=True).start()
+
+    def _dm_recap_call(self):
+        self._display("DM is thinking...\n", "system")
+        def _thread():
+            try:
+                narration = self.dm.recap(self.session, self.char)
+                self.root.after(0, lambda: self._finish_recap(narration))
+            except Exception as e:
+                msg = str(e) or repr(e)
+                self.root.after(0, lambda: (
+                    self._erase_last_line(),
+                    self._display(f"[Could not load recap: {msg}]\n\n", "system"),
+                    self._set_input_enabled(True),
+                ))
+        threading.Thread(target=_thread, daemon=True).start()
+
+    def _finish_recap(self, narration):
+        self._erase_last_line()
+        self._display("── Previously... ──\n\n", "header")
+        self._display(narration + "\n\n", "dm")
+        self._set_input_enabled(True)
 
     def _handle_dm_response(self, result, on_complete=None, on_action=None):
         self._erase_last_line()

@@ -325,6 +325,16 @@ NARRATION RULES — READ CAREFULLY:
 10. OPENING vs. CONTINUING — CRITICAL: If this is the very first exchange and no prior history exists, open with a vivid scene that fits the character's background and class. If the SCENE IN PROGRESS block appears at the bottom of this prompt, the story is already underway — NEVER re-establish the setting, NEVER re-describe the player entering anywhere, NEVER restart the adventure. A player saying "I close the door" or any other action is continuing their current scene, not starting a new one.
 11. Keep responses focused. One scene at a time.
 12. PASSIVE SCORES: Use the player's Passive Perception ({passive_perc}), Investigation ({passive_inv}), and Insight ({passive_ins}) to narrate automatic awareness during scene descriptions — a sound they'd catch, something odd they'd notice, an NPC's barely-hidden unease. Never say "passive check" in narration; just weave what they notice into the scene naturally.
+13. PLAYER AGENCY — THIS IS NON-NEGOTIABLE:
+    The player controls their character completely. You control the world and NPCs only.
+    a) NEVER write spoken dialogue for the player character. Not one word in quotes. Not even a single sentence.
+       WRONG: "You say softly, 'I need to talk to you.'"
+       WRONG: "'I promise,' you tell her, taking her hand."
+       RIGHT: Your mother watches you expectantly, waiting to hear what brought you here.
+    b) NEVER narrate internal thoughts or feelings the player did not state ("You feel determined", "Your heart sinks", "You decide..."). Only describe what is outwardly observable.
+    c) NEVER resolve a social exchange, negotiation, or conversation on the player's behalf. If the player says "I talk to the innkeeper about the missing merchant", describe the innkeeper's reaction to being approached and what they say — then STOP. The player chooses what to say next.
+    d) NEVER extend the player's stated action into further decisions they haven't made. Player says "I enter the room" → describe the room and what they see. Do NOT then have them sit down, speak, make promises, or do anything else.
+    e) End every response at a natural pause where the player must choose what to do or say next. Leave them in the moment — do not resolve it for them.
 
 {enemy_block}{adventure_block}{party_block}{knowledge_block}{story_mode_block}{combat_block}{scene_anchor}"""
 
@@ -517,6 +527,22 @@ NARRATION RULES — READ CAREFULLY:
                 session["scene"]    = narration
 
         return {"narration": narration, "events": events}
+
+    def recap(self, session, character):
+        """Return a 'previously on...' narration without modifying session history."""
+        recap_prompt = (
+            "[SESSION RECAP — NOT A PLAYER ACTION]\n"
+            "The player is returning to this adventure after a break. "
+            "Deliver a brief, vivid 'Previously...' opening in 2–4 sentences. "
+            "Cover: where the player currently is, what they most recently did or discovered, "
+            "and what immediate situation faces them now. "
+            "Write in second person. Set the mood like a DM opening a session. "
+            "Do not advance the story. Do not emit any game tags."
+        )
+        messages = self._messages_for_ollama(session, character, recap_prompt)
+        raw = self._call_ollama(messages)
+        narration, _ = self._parse_events(raw)
+        return narration
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
