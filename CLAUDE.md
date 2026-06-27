@@ -275,11 +275,12 @@ All planned work for the game lives here. This is the single source of truth —
 
 ---
 
-### Stage 5b — Kokoro TTS Narrator (deferred)
+### Stage 5b — Kokoro TTS Narrator
 
-- [ ] **Re-enable narrator**: Kokoro TTS (`models/narrator.py`, `/api/narrate` route, `_appendPlayButton` in `GameScene.js`) was disabled — all code is commented out, not deleted. Revisit when ready to fix the integration.
-- [ ] **UX**: decide trigger (auto-play vs manual Play button), voice selection, streaming vs full-clip delivery
-- [ ] **Performance**: preload model at Flask startup once approach is settled
+- [x] **Re-enable narrator**: Kokoro TTS (`models/narrator.py`, `/api/narrate` route, `_appendPlayButton` in `GameScene.js`) re-enabled with sentence-queue playback
+- [x] **UX**: `▶` / `⏹` symbol-only Play button per DM entry; AbortController stop; sequential sentence playback
+- [x] **Performance**: model preloaded at Flask startup; first sentence pre-fetched mid-stream for near-instant playback
+- [ ] **Dual-voice narration (Option A)**: parse DM narration into narrator segments (outside quotes) and dialogue segments (inside quotes); narrator uses `bm_george`, dialogue uses a second Kokoro voice — no model prompt changes needed
 
 ---
 
