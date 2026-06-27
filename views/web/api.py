@@ -129,18 +129,16 @@ def _is_cuda_crash(err: str) -> bool:
 _CHARS_DIR = _root / "data" / "characters"
 
 # ── Startup pre-loading ───────────────────────────────────────────────────────
-# Load the Kokoro narrator model in the background the moment Flask starts so
-# the first Play click is instant instead of waiting 1-2 s for model init.
-
-def _preload_narrator():
-    try:
-        from models.narrator import _get_kokoro
-        _get_kokoro()
-        print("[narrator] Model ready.")
-    except Exception as e:
-        print(f"[narrator] Pre-load skipped: {e}")
-
-threading.Thread(target=_preload_narrator, daemon=True).start()
+# NARRATOR DISABLED — Kokoro TTS not working as intended; revisit in a later stage.
+# def _preload_narrator():
+#     try:
+#         from models.narrator import _get_kokoro
+#         _get_kokoro()
+#         print("[narrator] Model ready.")
+#     except Exception as e:
+#         print(f"[narrator] Pre-load skipped: {e}")
+#
+# threading.Thread(target=_preload_narrator, daemon=True).start()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -414,24 +412,21 @@ def player_action_stream():
     )
 
 
-@app.route("/api/narrate", methods=["POST"])
-def narrate():
-    """Convert DM narration text to speech and return WAV audio.
-    Body: {"text": str}
-    First call may take a few seconds while Kokoro loads.
-    """
-    body = request.get_json(silent=True) or {}
-    text = body.get("text", "").strip()
-    if not text:
-        return _err("text is required")
-    try:
-        from models.narrator import speak
-        wav_bytes = speak(text)
-        return Response(wav_bytes, mimetype="audio/wav")
-    except ImportError:
-        return _err("Narrator not available — run: pip install kokoro-onnx soundfile", 503)
-    except Exception as e:
-        return _err(str(e), 500)
+# NARRATOR DISABLED — revisit in a later stage.
+# @app.route("/api/narrate", methods=["POST"])
+# def narrate():
+#     body = request.get_json(silent=True) or {}
+#     text = body.get("text", "").strip()
+#     if not text:
+#         return _err("text is required")
+#     try:
+#         from models.narrator import speak
+#         wav_bytes = speak(text)
+#         return Response(wav_bytes, mimetype="audio/wav")
+#     except ImportError:
+#         return _err("Narrator not available — run: pip install kokoro-onnx soundfile", 503)
+#     except Exception as e:
+#         return _err(str(e), 500)
 
 
 @app.route("/api/warmup", methods=["POST"])

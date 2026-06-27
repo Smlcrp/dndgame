@@ -228,7 +228,7 @@ class GameScene {
             dmText.textContent = data.narration;
             this._state = data.state;
             events = data.events || [];
-            this._appendPlayButton(dmEntry, data.narration);
+            // NARRATOR DISABLED: this._appendPlayButton(dmEntry, data.narration);
             narr.scrollTop = narr.scrollHeight;
             if (data.ollama_mode === 'cpu') this._showCpuBanner();
             break outer;
@@ -257,63 +257,36 @@ class GameScene {
     document.body.appendChild(banner);
   }
 
-  // ── Narrator ────────────────────────────────────────────────────────────
-
-  _appendPlayButton(entry, text) {
-    const btn = document.createElement('button');
-    btn.className = 'narration-play-btn';
-    btn.textContent = '⏳ Preparing…';
-    btn.disabled = true;
-
-    let audioBlob = null;
-    let audio     = null;
-
-    // Pre-generate TTS immediately while the player reads the text.
-    // By the time they click Play the audio is already in memory.
-    fetch('/api/narrate', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ text }),
-    })
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-      .then(blob => {
-        audioBlob = blob;
-        btn.textContent = '▶ Play';
-        btn.disabled    = false;
-      })
-      .catch(e => {
-        console.error('[narrator] pre-generate failed:', e.message);
-        btn.remove();
-      });
-
-    btn.onclick = () => {
-      if (!audioBlob) return;
-
-      if (audio && !audio.paused) {
-        audio.pause();
-        audio.currentTime = 0;
-        URL.revokeObjectURL(audio.src);
-        audio = null;
-        btn.textContent = '▶ Play';
-        btn.classList.remove('playing');
-        return;
-      }
-
-      const url = URL.createObjectURL(audioBlob);
-      audio = new Audio(url);
-      audio.onended = () => {
-        btn.textContent = '▶ Play';
-        btn.classList.remove('playing');
-        URL.revokeObjectURL(url);
-        audio = null;
-      };
-      audio.play();
-      btn.textContent = '⏹ Stop';
-      btn.classList.add('playing');
-    };
-
-    entry.appendChild(btn);
-  }
+  // ── Narrator (DISABLED — revisit in a later stage) ──────────────────────
+  //
+  // _appendPlayButton(entry, text) {
+  //   const btn = document.createElement('button');
+  //   btn.className = 'narration-play-btn';
+  //   btn.textContent = '⏳ Preparing…';
+  //   btn.disabled = true;
+  //   let audioBlob = null;
+  //   let audio     = null;
+  //   fetch('/api/narrate', {
+  //     method:  'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body:    JSON.stringify({ text }),
+  //   })
+  //     .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+  //     .then(blob => { audioBlob = blob; btn.textContent = '▶ Play'; btn.disabled = false; })
+  //     .catch(e => { console.error('[narrator] pre-generate failed:', e.message); btn.remove(); });
+  //   btn.onclick = () => {
+  //     if (!audioBlob) return;
+  //     if (audio && !audio.paused) {
+  //       audio.pause(); audio.currentTime = 0; URL.revokeObjectURL(audio.src);
+  //       audio = null; btn.textContent = '▶ Play'; btn.classList.remove('playing'); return;
+  //     }
+  //     const url = URL.createObjectURL(audioBlob);
+  //     audio = new Audio(url);
+  //     audio.onended = () => { btn.textContent = '▶ Play'; btn.classList.remove('playing'); URL.revokeObjectURL(url); audio = null; };
+  //     audio.play(); btn.textContent = '⏹ Stop'; btn.classList.add('playing');
+  //   };
+  //   entry.appendChild(btn);
+  // }
 
   // ── Event handler ───────────────────────────────────────────────────────
 

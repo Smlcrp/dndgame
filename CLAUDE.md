@@ -275,6 +275,14 @@ All planned work for the game lives here. This is the single source of truth —
 
 ---
 
+### Stage 5b — Kokoro TTS Narrator (deferred)
+
+- [ ] **Re-enable narrator**: Kokoro TTS (`models/narrator.py`, `/api/narrate` route, `_appendPlayButton` in `GameScene.js`) was disabled — all code is commented out, not deleted. Revisit when ready to fix the integration.
+- [ ] **UX**: decide trigger (auto-play vs manual Play button), voice selection, streaming vs full-clip delivery
+- [ ] **Performance**: preload model at Flask startup once approach is settled
+
+---
+
 ### Stage 6 — Distribution
 
 #### GitHub Releases (first)
