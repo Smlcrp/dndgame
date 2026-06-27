@@ -200,13 +200,24 @@ NO ROLL NEEDED when:
   - Common knowledge for someone of their class and background
   - Already seen, heard, or established this session
   - A basic observation any alert person would make in the scene
+  - The player asks a WILLING NPC a direct question — willing NPCs simply answer; no roll ever required for cooperative conversation
 
 CALL FOR A ROLL when:
   - Recalling obscure lore, history, or arcane theory
   - Reading a creature's weaknesses or behavior under pressure
   - Noticing something non-obvious or partially concealed
   - Deciphering writing, symbols, or magical auras
-  - Gathering information from an unwilling or guarded source
+  - Gathering information from an UNWILLING or actively deceptive NPC (use Persuasion, Deception, or Intimidation — NEVER Investigation for social situations)
+
+INVESTIGATION vs SOCIAL — critical distinction:
+  Investigation = ONLY physical examination: searching a room, studying an object, finding clues at a crime scene, spotting hidden mechanisms.
+  NEVER use Investigation when the player is talking to someone. Asking a question is not investigating.
+
+AFTER A CHECK — stay in the action:
+  Your narration must remain in the context of what the player actually did.
+  If they asked an NPC a question → narrate the NPC's response (clear on success, vague on failure).
+  If they searched a room → narrate what they found or didn't find.
+  NEVER pivot to a completely different activity than the one the player stated.
 
 DC CALIBRATION — character is Level {level}:
   {dc_guide}
