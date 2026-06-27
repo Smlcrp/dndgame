@@ -14,32 +14,16 @@ let mainWindow   = null;
 // ── Flask process ─────────────────────────────────────────────────────────────
 
 function launchFlask() {
-  // In development: run python run_server.py from the project root.
-  // In packaged build: run the PyInstaller-bundled executable from extraResources.
-  const isPackaged = app.isPackaged;
-  if (isPackaged) {
+  // Packaged build: run the PyInstaller-bundled executable.
+  if (app.isPackaged) {
     const serverDir = path.join(process.resourcesPath, 'server');
     const exe = process.platform === 'win32' ? 'run_server.exe' : 'run_server';
     flaskProcess = execFile(path.join(serverDir, exe), { cwd: serverDir });
-  } else {
-    const projectRoot = path.join(__dirname, '..');
-    const pythonExe = process.env.PYTHON_EXE || 'python';
-    flaskProcess = spawn(pythonExe, ['run_server.py'], {
-      cwd: projectRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
+    flaskProcess.on('error', err => {
+      dialog.showErrorBox('Server Error', `Failed to start game server:\n${err.message}`);
     });
-    flaskProcess.stdout.on('data', d => process.stdout.write(`[flask] ${d}`));
-    flaskProcess.stderr.on('data', d => process.stderr.write(`[flask] ${d}`));
   }
-
-  flaskProcess.on('error', err => {
-    dialog.showErrorBox('Server Error', `Failed to start game server:\n${err.message}`);
-  });
-  flaskProcess.on('exit', (code, signal) => {
-    if (code !== 0 && code !== null) {
-      console.error(`Flask exited with code ${code} (signal ${signal})`);
-    }
-  });
+  // Dev build: main.py already started Flask before launching Electron, so nothing to do.
 }
 
 // ── Poll until Flask responds ─────────────────────────────────────────────────
