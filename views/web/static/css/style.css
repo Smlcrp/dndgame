@@ -243,6 +243,18 @@ a { color: var(--accent); }
 .narration-play-btn:disabled { opacity: 0.4; cursor: default; }
 .narration-play-btn.playing { color: var(--accent); border-color: var(--accent); }
 
+.ollama-cpu-banner {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #7a5c00;
+  color: #ffe082;
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  z-index: 999;
+  pointer-events: none;
+}
+
 .thinking-indicator {
   color: var(--dim);
   font-style: italic;

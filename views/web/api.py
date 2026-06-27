@@ -54,8 +54,12 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 import json
+import os
+import subprocess
 import threading
+import time
 
+import requests as _http
 from flask import Flask, request, jsonify, render_template, send_from_directory, Response, stream_with_context
 
 from models.character import (
@@ -78,6 +82,47 @@ app.secret_key = "dnd-local-dev"
 
 # Single-user in-process state — fine for a local desktop app.
 _state: dict = {"session": None, "character": None, "dm": None}
+
+# ── Ollama process management ─────────────────────────────────────────────────
+
+_ollama_mode = "gpu"  # updated to "cpu" if GPU crashes
+_OLLAMA_URL  = "http://localhost:11434"
+
+def _ollama_healthy():
+    try:
+        _http.get(f"{_OLLAMA_URL}/api/tags", timeout=2)
+        return True
+    except Exception:
+        return False
+
+def _restart_ollama_cpu():
+    """Kill any running ollama.exe and relaunch with CUDA disabled. Returns True on success."""
+    global _ollama_mode
+    print("[ollama] CUDA crash — restarting in CPU-only mode…")
+    subprocess.run(["taskkill", "/F", "/IM", "ollama.exe", "/T"], capture_output=True)
+    time.sleep(2)
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = "-1"
+    env["OLLAMA_NUM_GPU"]       = "0"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen(
+        ["ollama", "serve"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=flags,
+    )
+    for _ in range(20):
+        if _ollama_healthy():
+            _ollama_mode = "cpu"
+            print("[ollama] Running in CPU mode.")
+            return True
+        time.sleep(0.5)
+    print("[ollama] CPU restart timed out.")
+    return False
+
+def _is_cuda_crash(err: str) -> bool:
+    return "CUDA" in err or "0xc0000409" in err
 
 _CHARS_DIR = _root / "data" / "characters"
 
@@ -328,7 +373,14 @@ def player_action_stream():
                     yield f"data: {json.dumps({'token': chunk['token']})}\n\n"
                 elif chunk.get("done"):
                     gs.save_session(session)
-                    yield f"data: {json.dumps({'done': True, 'narration': chunk['narration'], 'events': chunk['events'], 'state': _snapshot()})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'narration': chunk['narration'], 'events': chunk['events'], 'state': _snapshot(), 'ollama_mode': _ollama_mode})}\n\n"
+        except RuntimeError as e:
+            err = str(e)
+            if _is_cuda_crash(err):
+                yield f"data: {json.dumps({'error': 'GPU crashed — restarting in CPU mode. Please try again in a few seconds.'})}\n\n"
+                threading.Thread(target=_restart_ollama_cpu, daemon=True).start()
+            else:
+                yield f"data: {json.dumps({'error': err})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -364,14 +416,30 @@ def warmup():
     """Load the AI model into VRAM in the background.
     Call this early (e.g. on the main menu) so the first adventure starts fast.
     Returns immediately — the actual load happens on a background thread.
+    If a CUDA crash is detected, Ollama is automatically restarted in CPU mode.
     """
     def _do():
         try:
             from_config().warmup()
-        except Exception:
-            pass
+        except RuntimeError as e:
+            if _is_cuda_crash(str(e)):
+                if _restart_ollama_cpu():
+                    try:
+                        from_config().warmup()
+                    except Exception as e2:
+                        print(f"[ollama] CPU warmup also failed: {e2}")
+            else:
+                print(f"[ollama] Warmup error: {e}")
+        except Exception as e:
+            print(f"[ollama] Warmup error: {e}")
     threading.Thread(target=_do, daemon=True).start()
     return _ok(warming=True)
+
+
+@app.route("/api/ollama/mode")
+def ollama_mode_route():
+    """Return current Ollama execution mode (gpu or cpu)."""
+    return _ok(mode=_ollama_mode)
 
 
 # ── Dice ──────────────────────────────────────────────────────────────────────

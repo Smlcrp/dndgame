@@ -226,6 +226,7 @@ class GameScene {
             events = data.events || [];
             this._appendPlayButton(dmEntry, data.narration);
             narr.scrollTop = narr.scrollHeight;
+            if (data.ollama_mode === 'cpu') this._showCpuBanner();
             break outer;
           }
         }
@@ -239,6 +240,17 @@ class GameScene {
     } finally {
       this._setBusy(false);
     }
+  }
+
+  // ── Ollama mode banner ───────────────────────────────────────────────────
+
+  _showCpuBanner() {
+    if (document.getElementById('cpu-mode-banner')) return; // already shown
+    const banner = document.createElement('div');
+    banner.id = 'cpu-mode-banner';
+    banner.className = 'ollama-cpu-banner';
+    banner.textContent = '⚠ Running on CPU — responses will be slower (GPU unavailable)';
+    document.body.appendChild(banner);
   }
 
   // ── Narrator ────────────────────────────────────────────────────────────
