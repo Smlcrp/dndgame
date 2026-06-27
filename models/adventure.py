@@ -29,6 +29,7 @@ if str(_root) not in sys.path:
 _TEMPLATES = [
     {
         "title": "The Missing Merchant",
+        "tone": "Investigative thriller. Tense and urgent but grounded — think mystery novel, not horror. NPCs are flawed and motivated. Keep the mood sharp and purposeful, not bleak.",
         "setting": "town",
         "hook": (
             "A wealthy merchant has vanished three days before a vital trade deal. "
@@ -50,6 +51,7 @@ _TEMPLATES = [
     },
     {
         "title": "The Haunted Mill",
+        "tone": "Gothic horror. Eerie, atmospheric, and unsettling — this adventure is intentionally dark. Lean into the dread, the uncanny, and the wrongness of the place.",
         "setting": "wilderness",
         "hook": (
             "The old mill on the edge of town has gone dark. Workers refuse to enter "
@@ -71,6 +73,7 @@ _TEMPLATES = [
     },
     {
         "title": "Raiders at the Crossroads",
+        "tone": "Action-adventure. Gritty and dangerous but not dark. Combat-forward with clear heroes and villains. Energy should feel exciting and kinetic, not hopeless.",
         "setting": "wilderness",
         "hook": (
             "A farming village has been raided twice this month — livestock stolen, a barn burned. "
@@ -92,6 +95,7 @@ _TEMPLATES = [
     },
     {
         "title": "The Stolen Relic",
+        "tone": "Urgent thriller. Race-against-time energy with cult intrigue. Morally grey antagonist driven by grief, not malice. Tense and dramatic but ultimately heroic in register.",
         "setting": "urban",
         "hook": (
             "A sacred relic has been taken from the city's main temple. "
@@ -113,6 +117,7 @@ _TEMPLATES = [
     },
     {
         "title": "Depths of the Old Keep",
+        "tone": "Classic dungeon crawl. Tense and mysterious with a sense of ancient history. Dangerous but not grim — the mood is discovery and tension, like exploring a forgotten place that still bites back.",
         "setting": "dungeon",
         "hook": (
             "Treasure hunters entered the abandoned keep a week ago. Only one returned — raving about what woke up down there. "
@@ -134,6 +139,7 @@ _TEMPLATES = [
     },
     {
         "title": "The Plague Wind",
+        "tone": "Folk horror and wilderness survival. Creeping unease and natural dread rooted in old grudges and fey malice. Darker than most adventures but grounded in folklore — not nihilistic.",
         "setting": "wilderness",
         "hook": (
             "A village is afflicted with a creeping sickness — not natural disease. "
@@ -155,6 +161,7 @@ _TEMPLATES = [
     },
     {
         "title": "The Assassin's Mark",
+        "tone": "Spy thriller. Cool, cerebral, and precise. Danger is professional and calculated, not brutal or gory. Think action film — slick, tense, satisfying — not dark fantasy.",
         "setting": "urban",
         "hook": (
             "A city official has received a death threat — and their usual guards were found unconscious this morning. "
@@ -176,6 +183,7 @@ _TEMPLATES = [
     },
     {
         "title": "Blood and Salt",
+        "tone": "Nautical adventure with a supernatural edge. Sea exploration, treasure, and a warlock's bargain. Swashbuckling and exciting at the surface with an undercurrent of dread — adventure-forward, not horror.",
         "setting": "coastal",
         "hook": (
             "Ships have been disappearing off the headland. The latest carried a merchant's entire fortune. "
@@ -319,8 +327,11 @@ def adventure_prompt_block(adventure):
     }
     scope_block = f"\n{scope_lines[preset]}" if preset in scope_lines else ""
 
+    tone = adventure.get("tone", "")
+    tone_line = f"\nTONE: {tone}\nMatch this tone throughout. Do not drift darker or lighter than the adventure calls for." if tone else ""
+
     return f"""
-ADVENTURE: {adventure['title']}{scope_block}
+ADVENTURE: {adventure['title']}{scope_block}{tone_line}
 
 Hook: {adventure['hook']}
 
