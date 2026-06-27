@@ -258,556 +258,129 @@ Main game interface. `GameApp` class.
 
 ---
 
-## What to Build Next
+## Master Roadmap
 
-**MVC Restructure** — ✅ Complete. `python main.py` launches the game.
-
----
-
-### ✅ DONE — Adventure Progress System (completed)
-- `reset_to_level1(char)` in `models/character.py` — strips XP/level/HP/conditions/feature uses back to level 1. Clears subclass for classes whose trigger > 1. Saves to disk immediately on New Adventure.
-- Main menu now has three modes: **New Adventure** (reset to Lv1), **Next Adventure** (carry existing progress into a fresh story — only shown when characters with level > 1 or XP > 0 exist), **Resume Session** (mid-session save).
-- Warning dialog if New Adventure would overwrite stored progress.
-- `_launch_new_adventure(d)` helper shared between both new-adventure flows.
+All planned work for the game lives here. This is the single source of truth — do not create planning lists anywhere else.
 
 ---
 
-### ✅ DONE — Animated Dice for All Die Types (completed)
-- `views/desktop/dice_roller.py` — generic 3D animated roller for d4, d6, d8, d10, d12, d20.
-- `_build_animation(normals, target_fi)` — verify-and-retry loop guarantees frame[0] orientation shows a different face than the landing face. Same fix applied to `d20_roller.py` via `_front_face_d20()`. All die types, all values pass diagnostic.
-- Used for: damage rolls, death saving throws, hit dice (short rest + level-up).
-- Attack/damage split into two explicit player actions with a "Roll Damage" button embedded in narration via `window_create`.
-
----
-
-### ✅ DONE — Character Progression (Phase 1 complete)
-- `models/progression.py` — XP thresholds, ASI levels, subclass triggers, CLASS_FEATURE_CHARGES, `level_from_xp`, `feature_charges_gained_at`, `current_max_uses`, `recharges_on_short_rest`.
-- `models/character.py` — `feature_uses`, `inspiration` fields; `reset_to_level1()`.
-- `controllers/game_controller.py` — `process_xp_award`, `process_short_rest`, `process_long_rest`.
-- Level-up dialog (multi-step Toplevel): new features → HP roll (animated hit die) → subclass picker → ASI/Feat.
-- XP award events from DM `[XP: N]` handled in `_handle_dm_response`.
-- Short rest: hit-dice spending dialog with animated die rolls.
-- Long rest: one-click with confirmation.
-
-**Remaining (Phases 2 & 3 not yet built):**
-- Phase 2: XP bar in sidebar, feature charges display (`[●●○] Action Surge`), Inspiration toggle, Short/Long Rest sidebar buttons.
-- Phase 3: Ctrl+D DEV panel (award XP, quick level jump, set HP, add conditions, test combat).
-
----
-
-### ✅ DONE — SRD Enemy List (models/enemies.py)
-
-`models/enemies.py` — ~160 monsters from CR 0 to CR 30. Compact `_e()` / `_atk()` helpers keep the file readable. Key exports:
-- `ENEMIES` — dict keyed by display name (what DM writes in `[COMBAT:]` tags)
-- `by_cr(cr)` / `by_cr_range(min, max)` — filter by CR
-- `appropriate_for_level(player_level)` — returns `(min_cr, max_cr)` tuple
-- `enemy_list_for_dm(player_level)` — compact tiered string injected into DM system prompt
-
-`game_controller.py` imports `ENEMIES` from this module. `dm.py` injects `enemy_list_for_dm(level)` at the end of its system prompt. `data/dm_config.json` (gitignored) sets the Ollama model.
-
-**Current default model:** `hermes-3-llama-3.1:8b-q4_K_M`
-
----
-
-### ✅ DONE — DEV Panel Password Gate
-
-The DEV button and F4 shortcut are protected by a password prompt. First press shows a modal dialog with a masked `●` entry field. Wrong passwords clear the field and display "Incorrect password." without any hint. On success `self._dev_unlocked = True` is set for the lifetime of that process — subsequent presses in the same session go straight to the panel.
-
-**Password:** `0922` — do not add this to README or any public-facing file.
-
-**Implementation:** `_prompt_dev_password()` in `views/desktop/app.py`. `self._dev_unlocked` initialized `False` at startup. `_open_dev_panel()` checks it before calling `_open_dev_panel_inner()`.
-
----
-
-### ✅ DONE — Story Mode (DEV panel button)
-
-A **Story Mode** toggle is available in the DEV panel (F4 or DEV button in header). When active:
-- The DM opens a scene in a small village populated entirely by women, starting with the character deciding what to do next.
-- All D&D game mechanics are suspended: no `[COMBAT:]`, `[CHECK:]`, or `[XP:]` events are processed — pure narrative only.
-- A gold **◆ STORY MODE** badge appears in the header.
-- The player types responses normally; the DM narrates back without triggering any game systems.
-- Clicking **Exit Story Mode** in the DEV panel restores normal play.
-
-**Implementation:** `self._story_mode` flag on `GameApp`. `_handle_dm_response` skips all event processing when `True`. `_enter_story_mode()` sets the flag, shows the header badge, and sends the opening prompt to the DM. `_exit_story_mode()` clears flag and badge.
-
----
-
-### ✅ DONE — DM Adventure Structure
-
-**Context from DMG research:** The current DM has no concept of story arc — it narrates indefinitely with no structure. The DMG defines adventures as having: a hook → rising tension → climax → resolution.
-
-**Plan:**
-- Give the DM a structured adventure outline at session start (hook + antagonist + 3 escalating beats + climax goal).
-- The DM should track which beat it's on and escalate toward the climax.
-- Introduce a named antagonist early (villain with a plan already in motion).
-- Balance the three pillars: combat, exploration (discovery/mystery), social (named NPCs).
-- Adventures should feel like a story with a beginning, middle, and end — not an infinite sandbox.
-
-**Implementation (complete):**
-- `models/adventure.py` — 8 adventure templates (town, wilderness, dungeon, urban, coastal). `generate_adventure(char)` picks one randomly. `advance_beat(adventure)` advances `current_beat` and returns XP. `adventure_prompt_block(adventure)` returns the system prompt section.
-- `session["adventure"]` — stored on session dict. Fields: `title, setting, hook, antagonist {name, role, motivation, plan}, beats [str×3], climax, resolution, current_beat (0–5), beat_xp [150,300,500], climax_xp 800`.
-- `models/dm.py` — `_build_system_prompt(character, session=None)` now injects `adventure_prompt_block` after the enemy list. Parses three new tags:
-  - `[BEAT]` → `beat_complete` event — advance beat, award XP (150/300/500)
-  - `[CLIMAX]` → `climax_reached` event — display final confrontation header
-  - `[BREAK]` → `break_suggested` event — display session break banner in narration
-- `controllers/game_controller.py` — `start_adventure(session, char)` and `advance_beat(session)` public API.
-- `views/desktop/app.py` — `start_adventure()` called in `_launch_new_adventure`. `_advance_beat()` and `_show_break_point()` methods. Break point banner is embedded directly in the narration Text widget.
-
----
-
-### ✅ DONE — Natural Conversation System (Roadmap Item 2)
-
-Player can ask the DM questions mid-scene and receive the full D&D roll experience.
-
-- **`models/dm.py` — `_build_knowledge_checks_block(character)`** — injected into every system prompt. Tells the DM: when no roll is needed (common knowledge, already established this session, obvious observation) vs when to call for one (obscure lore, reading a creature under pressure, hidden details, deciphering symbols). Skill→topic mapping (Arcana→magic, History→kingdoms, Perception→movement/distance, etc.). DC calibration scaled by character level. Natural phrasing examples ("Give me an Arcana check" ✓, "A check is required" ✗). Five-tier result quality scale: nat-20 = vivid extra detail, solid success (margin ≥+5) = clear complete info, bare success (margin 0–4) = gist only, bare failure (margin −1 to −4) = vague/uncertain, nat-1 = confidently wrong (no signal to the player).
-- **`models/dm.py` — passive scores** — `Passive Perception`, `Passive Investigation`, `Passive Insight` computed from ability mods + proficiency and injected into the character block. Rule 12 tells the DM to use these for automatic awareness during scene descriptions without ever saying "passive check."
-- **`views/desktop/app.py` — `_handle_skill_check`** — now sends `d20=N, total=N, DC=N, margin=+/-N` plus the matching tier label (CRITICAL SUCCESS / SOLID SUCCESS / BARE SUCCESS / BARE FAILURE / CRITICAL FAILURE) so the DM can apply the exact quality tier from the knowledge checks block.
-- **`views/desktop/app.py` — placeholder text** — input field shows "What do you do? You can also ask questions." when empty and unfocused. `_on_input_focus_in` / `_on_input_focus_out` handlers. Placeholder value guarded in `_send_action` so it can't be submitted.
-
----
-
-### ✅ DONE — Character Schema Enforcement (Roadmap Item 3)
-
-Every character loaded from disk is migrated to the current schema and validated before the game starts.
-
-- **`models/character.py` — `migrate_character(char)`** — walks every key in `empty_character()` and fills any gap in a loaded save, including nested dicts (abilities, hp, spellcasting slots 1–9, currency, etc.). Safe to run on any save regardless of age — only fills, never overwrites.
-- **`models/character.py` — `validate_character(char)`** — raises `ValueError` naming the character and the exact bad field. Checks: `hp` is a dict with int values and `max ≥ 1`; all six abilities are ints; `level` is 1–20; `experience ≥ 0`; `hit_dice.total ≥ 1`; `spellcasting.enabled` is a bool; all list fields are actually lists.
-- **`models/character.py` — `load_character()`** — now calls `migrate_character` then `validate_character` on every load. Old manual `setdefault` calls removed; `migrate_character` covers them.
-- **`views/desktop/character_builder/character_builder_app.py`** — spellcasting save now explicitly includes `"spells_prepared": []` so the full schema is preserved instead of silently dropping the field.
-- **Audit result:** Zero crash risks found. All fields accessed by game code are present in `empty_character()`. All direct bracket accesses (`char["hp"]`, `char["class"]`, etc.) are safe. Builder correctly populates all required fields.
-
----
-
-### ✅ DONE — D&D Beyond Character Import (Roadmap Item 4)
-
-- **`views/desktop/character_builder/ddb_import.py` — `SKILL_MAP` fix** — all 18 skill values changed from lowercase_underscore (`"acrobatics"`, `"sleight_of_hand"`) to Title Case (`"Acrobatics"`, `"Sleight of Hand"`) to match `ALL_SKILLS` in `dnd_data.py` and the rest of the game's `skill_proficiencies` format. Without this fix, imported characters silently failed all skill proficiency checks.
-- **`views/desktop/app.py` — import UI** — "⬇ DDB Import" button added to the character select row (alongside New Character and Delete). Clicking opens a centered `Toplevel` dialog with a URL/ID field, a masked CobaltSession token field (for private characters), status label, and Import/Cancel buttons. Import runs in a daemon thread: `import_from_ddb()` → `migrate_character()` → `validate_character()` → `save_character()`, then the character list refreshes automatically. Success message shown for 1.4 seconds before the dialog closes.
-- **`models/character.py`** — `migrate_character` and `validate_character` imported into `app.py` and wired into the import pipeline so every DDB import is schema-enforced on save.
-
----
-
-### ✅ DONE — Comprehensive Test Suite (Roadmap Item 5)
-
-376 tests total (87 existing companion tests + 289 new). All pass. Run with: `python -m pytest tests/ -q`
-
-**New test files:**
-- `tests/conftest.py` — central `sys.path` setup so no per-file boilerplate needed
-- `tests/test_dice.py` — `roll`, `roll_dice` (notation parsing, bounds), `d20_check` (advantage/disadvantage, nat20/nat1), `critical_damage` (doubled dice), `hit_die` (minimum 1 guarantee), `death_save`, `initiative`
-- `tests/test_character.py` — modifier math, modifier_str, proficiency_bonus by level, `skill_bonus` (no prof / proficient / expertise / override / invalid), `saving_throw_bonus`, `apply_damage` (temp absorption, bleedthrough, floor-zero), `apply_healing` (cap), `add_temp_hp` (keep higher), `is_unconscious`, spell slot use/exhaust/restore, `short_rest` (con mod, min heal, too-many-dice guard), `long_rest` (HP restore, temp clear, condition clear, death save reset, hit dice recovery), `migrate_character` (fills gaps, idempotent, non-destructive), `validate_character` (all error paths, error message includes character name)
-- `tests/test_game_state.py` — `empty_session`, `apply_damage` (temp absorption, floor-zero, zero-damage noop), `apply_healing` (cap), spell slot use/restore by level, `long_rest` / `short_rest`, `start_combat` (initiative sort, in_combat flag, round=1, conditions init), `end_combat`, `advance_turn` (wrap + round increment), `current_combatant`, `apply_combat_damage` / `apply_combat_healing`, `add_condition` / `remove_condition` (dedup), `living_combatants`, `enemies_alive` (companion not counted, player not counted)
-- `tests/test_combat.py` — `build_enemy`, `resolve_attack` (nat20 hit, nat1 miss, hit above AC, miss below AC, pre_damage, overkill, result shape, unknown target), `player_attack` (weapon not found, valid hit), `enemy_attack` (valid, not found, no attacks), `handle_death_save` (all 6 outcomes), `xp_from_combat` (dead enemies only, player excluded, multiple, empty), `combat_summary`
-- `tests/test_progression.py` — `level_from_xp` (all 20 thresholds), `xp_for_level`, `xp_to_next_level`, `is_asi_level` (Fighter has level 6, standard classes, unknown), `get_subclass_trigger` (all known classes, unknown defaults 3), `current_max_uses` (fixed int, level-based, cha_mod min-1, int_mod, 5x_level, scaling override, unknown feature/class), `recharges_on_short_rest` (short/long/short_rest_at threshold), `feature_charges_gained_at`
-- `tests/test_adventure.py` — `generate_adventure` (required keys, beat=0, nonempty beats, XP list, climax_xp, antagonist keys, non-deterministic), `advance_beat` (increments, positive XP, capped at 4, repeated noop, full arc), `adventure_prompt_block` (None → "", title/antagonist in block, stage labels for all beats, [BEAT]/[CLIMAX]/[BREAK] instructions present)
-- `tests/test_dm.py` — all 9 tag types: `[CHECK:]` (skill, dc, case-insensitive, multi-word skill), `[COMBAT:]` (count, multiple enemies, no-count default, latin-x), `[SCENE:]`, `[XP:]`, `[BEAT]` / `[CLIMAX]` / `[BREAK]` (case-insensitive), `[COMPANION:]`, `[ACTION:]` (attack/mode, spell/slot, feature, dodge/dash/disengage/hide), `[BONUS:]` (attack, feature); narration cleaning (tags stripped, excessive newlines collapsed, all types together)
-- `tests/test_integration.py` — full combat round (kill enemy → XP), player miss (enemy alive), crit (doubled dice), death save arc (stabilize / die / nat1 → dead / nat20 revive), full adventure beat sequence, beat XP → level-up threshold, schema round-trip (`migrate_character` + `validate_character` on sparse char)
-
-**Bug found and fixed by tests:** `[ACTION: dodge]` / `[ACTION: dash]` / `[ACTION: disengage]` / `[ACTION: hide]` crashed with `ValueError` in `dm.py:_parse_events` — `if "=" in part` guard was in the wrong position in the dict comprehension, running after the inner for-loop destructuring instead of before. Same fix applied to `[BONUS:]` parser. (Bug would have silently crashed any combat turn where the DM chose a non-attack action.)
-
----
-
-### ✅ DONE — In-Game Economy, Magic Items, Feats, and Spell Learning
-
-Four gaps closed to make the game mechanically complete:
-
-**1. In-Game Economy (gold + loot)**
-- `models/character.py` — `currency` and `magic_items` / `magic_weapon_bonus` / `magic_armor_bonus` / `feats` added to `empty_character()` schema; `migrate_character()` fills these on any old save.
-- `models/dm.py` — Two new DM tags: `[GOLD: N]` (award N gp) and `[ITEM: name, slot=weapon|armor|misc, bonus=N]`. Added to `tag_rules` in the system prompt and parsed in `_parse_events`. Clean regex updated to strip them from displayed narration.
-- `controllers/game_controller.py` — `process_gold_award(char, amount)` and `process_item_award(char, name, slot, bonus)` — apply bonuses immediately and return updated values.
-- `views/desktop/app.py` — Events handled in `_handle_dm_response`: shows inline system messages ("── 50 gp added (Total: 50 gp) ──") and saves character automatically. New INVENTORY sidebar section shows coin purse (pp/gp/sp/cp) and magic items list.
-
-**2. Magic Items Affect Combat**
-- `models/combat.py:player_attack()` — reads `char["magic_weapon_bonus"]` and adds it to both the attack roll and damage notation (shown as "1d8+1" for a +1 weapon).
-- `views/desktop/app.py:_update_sidebar()` — AC display adds `char["magic_armor_bonus"]` so the sidebar reflects the true AC with magic armor equipped.
-
-**3. Feats at ASI Levels**
-- `views/desktop/app.py:_step_asi()` — Level-up ASI step now has three radio options: "+2 to one ability", "+1 to two abilities", "Take a Feat". Selecting feat shows a scrollable listbox of 30 PHB feats with a one-line description area below (updated on selection). Confirming appends feat name to `char["feats"]`. Tough feat applies its HP bonus immediately (2 HP × level, retroactive).
-- Feat list defined inline in `_step_asi()`: Alert, Athlete, Actor, Charger, Crossbow Expert, Defensive Duelist, Dual Wielder, Dungeon Delver, Durable, Great Weapon Master, Healer, Inspiring Leader, Lucky, Mage Slayer, Magic Initiate, Martial Adept, Mobile, Observant, Polearm Master, Resilient, Savage Attacker, Sentinel, Sharpshooter, Shield Master, Skilled, Tavern Brawler, Tough, War Caster, Weapon Master.
-- `models/dm.py` — character block now includes "Feats: ..." and "Magic Items: ..." lines when non-empty, so the DM knows what the player has.
-
-**4. Spell Learning at Level-Up**
-- `views/desktop/app.py:_step_spells()` — Replaced the redirect stub with a real spell picker:
-  - Prepare classes (Cleric, Druid, Paladin, Artificer): shown an informational message only ("prepares from full list each long rest").
-  - Known classes (Bard, Ranger, Sorcerer, Warlock): can pick 1 new spell from accessible spell levels not already known.
-  - Wizard: can pick 2 new spells.
-  - Dynamically imports from `character_builder/spells.py` (CANTRIPS, SPELLS dicts). Filters out already-known spells. Shows "[Lv3] Fireball" style labels. Multi-select Listbox capped at N picks; confirms into `sc["spells_known"]`.
-
----
-
-### ✅ DONE — Game Mechanics Audit (Roadmap Item 8)
-
-Full audit of `dice.py`, `character.py`, `combat.py`, `progression.py` against D&D 5e SRD. Four bugs found and fixed. 3 new tests added (376 total).
-
-**Findings and fixes:**
-
-- ✅ `dice.py` — all functions correct: d20 advantage/disadvantage, nat20/nat1, critical damage (double dice count), death save outcomes, initiative.
-- ✅ `character.py` modifiers, proficiency bonus, skill/save bonuses — all correct.
-- ✅ `combat.py` — attack resolution (nat20 hit, nat1 miss, tie beats AC), crit delegation, death saves, XP from dead enemies only — all correct.
-- ❌ **FIXED — Level 11 XP threshold**: `progression.py` had `83000`; SRD value is **85,000**. Characters were reaching level 11 two thousand XP early.
-- ❌ **FIXED — Barbarian Rage scaling** (`progression.py`): old `{9: 3, 12: 3, 17: 4, 20: 6}` was wrong (wrong trigger levels, missing the 5-uses tier). Correct SRD progression: `{3: 3, 6: 4, 12: 5, 17: 6, 20: 999}` (999 = unlimited at level 20). The `current_max_uses` function applies scaling in sorted key order, so this fully implements the SRD table: 2 uses (Lv1-2) → 3 (Lv3-5) → 4 (Lv6-11) → 5 (Lv12-16) → 6 (Lv17-19) → unlimited (Lv20).
-- ⚠️ **FIXED — Long rest hit dice recovery** (`character.py`): used `total // 2` (floor) instead of ceil. A character with 5 total hit dice (levels 5, 7, 9 etc.) would recover 2 dice instead of the correct 3. Fixed to `(total + 1) // 2`.
-- 💡 **FIXED — Warlock Pact Magic short rest recharge** (`character.py`): `short_rest()` now calls `restore_spell_slots(char)` when `char["class"] == "Warlock"`. Previously Warlocks never recovered spell slots on a short rest, effectively breaking the class at mid/high levels.
-- ⚠️ NOT FIXED — Prone condition grants advantage to melee and ranged (SRD: disadvantage to ranged). Intentional simplification for a text-based game where attack type is not tracked.
-- 💡 NOT FIXED — Enemy saving throws use a raw d20 with no ability modifier. Tracked for future improvement but out of scope for this pass.
-
----
-
-### ✅ DONE — QA Validation Pass (Roadmap Item 6)
-
-373 tests, all passing in 0.5 s. Repo clean. Everything committed and pushed before starting items 7–9.
-
----
-
-### ✅ DONE — Main Menu Redesign (Roadmap Item 7)
-
-Replaced the floating `tk.Toplevel` startup dialog with a full-screen inline `tk.Frame` that covers the main window. Key changes in `views/desktop/app.py`:
-
-- `_startup_dialog()` now creates `d = tk.Frame(self.root, bg=BG)` and places it full-screen with `d.place(relx=0, rely=0, relwidth=1, relheight=1)`. The frame is stored as `self._startup_frame` and destroyed when setup completes.
-- A centered 440-wide content panel is built inside `d` using a grid with column/row weights.
-- All `_show_*_page(d)` methods are unchanged — `d` is now the inline Frame (not a Toplevel) and all page navigation still works via the same `d` reference.
-- `grab_set()`, `d.title()`, `d.geometry()`, `d.resizable()` removed (not applicable to Frames).
-- All `messagebox.askyesno(..., parent=d)` calls changed to `parent=self.root` (messageboxes require a Toplevel-level parent).
-- DDB import dialog centering was already using `parent.winfo_x()` — changed to pass `self.root` instead of `d` as parent.
-- `_launch_new_adventure()`: `d.destroy()` changed to `self._startup_frame.destroy()`.
-
----
-
-### ✅ DONE — Adventure Length Presets (Roadmap Item 9)
-
-Three adventure tiers selectable before each game. Full implementation across models, controller, and UI:
-
-**`models/adventure.py`:**
-- `PRESETS` dict: `{"One Shot": {"beats": 1, "estimate": "~1–2h"}, "Quest": {"beats": 3, "estimate": "~3–4h"}, "Epic": {"beats": 5, "estimate": "~5–8h"}}`
-- `generate_adventure(char, preset="Quest")` — backward-compatible new signature; `preset` stored in returned adventure dict
-- `_build_beats(template, count)` — generates beat list of the right length:
-  - One Shot: uses template's climax text as the single beat (goes straight to the confrontation)
-  - Quest: 3 template beats unchanged
-  - Epic: 5 beats — template beat 1, then 2 synthesized mid-act beats referencing the antagonist, then template beats 2 and 3
-- `_beat_xp_for_preset(preset)` — One Shot `[600]`, Quest `[150, 300, 500]`, Epic `[100, 150, 200, 300, 450]`
-- `_stage_labels(n_story_beats)` — dynamic stage labels (replaces hardcoded 6-entry list); builds HOOK + N ACT labels + CLIMAX + RESOLUTION; correctly names the final act "crisis point" and the one-shot single beat "FINAL ACT"
-- `advance_beat(adventure)` — now caps at `beat > n_story_beats` (dynamic, based on actual beat list length) instead of hardcoded `beat >= 4`
-- `adventure_prompt_block` — scope line injected after the title for One Shot and Epic presets:
-  - One Shot: "SCOPE: One-shot — deliver a complete, satisfying confrontation in a single compact session. Reach the climax briskly; do not pad."
-  - Epic: "SCOPE: Epic campaign — let each act breathe fully. Build subplots, deepen NPC relationships, and escalate tension gradually across multiple sessions."
-
-**`controllers/game_controller.py`:**
-- `start_adventure(session, char, preset="Quest")` — threads preset through to `generate_adventure`
-
-**`views/desktop/app.py`:**
-- New `_show_preset_page(d, back_fn=None)` method — shown after character selection:
-  - Three cards: Epic (~5–8h), Quest (~3–4h, highlighted gold by default), One Shot (~1–2h)
-  - Clicking a card selects it (ACCENT highlight); Begin → calls `_launch_new_adventure(d, preset)`
-  - Back button uses `back_fn` so both New Adventure and Next Adventure flows return to the right page
-- `_show_character_page`: `begin()` now routes to `_show_preset_page(d, back_fn=lambda: self._show_character_page(d))`
-- `_show_next_adventure_page`: same routing to preset page with its own back_fn
-- `_launch_new_adventure(d, preset="Quest")` — passes preset to `start_adventure()`
-
-All 373 tests still pass after these changes (the new signature is backward-compatible, Quest XP values unchanged).
-
----
-
-### NEXT NEXT — Character Progression (Phase 2 & 3)
-
-Build full D&D 5e character progression. Execute in three committed phases so context limits don't lose work.
-
-#### Phase 1 — Core data + level-up flow (do this first)
-- **New file `models/progression.py`** — all progression data in one place:
-  - `XP_THRESHOLDS` list (levels 1–20): `[0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 83000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000]`
-  - `ASI_LEVELS` dict — per-class levels that grant ASI/Feat (Fighter gets extras at 6, 14)
-  - `SUBCLASS_TRIGGER_LEVELS` — level at which each class picks a subclass (most=3, Cleric/Sorcerer/Warlock=1, Druid/Wizard=2)
-  - `CLASS_FEATURE_CHARGES` — structured dict: feature name → `{max_uses, recharge: "short_rest"|"long_rest", desc}`
-    - Fighter: Second Wind (1, short), Action Surge (1, short), Indomitable (1→3, long)
-    - Rogue: Cunning Action (passive), Uncanny Dodge (passive), Evasion (passive)
-    - Cleric: Channel Divinity (1→3, short)
-    - Bard: Bardic Inspiration (CHA mod, long→short at Lv5)
-    - Druid: Wild Shape (2, short)
-    - Monk: Ki Points (level, short)
-    - Paladin: Lay on Hands (5×level pool, long), Divine Smite (passive/spell slots)
-    - Ranger: (mostly passive)
-    - Barbarian: Rage (2→∞, long)
-    - Warlock: Eldritch Invocations (passive), spell slots (short)
-    - Wizard: Arcane Recovery (1/2 level slots, long)
-    - Sorcerer: Sorcery Points (level, long)
-  - `level_from_xp(xp)` → int
-  - `xp_for_level(level)` → int (XP needed to reach that level)
-  - `xp_to_next_level(xp, current_level)` → int (XP remaining)
-  - `is_asi_level(cls, level)` → bool
-  - `get_subclass_trigger(cls)` → int
-  - `features_gained_at(cls, level)` → list of feature names (from CLASS_FEATURES in dnd_data.py)
-  - `feature_charges_gained_at(cls, level)` → list of charge dicts for features newly gained
-
-- **`models/character.py`** — add to `empty_character()`:
-  - `"feature_uses": {}` — `{feature_name: {"current": N, "max": N, "recharge": "short_rest"|"long_rest"}}`
-  - `"inspiration": False`
-
-- **`models/dm.py`** — add `[XP: N]` tag parsing in `_parse_events`. Returns event `{"type": "xp_award", "amount": N}`.
-
-- **`controllers/game_controller.py`** — add:
-  - `process_xp_award(session, char, amount)` → `{"xp_gained": int, "total_xp": int, "leveled_up": bool, "new_level": int}`
-  - `process_short_rest(session, char, dice_spent)` → `{"hp_recovered": int, "features_recharged": list}`
-  - `process_long_rest(session, char)` → `{"hp_recovered": int, "slots_recovered": dict, "features_recharged": list}`
-
-- **`views/desktop/app.py`** — add level-up dialog (multi-step modal Toplevel):
-  - Step 1: "You reached Level N!" — display all new class features as readable text
-  - Step 2: HP roll — show the hit die, Roll button (uses D20RollerWindow pattern but for hit die), or "Take Average" button. Apply result.
-  - Step 3: Subclass picker — only shown if `char["level"]` == `get_subclass_trigger(cls)` AND `char["subclass"]` is empty. Reuse `_pick_from_list` pattern.
-  - Step 4: ASI/Feat — only shown if `is_asi_level(cls, level)`. Two options: "+2 to one ability" (dropdown) or "+1/+1 to two abilities" (two dropdowns). Feat option: "Choose Feat" (stub — show coming soon).
-  - Step 5: Spell selection — only shown for caster classes. Show new slot levels unlocked, let player pick new spells/cantrips if class is Bard/Ranger/Sorcerer/Warlock (spells known). Wizard gets "add 2 spells to spellbook." Skip for Cleric/Druid (prepare from full list).
-  - Handle XP award event from DM in `_handle_dm_response`
-
-→ **Commit after Phase 1**
-
-#### Phase 2 — Sidebar upgrades + rest UI
-- **XP bar in sidebar** — below vitals: "XP: 450 / 900 (Lv 2→3)" with a gold progress bar
-- **Feature charges in sidebar** — new "FEATURES" section below ATTACKS showing each limited-use feature as `[●●○] Action Surge` style with current/max pips. Clickable to use (with confirmation). Recharge on rest.
-- **Inspiration** — small toggle button in vitals row. Gold when active, grey when not.
-- **Short Rest / Long Rest buttons** in sidebar — Short rest opens a hit-dice spending dialog (spinbox for dice to spend, shows expected HP recovery, Roll or Take Average). Long rest is one-click with confirmation.
-- `_update_sidebar` already calls `_refresh_attacks` — also add `_refresh_features()`
-
-→ **Commit after Phase 2**
-
-#### Phase 3 — Test harness (DEV panel)
-- **Ctrl+D** opens a floating DEV panel (Toplevel, no grab_set so game stays interactive):
-  - "Award XP" — text entry + button (calls `process_xp_award`)
-  - Quick jump buttons: "→ Lv 2" through "→ Lv 10" — sets XP to exact threshold and triggers level-up dialog
-  - "Short Rest" / "Long Rest" instant buttons
-  - "Set HP" — spinbox to set current HP to any value (for testing death saves)
-  - "Add Condition" — dropdown of all conditions
-  - "Start Combat (test)" — spawns 1 Goblin immediately for combat testing
-- Panel stays open across multiple uses so you can level up 1→10 repeatedly without reopening it
-
-→ **Commit after Phase 3**
-
----
-
-### ✅ DONE — Actions Reference Panel + DM-Driven Action Parsing
-
-Replace the current compact attack/feature text block above the combat input bar with an "⚔ Actions" button that opens a read-only reference panel. All mechanical actions are still triggered through the player's typed dialogue — the DM parses natural language to determine what action and bonus action are being used.
-
-#### Reference panel (`_open_action_panel()`)
-A `Toplevel` modal with two sections — ACTIONS and BONUS ACTIONS. Nothing is clickable; it is a quick-reference card only.
-
-- **ACTIONS:** weapon attacks (+ versatile/thrown variants), "✦ Cast a Spell" (if spellcasting enabled + slots available), Dash, Dodge, Disengage, Hide
-- **BONUS ACTIONS:** off-hand attack (if dual-wielding light melee), class features marked as bonus actions (Rage, Second Wind, Wild Shape, Bardic Inspiration, Ki Points, Channel Divinity, etc.)
-- Unavailable entries are greyed out. Hovering shows a small floating tooltip explaining why: e.g. "Stunned — cannot take actions", "0 / 2 charges remaining", "No castable combat spells available"
-- Tooltip implementation: `Toplevel(overrideredirect=True)` shown on `<Enter>`, hidden on `<Leave>`
-
-#### Input row change
-Remove the compact reference block (the two-line `ref` frame in `_build_combat_input` that lists weapons and feature charges as text). Replace with:
-
-`[⚔ Actions]  [text entry — expands to fill]  [✦ Spells]  [→]`
-
-The "⚔ Actions" button sits on the left edge; everything else stays on the right.
-
-#### DM-driven action parsing (core change)
-Extend `models/dm.py` — `_build_system_prompt()` gains a combat block when `session.get("in_combat")` is True:
-
-```
-COMBAT ACTION TAGS — Embed the appropriate tag on its own line when the player takes an action:
-  [ACTION: attack=ExactWeaponName]
-  [ACTION: attack=ExactWeaponName, mode=twohanded]
-  [ACTION: attack=ExactWeaponName, mode=thrown]
-  [ACTION: spell=ExactSpellName, slot=N]   ← pick lowest available slot if player did not specify
-  [ACTION: feature=ExactFeatureName]
-  [ACTION: dodge]  [ACTION: dash]  [ACTION: disengage]  [ACTION: hide]
-
-  Bonus actions:
-  [BONUS: attack=ExactWeaponName]
-  [BONUS: feature=ExactFeatureName]
-
-Available weapons: {live list injected at call time}
-Available spells:  {live list with slot counts injected at call time}
-Available features: {live list with charge counts injected at call time}
-```
-
-Extend `_parse_events()` in `dm.py` to extract `action_taken` and `bonus_action_taken` from these tags and return them as events.
-
-#### `_send_combat_action()` new flow
-1. Build enriched context string (available weapons/spells/features) and send player text to DM
-2. Display DM narration
-3. Parse returned events for `action_taken` / `bonus_action_taken`
-4. Dispatch:
-   - `attack=X` → `_do_player_attack(X, mode=...)` (d20 + damage roll flow)
-   - `spell=X, slot=N` → consume slot then `_do_player_spell(X, slot=N, target)` flow
-   - `feature=X` → `_apply_combat_feature(X)`
-   - `dodge/dash/disengage/hide` → end turn (DM already narrated it)
-   - `[BONUS: ...]` → process before or after main action depending on type
-5. Fallback: if no action tags in DM response, fall back to current client-side regex matching (`_find_weapon_in_text`, `_detect_feature_in_text`); if still no match, treat as narrative turn and end turn
-
-#### Slot targeting for spells
-If `[ACTION: spell=X]` arrives without a slot number and the spell requires a slot, present the slot-level picker (same one used in `_open_spell_picker`) before resolving the spell. For cantrips, no picker needed.
-
-#### Files to change
-- `models/dm.py` — extend `_build_system_prompt()` (combat block), extend `_parse_events()`
-- `views/desktop/app.py` — remove `ref` frame from `_build_combat_input`, add Actions button, new `_open_action_panel()` method, update `_send_combat_action()` dispatch logic
-
----
-
-## Project Roadmap
-
-### ✅ Stage 1 — Game Mechanics (COMPLETE)
-
-
-All core D&D 5e mechanics implemented and tested (376 tests passing):
-- Turn-based combat with conditions, crits, death saves
-- Full character progression: XP, level-up dialog (features → HP → subclass → ASI/feat → spells)
-- 30 PHB feats at ASI levels; spell learning for all caster archetypes
-- In-game economy: gold awards, magic items, mechanical bonuses applied at combat resolution
-- DM-driven action parsing via structured tags
-- 8 adventure templates, 3 length presets (One Shot / Quest / Epic)
-- Companion system: 10 classes, combat AI, spell slots, death saves
-- D&D Beyond character import
-- Passive perception/investigation/insight in DM system prompt
-- Natural knowledge check system with 5-tier result quality scale
-
-### ✅ Stage 2 — Sidebar & Rest UI (COMPLETE)
-
-- XP progress bar in VITALS section
-- Feature charge display with current/max counts; clickable to use
-- Inspiration toggle
-- Short Rest button (hit-dice spending with animated die rolls)
-- Long Rest button (one-click confirm, restores HP/slots/features)
-
-### ✅ Stage 3 — DEV Panel (COMPLETE)
-
-Floating panel (F4 / DEV button in header):
-- Award XP; level jump to Lv2–Lv10
-- Set HP (spinbox)
-- Add condition (dropdown)
-- Spawn test combat
-- Short/Long Rest instant buttons
-
----
-
-### ✅ Stage 4 — Electron + Flask Migration (COMPLETE)
-
-Flask backend + HTML/JS/CSS browser frontend + Electron shell. Tkinter desktop app still runs in parallel.
-
-**Design decisions locked in:**
-- Ollama: download on first run (models are 4–8 GB — not bundled)
-- Migration strategy: Tkinter kept alive until web UI reaches full parity
-- Distribution target: GitHub releases → itch.io → Steam
-
-#### ✅ 4a — Flask Backend (`views/web/api.py`)
-24 routes covering every game action. In-memory state dict `_state = {"session", "character", "dm"}`. Key routes:
-- `GET /` → renders `index.html`; `GET /api/ping` → health check
-- `POST /api/game/new|next|resume|save`, `GET /api/game/state`
-- `POST /api/action` — calls `dm.respond()`, returns narration + events (blocks ~5–30s)
-- `POST /api/roll`, `/api/roll/damage`, `/api/roll/initiative`, `/api/roll/hit-die`
-- `POST /api/combat/setup|attack|spell|death-save|end-turn|end`
-- `POST /api/skill-check`, `/api/rest/short|long`, `/api/adventure/beat`
-- `POST /api/award/xp|gold|item`, `POST /api/levelup`
-- `GET /api/characters`, `DELETE /api/characters/<name>`, `GET /api/sessions`
-
-**Dice roll flow:** client calls `/api/roll` → gets pre-rolled value → shows animation → passes value back to action endpoint (server controls randomness).
-
-#### ✅ 4b — HTML/CSS/JS Frontend (`views/web/static/`, `views/web/templates/`)
-Vanilla JS, no framework, no build step. Scene-based architecture.
-
-- `api.js` — `API.get/post/del` fetch wrappers; all throw `Error(d.error)` on `{ok: false}`
-- `dice.js` — `DiceRoller.show(value, label)` animated modal (1.5s spin → reveal); `DiceRoller.roll(sides)` fetches server value then animates; `DiceRoller.rollInitiative()` returns total with DEX mod
-- `main.js` — `SceneManager` (calls `enter()`/`destroy()` on scene switch), `App.scene` global
-- `MainMenuScene` — New / Next / Resume cards
-- `CharacterSelectScene` — lists characters or sessions depending on mode
-- `PresetScene` — One Shot / Quest / Epic cards; calls `/api/game/new` or `/api/game/next`
-- `GameScene` — narration panel (DM/player/system/banner/error entry types), sidebar (HP bar, XP bar, feature charges, combat tracker, inventory), input area; handles all event types: `combat_start`, `skill_check`, `action_taken`, `xp_award`, `gold_award`, `item_award`, `beat_complete`, `climax_reached`, `break_suggested`, `scene_change`
-- `LevelUpScene` — multi-step modal: HP roll (animated or average), subclass picker, ASI/feat selector, spell learning; POSTs to `/api/levelup` on finish
-
-#### ✅ 4c — Electron Shell (`electron/`)
-- `main.js` — spawns `python run_server.py` (dev) or PyInstaller bundle (packaged); polls `/api/ping` every 500ms (30 retries); opens `BrowserWindow` once Flask responds; kills subprocess on `before-quit`; calls `ollama.initOllama()` on `ready-to-show` and injects a mode banner into the renderer
-- `ollama.js` — Ollama process lifecycle manager. On startup: if port healthy, assume GPU and stay out of the way. If process exists but port is dead (CUDA crash), kills all ollama processes and restarts via `ollama serve` with `CUDA_VISIBLE_DEVICES=-1` + `OLLAMA_NUM_GPU=0`. Every 30 s polls `/api/ps`; when models list is empty (model fully unloaded = zero disruption), attempts GPU restart. On GPU success, notifies renderer with a 5 s green toast. On GPU failure, returns to CPU with a 5-minute cooldown before next attempt. Banner colours: gold for CPU mode, red for down, green toast for GPU restore.
-- `package.json` — `electron ^28`, `electron-builder ^24`; NSIS installer on Windows, DMG on Mac; `extraResources` maps PyInstaller bundle to `resources/server/`
-
-#### Pending — 4d — Retire Tkinter
-- Delete `views/desktop/` once web UI has full feature parity and all routes are test-covered
-- Update `main.py` to launch Electron instead of `tk.Tk()`
+### ⏳ Stage 4d — Retire Tkinter ← DO THIS NEXT
+
+- [ ] **Port weapon variant attack selection to web** — fully implemented in `views/desktop/app.py:455–542` but absent from the web entirely:
+  - [ ] **Versatile weapons** (e.g. longsword): show both one-handed (1d8) and two-handed (1d10) attack buttons with correct damage dice
+  - [ ] **Thrown weapons** (e.g. handaxe): add thrown option with range label alongside the melee option
+  - [ ] **Dual wielding**: when 2+ light melee weapons are equipped, the second becomes an off-hand bonus action attack with no ability modifier on damage (PHB two-weapon fighting rule)
+  - [ ] Backend: add variant-splitting logic (port `_get_attack_options()` from `views/desktop/app.py`) — expose as `/api/combat/attack-options`
+  - [ ] Frontend: update attack chooser in `GameScene.js` to render variant buttons instead of flat weapon list
+- [ ] **Retire Tkinter**:
+  - [ ] Delete `views/desktop/` directory
+  - [ ] Update `main.py` to launch Electron instead of `tk.Tk()`
 
 ---
 
 ### Stage 5 — Visual Design Pass
 
-Full design pass after the Electron shell is running and all scenes are functional.
-
-- **Typography** — proper game font (e.g. Crimson Text or IM Fell for narrative, monospace for rolls)
-- **Color system** — expand beyond the 9 current constants; add surface elevation tokens (`--surface-0`, `--surface-1`, `--surface-2`) for card layering
-- **Narration panel** — parchment-style texture background; smooth auto-scroll; animated "DM is thinking…" typing indicator
-- **Sidebar** — collapsible sections; HP bar animates on damage/healing; magic item cards with rarity color border
-- **d20 roller** — CSS keyframe version with glow effect on nat-20; shake on nat-1
-- **Combat tracker** — highlight active combatant row with a pulse animation; dead enemies shown with strikethrough and reduced opacity
-- **Level-up dialog** — full-screen overlay with particle effect on level gain
-- **Responsive layout** — support window widths from 900px to 1920px
+- [ ] **Typography**: replace system fonts with game fonts (Crimson Text or IM Fell for narrative; monospace for rolls)
+- [ ] **Color system**: add surface elevation tokens (`--surface-0`, `--surface-1`, `--surface-2`) for card layering
+- [ ] **Narration panel**: parchment-style texture background; smooth auto-scroll; animated "DM is thinking…" typing indicator
+- [ ] **Sidebar**: collapsible sections; HP bar animates on damage/healing; magic item cards with rarity color border
+- [ ] **d20 roller**: CSS keyframe version with glow on nat-20; shake on nat-1
+- [ ] **Combat tracker**: highlight active combatant row with pulse animation; dead enemies shown with strikethrough and reduced opacity
+- [ ] **Level-up dialog**: full-screen overlay with particle effect on level gain
+- [ ] **Responsive layout**: support 900px–1920px window widths
 
 ---
 
 ### Stage 6 — Distribution
 
-Release pipeline once Stage 5 is complete.
-
 #### GitHub Releases (first)
-- Tag `v1.0.0`; `electron-builder` CI workflow produces `.exe` and `.dmg` artifacts automatically on push to `release/*` branches
-- Auto-updater via `electron-updater` reading GitHub Releases API
+- [ ] Tag `v1.0.0`; `electron-builder` CI workflow produces `.exe` and `.dmg` on push to `release/*` branches
+- [ ] Auto-updater via `electron-updater` reading GitHub Releases API
 
 #### itch.io (second)
-- Itch.io page with screenshots, trailer, and a "pay what you want" price
-- Butler CLI in CI to upload builds automatically on release tag
+- [ ] Store page with screenshots, trailer, pay-what-you-want pricing
+- [ ] Butler CLI in CI for automated uploads on release tag
 
-#### Steam (third — when ready)
-- Steamworks partner account; AppID configured
-- `SteamAPI_RunCallbacks()` on a 1-second interval in `main.js`
-- Steam Overlay: enable GPU acceleration in Electron (`--enable-gpu` launch flag)
-- Steam Cloud: Auto-Cloud configured for `data/sessions/` and `data/characters/` — no code changes needed
-- Steam Achievements: `Steamworks.js` / Greenworks bindings in `main.js`; achievement IDs defined in Steamworks partner portal
-- Steam Deck: verify input mapping; controller-friendly UI pass (larger hit targets, gamepad navigation)
+#### Steam (third — see "Steam — Technical Reference" section)
+- [ ] Steamworks partner account; AppID configured
+- [ ] `SteamAPI_RunCallbacks()` on 1-second interval in `electron/main.js`
+- [ ] Steam Overlay: enable GPU acceleration in Electron (`--enable-gpu` launch flag)
+- [ ] Steam Cloud: Auto-Cloud for `data/sessions/` and `data/characters/` — config only, no code changes needed
+- [ ] Steam Achievements: Steamworks.js / Greenworks bindings in `electron/main.js`; achievement IDs defined in Steamworks portal
+- [ ] Steam Deck: verify input mapping; controller-friendly UI pass (larger hit targets, gamepad navigation)
 
 ---
 
 ### Stage 7 — Content Expansion (post-launch)
 
-- **More adventure templates** — expand from 8 to 20+; add templates for specific settings (seafaring, underdark, planar travel, heist)
-- **More enemies** — expand the 160-monster `enemies.py` roster; add legendary actions and lair actions for boss fights
-- **Multiclassing** — tracked in character schema already (`"multiclass": []`); need progression table, spell slot merging, and feature eligibility checks
-- **More races and classes** — Artificer, Blood Hunter; Aasimar, Githyanki, Fairy
-- **Crafting system** — components dropped by enemies; recipes unlock with Arcana/Smith proficiency
-- **World map** — persistent overworld between adventures; unlockable locations
-- **Mod support** — JSON-defined adventure templates, enemies, and items that users can drop into `data/`
+- [ ] **Adventure templates**: expand from 8 to 20+; add seafaring, underdark, planar travel, heist themes
+- [ ] **Enemy roster**: expand beyond 160 monsters; add legendary actions and lair actions for boss fights
+- [ ] **Multiclassing**: add `"multiclass": []` to `empty_character()`; progression table; spell slot merging; feature eligibility checks
+- [ ] **New races**: Aasimar, Githyanki, Fairy
+- [ ] **New classes**: Artificer, Blood Hunter
+- [ ] **Crafting system**: components dropped by enemies; recipes unlock with Arcana/Smith proficiency
+- [ ] **World map**: persistent overworld between adventures; unlockable locations
+- [ ] **Mod support**: JSON-defined adventure templates, enemies, and items users can drop into `data/`
 
 ---
 
-### Stage 8 — Code Audit & Cleanup
+### Stage 8 — Code Audit & Cleanup (post-launch)
 
-A full pass over the codebase after Stage 7 content work settles. Goal: delete dead code, improve efficiency, and keep the repo clean.
-
-- **Delete legacy files** — any root-level or duplicate files that survived prior cleanup passes
-- **Rewrite inefficient code** — audit all models and controllers for O(n²) loops, redundant recomputation, unnecessary data copies, or overly complex logic that can be simplified without changing behavior
-- **Consolidate duplication** — find repeated patterns across files (tag parsing, sidebar rendering, dialog scaffolding) and extract shared helpers where the abstraction pays for itself
-- **Trim dead imports** — remove any `import` statements that are no longer used
-- **Schema cleanup** — audit `empty_character()` for fields that are defined but never read anywhere in the codebase
-- **Test coverage gaps** — run coverage report and add tests for any untested branches in models/
-- **Dependency audit** — check `requirements.txt` (or equivalent) for packages that are installed but not imported
+- [ ] Delete legacy/duplicate root-level files that survived prior cleanup passes
+- [ ] Audit models and controllers for O(n²) loops and redundant recomputation
+- [ ] Consolidate repeated patterns (tag parsing, sidebar rendering, dialog scaffolding) into shared helpers
+- [ ] Remove unused imports across all files
+- [ ] Audit `empty_character()` for fields defined but never read anywhere in the codebase
+- [ ] Run coverage report; add tests for untested branches in `models/`
+- [ ] Audit `requirements.txt` for installed-but-unused packages
 
 ---
+
+### Known Technical Debt
+
+Intentional simplifications — not bugs, but known deviations from the SRD:
+
+- **Enemy saving throws** — use raw d20 with no ability modifier. Per-monster saves deferred to Stage 7 content pass.
+- **Prone condition** — grants advantage to all attackers. SRD: ranged attackers should have *disadvantage* vs prone targets. Deferred because attack type (melee vs ranged) is not tracked per attack.
+- **`multiclass` field** — Stage 7 item; `empty_character()` does not yet have this field even though Stage 7 documentation references it.
+
+---
+
+### ✅ Completed
+
+#### ✅ Stage 1 — Game Mechanics
+- ✅ Turn-based combat: conditions, crits, death saves, enemy AI
+- ✅ Character progression: XP awards, level-up dialog (features → HP roll → subclass → ASI/feat → spell learning)
+- ✅ 30 PHB feats at ASI levels; spell learning for all caster archetypes
+- ✅ In-game economy: `[GOLD: N]` and `[ITEM:]` DM tags; magic weapon/armor bonuses applied in combat
+- ✅ DM-driven action parsing via `[ACTION:]` and `[BONUS:]` tags; fallback client-side regex
+- ✅ 8 adventure templates; 3 length presets (One Shot / Quest / Epic)
+- ✅ Companion system: 10 templates, combat AI, spell slots, death saves
+- ✅ D&D Beyond character import (`ddb_import.py`)
+- ✅ Passive perception/investigation/insight; natural knowledge checks with 5-tier quality scale
+- ✅ ~160 SRD monsters (CR 0–30); 376-test suite, all passing
+
+#### ✅ Stage 2 — Sidebar & Rest UI
+- ✅ XP progress bar; feature charges (`[●●○]` style); Inspiration toggle
+- ✅ Short Rest (hit-dice spending dialog); Long Rest (one-click confirm)
+
+#### ✅ Stage 3 — DEV Panel
+- ✅ Password-gated (F4 / DEV button) — password: `0922`
+- ✅ Award XP; level jump Lv2–Lv10; set HP; add condition; spawn test combat; rest buttons
+
+#### ✅ Stage 4a — Flask Backend
+- ✅ 24+ API routes; SSE streaming; CUDA crash auto-recovery; `num_ctx` 4096 limit
+- ✅ `/api/ollama/mode`; story mode routes; DDB import route; Kokoro TTS narrator
+
+#### ✅ Stage 4b — HTML/JS/CSS Frontend
+- ✅ Scene-based vanilla JS; all 5 scenes; animated dice modal
+- ✅ Full sidebar (vitals, abilities, saves, skills, spellcasting, inventory, party, combat tracker)
+- ✅ DEV panel; Story Mode; Actions reference panel; companion join event; DDB import modal; CPU banner
+
+#### ✅ Stage 4c — Electron Shell
+- ✅ Flask subprocess lifecycle; `/api/ping` polling; Ollama GPU→CPU fallback; electron-builder config
+
+---
+
 
 ## Steam — Technical Reference
-
-Notes for when Steam distribution becomes relevant (Stage 6). Do not build any of this until Stage 5 is complete and the user explicitly asks.
-
-### What Steam actually requires
-- **`SteamAPI_RunCallbacks()` must be called at least once per second** — the only hard architectural constraint. In an Electron app this goes in the main process on a 1-second interval
-- **Steam Overlay** requires OpenGL or Direct3D rendering. Electron can support this; plain Tkinter and plain HTML cannot without GPU-accelerated rendering enabled
-- **Steam Cloud saves** — use Auto-Cloud (config file only, no code changes needed). Saves must be files on disk, not in the Windows registry. Current `data/sessions/` JSON layout is already correct; just configure the Auto-Cloud path in Steamworks
-- **Steam achievements** — call `SteamUserStats()->SetAchievement()` then `StoreStats()`. In Python via Steamworks flat C API using `ctypes`, or via the SteamworksPy compiled wrapper (DLL/SO — not pure Python)
-
-### Python + Steam integration options
-- **`ctypes` + flat C API** — Steamworks provides a special flat C API for language interop; Python can call it directly via `ctypes` without C++ bindings
-- **SteamworksPy** — compiled native extension (DLL on Windows), ships alongside a `steamworks.py` wrapper. Requires distributing compiled binaries
-- **Steamworks.js / Greenworks** — JavaScript bindings for Electron; the most natural fit once on the Electron path
-
-### Disk layout Steam expects
-- Save files: `%APPDATA%` or `%LOCALAPPDATA%\[GameName]\saves\` on Windows
-- Config: same parent folder as saves
-- Do not use the Windows registry for any game state
-
----
-
-## GitHub
-Repository: https://github.com/Smlcrp/dndgame
-Clone: `git clone https://github.com/Smlcrp/dndgame.git`
