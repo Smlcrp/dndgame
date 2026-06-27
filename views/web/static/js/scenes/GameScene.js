@@ -287,7 +287,7 @@ class GameScene {
   _appendPlayButton(entry, ttsPromise) {
     const btn = document.createElement('button');
     btn.className = 'narration-play-btn';
-    btn.textContent = '▶ Play';
+    btn.textContent = '▶';
     btn.disabled = true;
     let audio = null;
 
@@ -298,15 +298,15 @@ class GameScene {
       btn.onclick = () => {
         if (audio && !audio.paused) {
           audio.pause(); audio.currentTime = 0;
-          btn.textContent = '▶ Play'; btn.classList.remove('playing');
+          btn.textContent = '▶'; btn.classList.remove('playing');
           return;
         }
         audio = new Audio(url);
         audio.onended = () => {
-          btn.textContent = '▶ Play'; btn.classList.remove('playing'); audio = null;
+          btn.textContent = '▶'; btn.classList.remove('playing'); audio = null;
         };
         audio.play();
-        btn.textContent = '⏹ Stop'; btn.classList.add('playing');
+        btn.textContent = '⏹'; btn.classList.add('playing');
       };
     }).catch(() => btn.remove());
 
