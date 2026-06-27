@@ -489,8 +489,9 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
 
         Key settings:
           stream=False   — wait for the full response before returning
-          num_ctx=8192   — expand Ollama's context window beyond the default 2048 tokens
-                           (the system prompt alone is ~3000 tokens without this)
+          num_ctx=4096   — expand Ollama's context window beyond the default 2048 tokens
+                           (system prompt ~3000 tokens; 4096 fits 8 GB VRAM cleanly;
+                            8192 pushes the 12B model over the limit on init)
 
         Raises RuntimeError with a human-readable message on connection failure,
         timeout, HTTP error, or unexpected response shape.
@@ -501,7 +502,7 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
                     "model":    self.model,
                     "messages": messages,
                     "stream":   False,
-                    "options":  {"num_ctx": 8192},
+                    "options":  {"num_ctx": 4096},
                 }, timeout=120)
                 if not resp.ok:
                     body = ""
@@ -683,7 +684,7 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
                     "model":    self.model,
                     "messages": messages,
                     "stream":   False,
-                    "options":  {"num_ctx": 8192},
+                    "options":  {"num_ctx": 4096},
                 }, timeout=120)
 
                 if not resp.ok:
