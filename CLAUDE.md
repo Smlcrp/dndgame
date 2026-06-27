@@ -35,18 +35,14 @@ dndgame/
 │   ├── __init__.py
 │   └── game_controller.py
 │
+├── character_builder/        # D&D 5e data + DDB import (used by Flask backend)
+│   ├── dnd_data.py           # WEAPONS, CLASS_FEATURES, RACES, CLASSES — used by api.py + progression.py
+│   ├── spells.py             # Spell list data
+│   ├── ddb_import.py         # D&D Beyond scraper (import_from_ddb)
+│   ├── character_builder_app.py  # Standalone Tkinter character builder (optional tool)
+│   └── Launch Character Builder.bat
+│
 ├── views/
-│   ├── desktop/              # Tkinter desktop app (runs in parallel with web)
-│   │   ├── __init__.py
-│   │   ├── app.py
-│   │   ├── d20_roller.py
-│   │   ├── dice_roller.py
-│   │   └── character_builder/
-│   │       ├── character_builder_app.py
-│   │       ├── dnd_data.py
-│   │       ├── spells.py
-│   │       ├── ddb_import.py
-│   │       └── Launch Character Builder.bat
 │   └── web/                  # Flask + browser frontend (Stage 4)
 │       ├── __init__.py
 │       ├── api.py            # Flask app — 24 routes, JSON API, in-memory session state
@@ -119,10 +115,8 @@ process_death_save(session) -> {"outcome": str, "roll": int, "narrative": str}
 - `SKILLS` dict, HP/rest/spell slot helpers
 - Saves to `characters/<name>.json`
 
-### `Character Builder/character_builder_app.py`
-Complete GUI-driven Tkinter app. Launched via `python character_builder_app.py` or the .bat file.
-
-**Architecture:** Single `CharacterBuilderApp` class, no threads, `self.char` dict held directly. Module-level helpers `_btn()`, `_listbox()`, `_pick_from_list()`, `_pick_suggestion()`, `_weapon_proficient()`.
+### `character_builder/`
+Data package used by the Flask web backend. `dnd_data.py` exports `WEAPONS`, `CLASS_FEATURES`, `RACES`, `CLASSES`. `ddb_import.py` exports `import_from_ddb(url, cobalt_token)`. `character_builder_app.py` is a standalone optional Tkinter tool (not part of the main game).
 
 **Main window:** Left panel (clickable section buttons showing ✔/· status), right panel (live character preview in Consolas font), bottom bar (Save/Load/Delete/New/Quit).
 
@@ -209,11 +203,6 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 - Face numbers: black text with light `#dddddd` halo shadow. Visibility threshold `normal[2] > 0.15`.
 - Standalone: `root.geometry("1x1+0+0")` NOT `root.withdraw()` — withdraw breaks Toplevel display on Windows.
 
-### `views/desktop/app.py`
-Main game interface. `GameApp` class.
-
-**Constants:** `_EXPLORE_PLACEHOLDER`, `SKILL_ABILITIES`, `SKILL_ABILITY`
-
 **UI layout:** Header bar, narration Text (Consolas, INPUT_BG), sidebar (220px: HP bar, AC, speed, conditions, combat tracker), input area (explore: entry + Send; combat: attack buttons).
 
 **Startup dialog:** Mode page → Character page or Resume page. `_btn_large()` for clickable cards with hover highlight.
@@ -235,11 +224,7 @@ Main game interface. `GameApp` class.
 
 ## Known Quirks & Pitfalls
 
-- **Listbox `exportselection`** — Both `char_lb` (character select) and `ses_lb` (session select) in `views/desktop/app.py` must have `exportselection=False`. Without it, clicking any button causes the Listbox to clear its selection, making `curselection()` return an empty tuple. The failure is silent because the error label (`_dlg_err`) is positioned at the very bottom of the dialog and gets obscured.
-
-- **Character `hp` field must be a dict** — `init_hp()` in `models/game_state.py` calls `character["hp"].get("max", 1)`. If `hp` is stored as a plain integer, this raises `AttributeError: 'int' object has no attribute 'get'` which Tkinter silently swallows inside callbacks. Always store `hp` as `{"max": N, "current": N, "temp": 0}`. `empty_character()` does this correctly; the risk is hand-edited JSON files.
-
-- **Tkinter swallows callback exceptions silently** — Any exception raised inside a Tkinter event callback (button click, etc.) is caught by Tkinter, printed to stderr, and the UI stays open with no visible feedback to the user. If `begin()` or any callback appears to do nothing, check stderr or add a try/except with explicit error display.
+- **Character `hp` field must be a dict** — `init_hp()` in `models/game_state.py` calls `character["hp"].get("max", 1)`. Always store `hp` as `{"max": N, "current": N, "temp": 0}`. `empty_character()` does this correctly; the risk is hand-edited JSON files.
 
 - **`_parse_events` dict comprehension guard order** — In `dm.py:_parse_events`, the `pairs` dict used to parse `[ACTION:]` and `[BONUS:]` tag content has `if "=" in part` as a filter on the outer `for part in content.split(",")` loop. Do NOT move it to a trailing position after the inner `for k, v in [part.split("=", 1)]` — the inner destructuring runs before any trailing `if`, causing a `ValueError` for bare-word entries like `[ACTION: dodge]`.
 
@@ -264,17 +249,16 @@ All planned work for the game lives here. This is the single source of truth —
 
 ---
 
-### ⏳ Stage 4d — Retire Tkinter ← DO THIS NEXT
+### ✅ Stage 4d — Retire Tkinter
 
-- [ ] **Port weapon variant attack selection to web** — fully implemented in `views/desktop/app.py:455–542` but absent from the web entirely:
-  - [ ] **Versatile weapons** (e.g. longsword): show both one-handed (1d8) and two-handed (1d10) attack buttons with correct damage dice
-  - [ ] **Thrown weapons** (e.g. handaxe): add thrown option with range label alongside the melee option
-  - [ ] **Dual wielding**: when 2+ light melee weapons are equipped, the second becomes an off-hand bonus action attack with no ability modifier on damage (PHB two-weapon fighting rule)
-  - [ ] Backend: add variant-splitting logic (port `_get_attack_options()` from `views/desktop/app.py`) — expose as `/api/combat/attack-options`
-  - [ ] Frontend: update attack chooser in `GameScene.js` to render variant buttons instead of flat weapon list
-- [ ] **Retire Tkinter**:
-  - [ ] Delete `views/desktop/` directory
-  - [ ] Update `main.py` to launch Electron instead of `tk.Tk()`
+- [x] **Weapon variants ported to web** — `GET /api/combat/attack-options` + `mode` param on `POST /api/combat/attack`
+  - [x] Versatile weapons: one-handed / two-handed buttons with correct damage dice
+  - [x] Thrown weapons: thrown option with range label alongside melee
+  - [x] Dual wielding: off-hand bonus action with no ability modifier on damage (PHB rule)
+  - [x] Actions panel is now clickable — each variant fires `_doAttack(weapon, mode)` directly
+- [x] **Deleted `views/desktop/`** — Tkinter app (app.py, dice_roller.py, d20_roller.py) removed
+- [x] **Moved `character_builder/`** to project root (still used by Flask web backend for dnd_data + ddb_import)
+- [x] **`main.py` now launches Electron** via `npm start` (with auto `npm install` on first run)
 
 ---
 

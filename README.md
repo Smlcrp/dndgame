@@ -15,7 +15,7 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 | **Stage 4a — Flask Backend** | ✅ Complete | 24+ API routes, SSE streaming, CUDA crash auto-recovery, Kokoro TTS narrator |
 | **Stage 4b — Web Frontend** | ✅ Complete | Vanilla JS scenes, full sidebar (abilities/saves/skills/spellcasting/party), DDB import |
 | **Stage 4c — Electron Shell** | ✅ Complete | Flask subprocess lifecycle, Ollama GPU→CPU fallback, electron-builder config |
-| **Stage 4d — Retire Tkinter** | 🚧 In Progress | Weapon variants (versatile/thrown/dual-wield) ported to web; Tkinter retirement pending |
+| **Stage 4d — Retire Tkinter** | ✅ Complete | Weapon variants ported (versatile/thrown/dual-wield); Tkinter deleted; `main.py` launches Electron |
 | **Stage 5 — Visual Design** | ⬜ Not started | Game fonts, parchment panel, animated HP bar, responsive layout |
 | **Stage 6 — Distribution** | ⬜ Not started | GitHub Releases → itch.io → Steam |
 | **Stage 7 — Content Expansion** | ⬜ Not started | More adventures, enemies, multiclassing, crafting, world map, mod support |
