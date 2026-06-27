@@ -4,30 +4,25 @@ A fully playable D&D 5e adventure game built in Python. Create a character with 
 
 ---
 
+
 ## Project Status
 
-| Module | Status | Description |
+| Stage | Status | Description |
 |---|---|---|
-| `models/character.py` | ✅ Complete | Character data model, save/load, level 1 reset |
-| `models/dice.py` | ✅ Complete | Dice rolling engine |
-| `models/game_state.py` | ✅ Complete | Session persistence and combat state |
-| `models/combat.py` | ✅ Complete | Turn-based combat engine |
-| `models/dm.py` | ✅ Complete | AI Dungeon Master (Ollama) |
-| `models/progression.py` | ✅ Complete | XP thresholds, level-up logic, feature charges |
-| `controllers/game_controller.py` | ✅ Complete | Game logic — combat, skills, XP, rests, enemies |
-| `views/desktop/d20_roller.py` | ✅ Complete | 3D animated d20 roll window |
-| `views/desktop/dice_roller.py` | ✅ Complete | 3D animated roller for d4/d6/d8/d10/d12/d20 |
-| `views/desktop/app.py` | ✅ Complete | Main game interface (GUI) |
-| `views/desktop/character_builder/` | ✅ Complete | Full GUI character builder |
-| `models/enemies.py` | ✅ Complete | Comprehensive SRD enemy list CR 0–30 (~160 monsters) |
-| `models/adventure.py` | ✅ Complete | 8 adventure templates with structured story arcs |
-| `models/companions.py` | ✅ Complete | Full companion system — 10 templates, combat AI, spell slots, death saves |
-| `models/spells.py` | ✅ Complete | ~60 combat spells (cantrips–level 9) with scaling, upcasting, delivery types |
-| `views/desktop/character_builder/ddb_import.py` | ✅ Complete | D&D Beyond character importer — paste URL or ID to import |
-| `tests/` | ✅ Complete | 376 tests across all model layers (dice, character, combat, game state, progression, adventure, DM tag parsing, integration) |
-| `views/web/api.py` | 🚧 Stub | Future web frontend (Flask/FastAPI) |
+| **Stage 1 — Game Mechanics** | ✅ Complete | Combat, progression, economy, spells, companions, adventure structure, 376 tests |
+| **Stage 2 — Sidebar & Rest UI** | ✅ Complete | XP bar, feature charges, inspiration, short/long rest buttons |
+| **Stage 3 — DEV Panel** | ✅ Complete | Password-gated panel (F4): XP award, level jump, set HP, conditions, test combat |
+| **Stage 4a — Flask Backend** | ✅ Complete | 24+ API routes, SSE streaming, CUDA crash auto-recovery, Kokoro TTS narrator |
+| **Stage 4b — Web Frontend** | ✅ Complete | Vanilla JS scenes, full sidebar (abilities/saves/skills/spellcasting/party), DDB import |
+| **Stage 4c — Electron Shell** | ✅ Complete | Flask subprocess lifecycle, Ollama GPU→CPU fallback, electron-builder config |
+| **Stage 4d — Retire Tkinter** | 🚧 In Progress | Weapon variants (versatile/thrown/dual-wield) ported to web; Tkinter retirement pending |
+| **Stage 5 — Visual Design** | ⬜ Not started | Game fonts, parchment panel, animated HP bar, responsive layout |
+| **Stage 6 — Distribution** | ⬜ Not started | GitHub Releases → itch.io → Steam |
+| **Stage 7 — Content Expansion** | ⬜ Not started | More adventures, enemies, multiclassing, crafting, world map, mod support |
+| **Stage 8 — Code Audit** | ⬜ Not started | Dead code, coverage gaps, dependency audit |
 
-> **Current state:** Mechanically complete. All four in-game mechanic gaps (economy, magic items, feats, spell learning) are implemented. Next focus: Character Progression Phase 2 (sidebar XP bar, feature charge pips, rest buttons).
+**To launch the web version:** `python run_server.py` → open `http://localhost:5000`
+**To launch the desktop version:** `python main.py`
 
 ---
 

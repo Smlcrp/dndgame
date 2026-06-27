@@ -8,6 +8,7 @@ class GameScene {
     this._pendingAction = null;
     this._rollBtn = null;
     this._devUnlocked = false;
+    this._attackOpts = null; // cached variant list, set on combat start
   }
 
   async enter() {
@@ -390,6 +391,11 @@ class GameScene {
       });
       this._state = result.state;
       this._appendNarration(result.display, 'system');
+      // Pre-fetch attack variants so sidebar and Actions panel are ready
+      try {
+        const optResult = await API.get('/api/combat/attack-options');
+        this._attackOpts = optResult.options || null;
+      } catch (_) { this._attackOpts = null; }
       this._updateSidebar();
       await this._checkEnemyTurn();
     } catch (e) {
@@ -455,11 +461,16 @@ class GameScene {
 
     this._setBusy(true);
     try {
-      const d20 = await DiceRoller.roll(20, `Roll to Attack with ${weaponName}`);
+      const label = mode === 'melee_2h' ? `${weaponName} (two-handed)`
+                  : mode === 'thrown'   ? `${weaponName} (thrown)`
+                  : mode === 'offhand'  ? `${weaponName} (off-hand)`
+                  : weaponName;
+      const d20 = await DiceRoller.roll(20, `Roll to Attack — ${label}`);
       const result = await API.post('/api/combat/attack', {
         weapon: weaponName,
         target: target.name,
         d20,
+        mode: mode || 'melee',
       });
       this._state = result.state;
 
@@ -564,6 +575,7 @@ class GameScene {
   }
 
   async _endCombat() {
+    this._attackOpts = null; // clear variant cache on combat end
     try {
       const result = await API.post('/api/combat/end');
       this._state = result.state;
@@ -808,9 +820,13 @@ class GameScene {
       return `<div class="feature-row"><span class="feature-name">${name}</span><div class="feature-pips">${pips}</div></div>`;
     }).join('') || '<div style="color:var(--dim);font-size:11px">—</div>';
 
-    // ── Attacks ──
-    const attacksHtml = (c.attacks || []).map(a =>
-      `<div class="attack-row">${a.name}<span class="attack-bonus"> +${a.attack_bonus || 0}</span><span class="attack-damage"> ${a.damage || '—'}</span></div>`
+    // ── Attacks (sidebar shows variants via cached options, falls back to flat list) ──
+    const _rawAtks = this._attackOpts || (c.attacks || []).map(a => ({
+      label: a.name, weapon: a.name,
+      bonus: a.attack_bonus || 0, damage: a.damage || '—', mode: 'melee',
+    }));
+    const attacksHtml = _rawAtks.map(a =>
+      `<div class="attack-row">${a.label}<span class="attack-bonus"> +${a.bonus ?? 0}</span><span class="attack-damage"> ${a.damage || '—'}</span></div>`
     ).join('') || '<div style="color:var(--dim);font-size:11px">—</div>';
 
     // ── Combat tracker ──
@@ -925,7 +941,7 @@ class GameScene {
 
     // Wire up actions button if present
     const actBtn = document.getElementById('btn-actions');
-    if (actBtn) actBtn.onclick = () => this._openActions();
+    if (actBtn) actBtn.onclick = () => { this._openActions(); };
   }
 
   // ── DEV panel ───────────────────────────────────────────────────────────
@@ -1129,21 +1145,25 @@ class GameScene {
 
   // ── Actions reference panel ──────────────────────────────────────────────
 
-  _openActions() {
+  async _openActions() {
     if (document.getElementById('actions-panel')) return;
     const c   = this._state.character || {};
     const s   = this._state.session   || {};
     const sc  = c.spellcasting || {};
     const features = c.feature_uses || {};
-    const pb  = (c.level||1) < 5 ? 2 : (c.level||1) < 9 ? 3 : (c.level||1) < 13 ? 4 : (c.level||1) < 17 ? 5 : 6;
     const condSet = new Set(s.conditions || []);
     const incap   = condSet.has('Incapacitated') || condSet.has('Paralyzed') ||
                     condSet.has('Stunned') || condSet.has('Unconscious');
 
-    const weaponRows = (c.attacks || []).map(a => {
-      const label = `${a.name} +${a.attack_bonus||0} / ${a.damage||'—'}`;
-      return `<div class="action-row ${incap ? 'unavail' : ''}">${label}${incap ? '<span class="action-reason">Incapacitated</span>' : ''}</div>`;
-    }).join('') || '<div class="action-row unavail">No weapons</div>';
+    // Fetch expanded attack options (variants) from server
+    let attackOpts = (c.attacks || []).map(a => ({
+      label: `${a.name} +${a.attack_bonus||0} / ${a.damage||'—'}`,
+      weapon: a.name, mode: 'melee',
+    }));
+    try {
+      const r = await API.get('/api/combat/attack-options');
+      if (r.options && r.options.length) attackOpts = r.options;
+    } catch (_) { /* fall back to flat list */ }
 
     const spellRow = sc.enabled
       ? `<div class="action-row">✦ Cast a Spell (use slots below)</div>`
@@ -1154,28 +1174,47 @@ class GameScene {
       return `<div class="action-row ${avail ? '' : 'unavail'}">${name} ${avail ? `(${data.current}/${data.max})` : '(0 remaining)'}</div>`;
     }).join('');
 
+    const offhandOpts = attackOpts.filter(o => o.mode === 'offhand');
+    const mainOpts    = attackOpts.filter(o => o.mode !== 'offhand');
+
+    const mkWeaponRow = (opt) => {
+      const dmgStr = opt.damage ? ` / ${opt.damage}` : '';
+      const bonStr = opt.bonus !== undefined ? ` +${opt.bonus}` : '';
+      const noteStr = opt.note ? `<div style="font-size:10px;color:var(--dim)">${opt.note}</div>` : '';
+      const cls = incap ? 'action-row unavail' : 'action-row atk-opt-btn';
+      const incapNote = incap ? '<span class="action-reason">Incapacitated</span>' : '';
+      return `<div class="${cls}" data-weapon="${opt.weapon}" data-mode="${opt.mode}">${opt.label}${bonStr}${dmgStr}${incapNote}${noteStr}</div>`;
+    };
+
+    const weaponRows  = mainOpts.map(mkWeaponRow).join('') || '<div class="action-row unavail">No weapons</div>';
+    const bonusRows   = offhandOpts.map(mkWeaponRow).join('');
+
     const panel = document.createElement('div');
     panel.id = 'actions-panel';
     panel.className = 'actions-panel';
     panel.innerHTML = `
       <div class="dev-title" style="display:flex;justify-content:space-between">
-        <span>⚔ Actions Reference</span>
+        <span>⚔ Actions</span>
         <button class="dev-close-btn" id="actions-close">✕</button>
       </div>
-      <div class="actions-section-title">ACTIONS</div>
+      <div class="actions-section-title">ACTIONS — click to attack</div>
       ${weaponRows}
       ${spellRow}
-      <div class="action-row">Dodge</div>
-      <div class="action-row">Dash</div>
-      <div class="action-row">Disengage</div>
-      <div class="action-row">Hide</div>
+      <div class="action-row">Dodge · Dash · Disengage · Hide (type in chat)</div>
       ${featureRows ? `<div class="actions-section-title">FEATURES</div>${featureRows}` : ''}
-      <div class="actions-section-title">BONUS ACTIONS</div>
-      <div class="action-row" style="color:var(--dim);font-size:11px">Described in narration via DM tags</div>
-      <div style="color:var(--dim);font-size:10px;margin-top:8px">Type what you want to do — the DM resolves the action.</div>
+      ${bonusRows ? `<div class="actions-section-title">BONUS ACTIONS</div>${bonusRows}` : ''}
     `;
     document.body.appendChild(panel);
     panel.querySelector('#actions-close').onclick = () => panel.remove();
+
+    // Wire clickable attack rows
+    panel.querySelectorAll('.atk-opt-btn').forEach(el => {
+      el.style.cursor = 'pointer';
+      el.onclick = async () => {
+        panel.remove();
+        await this._doAttack(el.dataset.weapon, el.dataset.mode);
+      };
+    });
   }
 
   destroy() {}

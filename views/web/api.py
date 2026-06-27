@@ -26,6 +26,7 @@ POST /api/roll/initiative               roll initiative for the player
 POST /api/roll/hit-die                  roll the character's hit die
 
 POST /api/combat/setup                  initialise combat after [COMBAT:] event
+GET  /api/combat/attack-options         expanded weapon list (versatile/thrown/offhand variants)
 POST /api/combat/attack                 resolve a player weapon attack
 POST /api/combat/spell                  resolve a player spell
 POST /api/combat/death-save             roll a death saving throw
@@ -55,6 +56,7 @@ if str(_root) not in sys.path:
 
 import json
 import os
+import re as _re
 import subprocess
 import threading
 import time
@@ -521,6 +523,132 @@ def roll_hit_die():
 
 # ── Combat ────────────────────────────────────────────────────────────────────
 
+def _get_attack_options(char):
+    """Return expanded weapon attack options including versatile, thrown, and off-hand variants.
+    Ported from views/desktop/app.py:_get_attack_options().
+    Each option dict: {label, weapon, bonus, damage, dmg_type, mode, note?}
+    mode values: melee | ranged | melee_2h | thrown | offhand
+    """
+    _cb_path = str(_root / "views" / "desktop" / "character_builder")
+    if _cb_path not in sys.path:
+        sys.path.insert(0, _cb_path)
+    try:
+        from dnd_data import WEAPONS as WPN_DATA
+    except ImportError:
+        WPN_DATA = {}
+
+    attacks    = char.get("attacks", [])
+    options    = []
+    light_melee = []
+
+    for atk in attacks:
+        name     = atk["name"]
+        bonus    = atk.get("attack_bonus", 0)
+        damage   = atk.get("damage", "—")
+        dmg_type = atk.get("damage_type", "")
+
+        wpn   = WPN_DATA.get(name, {})
+        props = wpn.get("props", [])
+        cat   = wpn.get("cat", "")
+
+        is_melee  = "Ranged" not in cat and not any("ammunition" in p for p in props)
+        has_light = "light" in props
+        has_reach = "reach" in props
+
+        # Parse "versatile (1d10)" → two-handed damage die
+        vers_dmg = None
+        for p in props:
+            if p.startswith("versatile"):
+                m = _re.search(r'\((.+?)\)', p)
+                if m:
+                    die   = m.group(1)
+                    mod_m = _re.search(r'([+-]\d+)$', damage)
+                    vers_dmg = die + (mod_m.group(1) if mod_m else "")
+
+        # Parse "thrown (20/60)" → thrown range string
+        thrown_range = None
+        for p in props:
+            if p.startswith("thrown"):
+                m = _re.search(r'\((.+?)\)', p)
+                if m:
+                    thrown_range = m.group(1)
+
+        # Parse "ammunition (80/320)" → ranged weapon range
+        ammo_range = None
+        for p in props:
+            if p.startswith("ammunition"):
+                m = _re.search(r'\((.+?)\)', p)
+                if m:
+                    ammo_range = m.group(1)
+
+        reach_note = " · reach 10ft" if has_reach else ""
+
+        if vers_dmg:
+            label = f"{name} (one-handed){reach_note}"
+        elif ammo_range:
+            label = f"{name} · range {ammo_range} ft"
+        else:
+            label = f"{name}{reach_note}"
+
+        options.append({
+            "label": label, "weapon": name, "bonus": bonus,
+            "damage": damage, "dmg_type": dmg_type,
+            "mode": "ranged" if ammo_range else "melee",
+        })
+
+        if vers_dmg:
+            options.append({
+                "label": f"{name} (two-handed){reach_note}",
+                "weapon": name, "bonus": bonus,
+                "damage": vers_dmg, "dmg_type": dmg_type,
+                "mode": "melee_2h",
+            })
+
+        if thrown_range and is_melee:
+            options.append({
+                "label": f"{name} (thrown · {thrown_range} ft)",
+                "weapon": name, "bonus": bonus,
+                "damage": damage, "dmg_type": dmg_type,
+                "mode": "thrown",
+            })
+
+        if has_light and is_melee:
+            light_melee.append(atk)
+
+    # Dual-wield off-hand: PHB rule — no ability modifier on off-hand damage
+    if len(light_melee) >= 2:
+        off           = light_melee[1]
+        off_name      = off["name"]
+        off_dmg       = off.get("damage", "—")
+        off_type      = off.get("damage_type", "")
+        die_m         = _re.match(r'(\d*d\d+)', off_dmg)
+        off_dmg_no_mod = die_m.group(1) if die_m else off_dmg
+        options.append({
+            "label":  f"{off_name} (off-hand · bonus action)",
+            "weapon": off_name,
+            "bonus":  off.get("attack_bonus", 0),
+            "damage": off_dmg_no_mod, "dmg_type": off_type,
+            "mode":   "offhand",
+            "note":   "No ability modifier to damage (PHB two-weapon fighting rule)",
+        })
+
+    return options
+
+
+@app.route("/api/combat/attack-options")
+def combat_attack_options():
+    """Return expanded weapon attack options for the current character.
+    Includes versatile (one/two-handed), thrown, and dual-wield off-hand variants.
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    try:
+        return _ok(options=_get_attack_options(char))
+    except Exception as e:
+        return _err(str(e), 500)
+
+
 @app.route("/api/combat/setup", methods=["POST"])
 def combat_setup():
     """Initialise combat with a pre-rolled initiative value.
@@ -543,8 +671,9 @@ def combat_setup():
 @app.route("/api/combat/attack", methods=["POST"])
 def combat_attack():
     """Resolve a player weapon attack with a pre-rolled d20.
-    The server resolves hit/miss and rolls damage in one step.
-    Body: {"weapon": str, "target": str, "d20": int}
+    Body: {"weapon": str, "target": str, "d20": int, "mode": str (optional)}
+    mode: melee (default) | ranged | melee_2h | thrown | offhand
+    For melee_2h/thrown/offhand, damage_override is resolved from attack-options.
     """
     session, char = _active()
     if not session:
@@ -553,10 +682,20 @@ def combat_attack():
     weapon = body.get("weapon", "")
     target = body.get("target", "")
     d20    = int(body.get("d20", 10))
+    mode   = body.get("mode", "melee")
     if not weapon or not target:
         return _err("weapon and target are required")
     try:
-        result = gc.process_attack(session, char, weapon, target, d20)
+        damage_override = None
+        if mode in ("melee_2h", "thrown", "offhand"):
+            opts = _get_attack_options(char)
+            opt  = next((o for o in opts
+                         if o["weapon"].lower() == weapon.lower()
+                         and o["mode"] == mode), None)
+            if opt:
+                damage_override = opt["damage"]
+        result = gc.process_attack(session, char, weapon, target, d20,
+                                   damage_override=damage_override)
         if "error" in result:
             return _err(result["error"])
         save_character(char)

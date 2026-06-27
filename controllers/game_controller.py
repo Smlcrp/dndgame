@@ -110,12 +110,16 @@ def process_skill_check(char, skill, dc, d20_value):
     }
 
 
-def process_attack(session, char, weapon_name, target_name, d20_value):
+def process_attack(session, char, weapon_name, target_name, d20_value,
+                   damage_override=None):
     """Resolve a player attack with a pre-rolled d20.
+    damage_override replaces the weapon's base damage (used for versatile
+    two-handed, thrown, and off-hand variants where damage dice differ).
     Returns the combat.player_attack result dict.
     """
     return cb.player_attack(session, char, weapon_name, target_name,
-                            d20_override=d20_value)
+                            d20_override=d20_value,
+                            damage_override=damage_override)
 
 
 def process_enemy_turn(session):
