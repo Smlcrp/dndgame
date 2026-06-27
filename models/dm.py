@@ -458,23 +458,26 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
         max_companions = 3
 
         if len(active) < max_companions and available:
-            names_and_classes = ", ".join(
-                f"{t['first_name']} {t['last_name']} ({t['class']})"
+            # Give the model names only as mechanical anchors for the COMPANION tag.
+            # Names must NOT be presented to the player as choices.
+            roster = "\n".join(
+                f"  {t['first_name']} {t['last_name']} ({t['class']}"
+                + (f", devout of {t['deity']}" if t.get("deity") else "") + ")"
                 for t in available)
             lines += [
-                "\nINTRODUCING A COMPANION:",
-                "You MAY introduce one of the available companions when the story calls "
-                "for it naturally — a stranger who helps in a fight, someone rescued, "
-                "a guide hired by the quest-giver. Do NOT rush this. There is no requirement "
-                "to introduce anyone. Let the story create the moment.",
-                f"Available companions: {names_and_classes}",
-                "Rules:",
-                "- NEVER introduce a companion whose class matches the player or any active party member.",
-                "- Narrate their arrival naturally first, then emit on its own line: "
+                "\nCOMPANION INTRODUCTION RULES — READ CAREFULLY:",
+                "NEVER list companions to the player. NEVER make companion selection a player choice.",
+                "NEVER mention a companion's name before they appear in the story.",
+                "Companions are people the player meets organically — not options on a menu.",
+                "Introduce AT MOST ONE companion per session, only when the narrative creates a",
+                "genuine, unforced moment: a stranger who saves the player in a fight, someone",
+                "the quest-giver sends along, a person freed from captivity who offers to help.",
+                "If no such moment exists, introduce nobody. Most responses should not introduce anyone.",
+                f"Roster (for COMPANION tag use only — do not reveal these names until the character appears):\n{roster}",
+                "When a companion appears: narrate their arrival naturally, THEN emit on its own line:",
                 "[COMPANION: First Last]",
-                "- Use their full name at introduction. Their surname can appear in the story "
-                "as NPCs address them or as the narrative calls for it.",
-                "- The party cap is 3 companions. Do not introduce more.",
+                "- Pick whoever fits the story context. Never a class matching the player or active party.",
+                "- Party cap is 3 companions. Do not introduce more.",
             ]
         elif len(active) >= max_companions:
             lines.append("\nThe party is at full capacity (3 companions). Do not introduce more.")
