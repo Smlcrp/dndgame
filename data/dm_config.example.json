@@ -1,17 +1,11 @@
 {
-  "_comment": "Copy this file to dm_config.json and fill in your settings. dm_config.json is gitignored.",
+  "_comment": "Copy this file to dm_config.json. dm_config.json is gitignored.",
 
-  "model": "llama3.2:3b",
+  "model": "nous-hermes2:10.7b",
 
   "_setup": [
     "1. Install Ollama: https://ollama.com  (or: winget install Ollama.Ollama)",
-    "2. Pull a model:   ollama pull llama3.2:3b",
-    "3. Set 'model' below to whichever you pulled"
-  ],
-
-  "_model_options": {
-    "llama3.2:3b":                    "FAST  — ~2 GB, 2-3x faster, good quality for most play",
-    "llama3.1:8b":                    "BALANCED — ~5 GB, strong narrative, moderate speed",
-    "HammerAI/mistral-nemo-uncensored": "QUALITY — ~7 GB, best narration, slower responses"
-  }
+    "2. Pull the model: ollama pull nous-hermes2:10.7b",
+    "3. Run the game:   python main.py"
+  ]
 }

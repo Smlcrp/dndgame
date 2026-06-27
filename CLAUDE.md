@@ -218,7 +218,7 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 
 ## Known Issues
 
-- **Ollama CUDA crash on model load** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` — Root cause: `mistral-nemo-uncensored` (6.6 GB) + KV cache for 8192 context (~1.2 GB) + CUDA runtime overhead exceeds the RTX 3060 Ti's 8 GB VRAM during initialization. **Fixed by reducing `num_ctx` to 4096** (halves KV cache to ~0.6 GB, total ~7.5 GB). Auto-recovery is also in place: if a crash is detected, `api.py` kills `ollama.exe` and restarts it with `CUDA_VISIBLE_DEVICES=-1` (CPU fallback), then a gold banner appears in the browser. Do NOT raise `num_ctx` above 4096 for this model on this GPU.
+- **Ollama CUDA crash on model load** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` — Root cause: model weights + KV cache overhead can exceed RTX 3060 Ti's 8 GB VRAM. `nous-hermes2:10.7b` is 6.1 GB on disk (~6.5 GB VRAM at Q4). Keep `num_ctx` at 4096 to limit KV cache. Auto-recovery is in place: `api.py` kills `ollama.exe` and restarts with `CUDA_VISIBLE_DEVICES=-1` (CPU fallback), then a gold banner appears in the browser. Do NOT raise `num_ctx` above 4096 on this GPU.
 
 ---
 

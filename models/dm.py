@@ -6,7 +6,7 @@ The DungeonMaster class is the bridge between the game and the AI. It:
      combat situation, party members, and all game rules the LLM must follow.
   2. Assembles the conversation history into the message list Ollama expects.
   3. Calls the Ollama API (POST to localhost:11434/api/chat) with the model configured
-     in dm_config.json (default: HammerAI/mistral-nemo-uncensored).
+     in dm_config.json (default: nous-hermes2:10.7b).
   4. Parses the LLM's raw response to extract game-engine tags like [COMBAT:], [CHECK:],
      [XP:], [BEAT], [ITEM:], etc. that drive the engine's state machine.
   5. Returns the cleaned narration text plus a list of structured event dicts for the
@@ -34,7 +34,7 @@ from models.enemies import enemy_list_for_dm
 from models.adventure import adventure_prompt_block
 
 OLLAMA_URL           = "http://localhost:11434/api/chat"
-DEFAULT_OLLAMA_MODEL = "HammerAI/mistral-nemo-uncensored"
+DEFAULT_OLLAMA_MODEL = "nous-hermes2:10.7b"
 _DEFAULT_CONFIG      = Path(__file__).parent.parent / "data" / "dm_config.json"
 
 import threading

@@ -272,15 +272,13 @@ python -m pytest tests/ -q
 The DM runs locally via Ollama — no API key, no cost, no data sent externally. Copy `data/dm_config.example.json` to `data/dm_config.json` and configure it:
 
 1. Install Ollama: `winget install Ollama.Ollama` (starts automatically in background)
-2. Pull the recommended model: `ollama pull HammerAI/mistral-nemo-uncensored`
+2. Pull the model: `ollama pull nous-hermes2:10.7b`
 3. Edit `data/dm_config.json`:
 ```json
 {
-  "model": "HammerAI/mistral-nemo-uncensored"
+  "model": "nous-hermes2:10.7b"
 }
 ```
-
-See the [PC Requirements](#pc-requirements) section for model VRAM requirements and a 6 GB VRAM fallback option.
 
 ---
 
@@ -382,18 +380,13 @@ The AI Dungeon Master runs locally via Ollama. GPU acceleration is strongly reco
 
 ### Model VRAM Requirements
 
-Two models are included in `dm_config.example.json`. Both are uncensored and run locally with no API cost.
+| Model | Disk size | VRAM needed | Notes |
+|---|---|---|---|
+| `nous-hermes2:10.7b` | 6.1 GB | ~6.5 GB | **Recommended** — Solar 10.7B, Nous Hermes 2 fine-tune |
 
-| Model | Disk size | VRAM needed | Context window | Notes |
-|---|---|---|---|---|
-| `HammerAI/mistral-nemo-uncensored` | 7.1 GB | ~7.5 GB | 1,000K | **Recommended** — 12B parameters, uncensored |
-| `HammerAI/hermes-3-llama-3.1:8b-q4_K_M` | 4.9 GB | ~5.5 GB | 128K | Fallback for 6 GB cards |
-
-The recommended model loads into approximately 7.5 GB of VRAM (weights + KV cache). On an 8 GB card such as the RTX 3060 Ti it fits with minimal CPU offloading. If you have a 6 GB card, use the Hermes 3 8B fallback instead.
-
-To pull a model:
+To pull the model:
 ```
-ollama pull HammerAI/mistral-nemo-uncensored
+ollama pull nous-hermes2:10.7b
 ```
 
 ---
