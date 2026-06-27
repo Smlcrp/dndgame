@@ -219,6 +219,7 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 ## Known Issues
 
 - **Ollama CUDA crash on model load** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` — Root cause: model weights + KV cache overhead can exceed RTX 3060 Ti's 8 GB VRAM. `nous-hermes2:10.7b` is 6.1 GB on disk (~6.5 GB VRAM at Q4). Keep `num_ctx` at 4096 to limit KV cache. Auto-recovery is in place: `api.py` kills `ollama.exe` and restarts with `CUDA_VISIBLE_DEVICES=-1` (CPU fallback), then a gold banner appears in the browser. Do NOT raise `num_ctx` above 4096 on this GPU.
+- **DM narration length** — `nous-hermes2:10.7b` routinely ignores the "3-5 sentences" rule and writes 10+ sentence responses. This directly increases TTS generation time and Ollama response time. Prompt says "3–5 sentences" but enforcement is weak.
 
 ---
 
@@ -229,6 +230,10 @@ AI DM. Runs via Ollama (local). Config from `dm_config.json` (gitignored).
 - **`_parse_events` dict comprehension guard order** — In `dm.py:_parse_events`, the `pairs` dict used to parse `[ACTION:]` and `[BONUS:]` tag content has `if "=" in part` as a filter on the outer `for part in content.split(",")` loop. Do NOT move it to a trailing position after the inner `for k, v in [part.split("=", 1)]` — the inner destructuring runs before any trailing `if`, causing a `ValueError` for bare-word entries like `[ACTION: dodge]`.
 
 - **`skill_proficiencies` must be Title Case** — The entire game stores and checks skill proficiencies as Title Case strings (`"Acrobatics"`, `"Sleight of Hand"`) matching `ALL_SKILLS` in `dnd_data.py`. The model layer's `SKILLS` dict uses lowercase_underscore keys but `skill_bonus()` should only be called with those keys for derived-stat calculations, not for checking `skill_proficiencies`. Do not write lowercase_underscore values into `skill_proficiencies`.
+
+- **Companion system — organic introduction only** — The DM's `_build_party_block()` passes companion names to the model as internal anchors for the `[COMPANION: First Last]` tag. The model must NEVER list these names to the player or present companion selection as a choice. The prompt explicitly prohibits this, but if the model recites the roster again, strengthen the prohibition wording. Do NOT remove the roster from the prompt — the model needs it to emit the correct tag.
+
+- **Kokoro TTS — sentence splitting regex** — `respond_stream()` in `dm.py` emits tokens; `GameScene.js` splits the final `data.narration` on `/(?<=[.!?])\s+/` to build the TTS sentence queue. Lookbehind assertions require Chrome 62+/Firefox 78+. The mid-stream first-sentence detection uses `/^(.*?[.!?])\s/s` (dotAll flag). Do not change these to split on commas or colons — it over-splits and causes choppy audio.
 
 ---
 
@@ -372,6 +377,24 @@ Intentional simplifications — not bugs, but known deviations from the SRD:
 
 #### ✅ Stage 4c — Electron Shell
 - ✅ Flask subprocess lifecycle; `/api/ping` polling; Ollama GPU→CPU fallback; electron-builder config
+
+#### ✅ Session fixes (2026-06-27)
+
+**Streaming & performance:**
+- ✅ `respond_stream()` in `dm.py` switched from `stream=False` (fake streaming) to real Ollama `stream=True` with `iter_lines()` — first tokens now visible within ~1-2 s instead of waiting for full response
+- ✅ DM history window trimmed from 20 → 12 entries to reduce per-call token count
+- ✅ `[BEGIN]` / `[END]` / `[START]` bare tags (no colon) now stripped from narration — previous regex only caught `[BEGIN: ...]` form
+
+**Narrator (TTS):**
+- ✅ Re-enabled Kokoro TTS narrator (`/api/narrate` route + preload thread in `api.py`)
+- ✅ `_appendPlayButton` rewritten — takes `Promise<Blob>[]` queue (one per sentence); `AbortController` stop; sequential playback via `async/await` loop
+- ✅ First sentence pre-fetched mid-stream (fires as soon as first `.!?` boundary detected in token stream) so Play button is enabled immediately when streaming ends
+- ✅ All sentences voiced: on `done`, full `data.narration` split on `/(?<=[.!?])\s+/`, TTS fired for each sentence; sentence 0 reuses the mid-stream pre-fetch
+- ✅ Play/Stop button uses symbols only (`▶` / `⏹`) — no text labels
+
+**DM prompt fixes:**
+- ✅ Companion catalog dump fixed — model was listing all roster names to the player as a menu. `_build_party_block()` now explicitly prohibits this; roster passed as internal-only anchor for `[COMPANION:]` tag
+- ✅ `[CHOOSE A GOD]` placeholder fixed — added `deity: "Lathander"` to Elara Voss (Cleric) and `deity: "Tyr"` to Torben Ironwall (Paladin) in `companions.py`; deity included in roster hint
 
 ---
 
