@@ -12,9 +12,9 @@ _ROOT = Path(__file__).parent
 _ELECTRON_DIR = _ROOT / "electron"
 
 
-_NODE_COMMON_PATHS = [
-    r"C:\Program Files\nodejs\npm.cmd",
-    r"C:\Program Files (x86)\nodejs\npm.cmd",
+_NODE_COMMON_DIRS = [
+    r"C:\Program Files\nodejs",
+    r"C:\Program Files (x86)\nodejs",
 ]
 
 
@@ -23,10 +23,20 @@ def _find_npm():
     found = shutil.which("npm") or shutil.which("npm.cmd")
     if found:
         return found
-    for p in _NODE_COMMON_PATHS:
-        if Path(p).exists():
-            return p
+    for d in _NODE_COMMON_DIRS:
+        p = Path(d) / "npm.cmd"
+        if p.exists():
+            return str(p)
     return None
+
+
+def _ensure_node_in_path(npm_path: str):
+    """Make sure the Node.js directory is in PATH so 'node' resolves when Electron spawns."""
+    import os
+    node_dir = str(Path(npm_path).parent)
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    if node_dir not in path_dirs:
+        os.environ["PATH"] = node_dir + os.pathsep + os.environ.get("PATH", "")
 
 
 def _install_node():
@@ -78,6 +88,8 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    _ensure_node_in_path(npm)
 
     electron_bin = _ELECTRON_DIR / "node_modules" / "electron" / "dist" / "electron.exe"
     if not electron_bin.exists():
