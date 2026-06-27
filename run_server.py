@@ -9,4 +9,4 @@ from views.web.api import app
 if __name__ == "__main__":
     print("D&D Game Server — http://localhost:5000")
     print()
-    app.run(debug=True, port=5000, use_reloader=False, threaded=True)
+    app.run(debug=False, port=5000, use_reloader=False, threaded=True)
