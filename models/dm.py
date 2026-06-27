@@ -208,6 +208,7 @@ CALL FOR A ROLL when:
   - Noticing something non-obvious or partially concealed
   - Deciphering writing, symbols, or magical auras
   - Gathering information from an UNWILLING or actively deceptive NPC (use Persuasion, Deception, or Intimidation — NEVER Investigation for social situations)
+  - The PLAYER is lying, bluffing, or deceiving an NPC — fake names, false identities, fabricated stories, misdirection — call [CHECK: Deception DC##]. The DC reflects how suspicious the NPC is: a distracted commoner is DC 10, an alert guard is DC 14, someone who has reason to doubt is DC 16+.
 
 INVESTIGATION vs SOCIAL — critical distinction:
   Investigation = ONLY physical examination: searching a room, studying an object, finding clues at a crime scene, spotting hidden mechanisms.
