@@ -213,6 +213,27 @@ def get_characters():
     return _ok(characters=list_characters())
 
 
+@app.route("/api/characters/import-ddb", methods=["POST"])
+def import_ddb():
+    """Import a D&D Beyond character. Body: {"url": str, "token": str (optional)}"""
+    body  = request.get_json(silent=True) or {}
+    url   = body.get("url", "").strip()
+    token = body.get("token", "").strip()
+    if not url:
+        return _err("url is required")
+    try:
+        sys.path.insert(0, str(_root / "views" / "desktop" / "character_builder"))
+        from ddb_import import import_from_ddb
+        from models.character import migrate_character, validate_character
+        char = import_from_ddb(url, cobalt_token=token)
+        char = migrate_character(char)
+        validate_character(char)
+        save_character(char)
+        return _ok(name=char["name"])
+    except Exception as e:
+        return _err(str(e), 500)
+
+
 @app.route("/api/characters/<name>", methods=["DELETE"])
 def delete_character(name):
     path = _CHARS_DIR / f"{name}.json"
