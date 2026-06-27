@@ -28,7 +28,9 @@
       {
         "from": "../dist/run_server",
         "to": "server",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "nsis": {
@@ -42,5 +44,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.0.0"
+  },
+  "allowScripts": {
+    "electron@28.3.3": true
   }
 }

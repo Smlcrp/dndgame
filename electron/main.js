@@ -28,7 +28,13 @@ function launchFlask() {
 
 // ── Poll until Flask responds ─────────────────────────────────────────────────
 
-function waitForFlask(retries = 60, delayMs = 500) {
+function waitForFlask() {
+  // When launched from main.py, Flask is already confirmed running — do a fast
+  // sanity check (3 s) instead of the full 30 s wait.
+  const preConfirmed = process.env.FLASK_READY === '1';
+  const retries  = preConfirmed ? 6  : 60;
+  const delayMs  = preConfirmed ? 500 : 500;
+
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const check = () => {

@@ -76,8 +76,27 @@ def _flask_alive():
         return False
 
 
+def _kill_port(port: int):
+    """Kill any process currently listening on the given port (Windows)."""
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True, text=True,
+        )
+        for line in result.stdout.splitlines():
+            if f":{port} " in line and "LISTENING" in line:
+                pid = line.split()[-1]
+                if pid.isdigit():
+                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+    except Exception:
+        pass
+
+
 def _start_flask():
-    """Start Flask using the current Python interpreter. Returns the process."""
+    """Kill any stale Flask on port 5000, then start a fresh one. Returns the process."""
+    _kill_port(_FLASK_PORT)
+    time.sleep(0.3)  # let the OS release the port
+
     proc = subprocess.Popen(
         [sys.executable, str(_ROOT / "run_server.py")],
         cwd=_ROOT,
@@ -137,8 +156,10 @@ def main():
 
     # ── Launch Electron (Flask already running) ───────────────────────────────
     print("Starting D&D AI Dungeon Master...")
+    import os
+    env = {**os.environ, "FLASK_READY": "1"}
     try:
-        subprocess.run([npm, "start"], cwd=_ELECTRON_DIR)
+        subprocess.run([npm, "start"], cwd=_ELECTRON_DIR, env=env)
     finally:
         flask_proc.terminate()
 
