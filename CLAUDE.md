@@ -6,12 +6,17 @@
 ---
 
 ## Project Vision
-A fully playable D&D 5e adventure game with an AI Dungeon Master. Currently a Python/Tkinter desktop app. The next major milestone is restructuring to MVC so the same game logic can power a future web frontend with no rewriting.
+A fully playable D&D 5e adventure game with an AI Dungeon Master. MVC architecture complete. Stage 4 (Flask + HTML/JS/CSS + Electron) is done — the game now runs in the browser at `http://localhost:5000` in addition to the Tkinter desktop app.
 
-## Current File Structure (MVC — complete)
+**To launch the web version:** `python run_server.py` → open `http://localhost:5000`
+**To launch the desktop version:** `python main.py`
+
+## Current File Structure
 ```
 dndgame/
-├── main.py                   # Entry point: python main.py → desktop app
+├── main.py                   # Entry point: python main.py → Tkinter desktop app
+├── run_server.py             # Web entry point: python run_server.py → Flask on :5000
+├── requirements.txt          # flask>=3.0.0, requests>=2.31.0, pytest>=7.0.0
 │
 ├── models/                   # Pure logic — zero UI imports
 │   ├── __init__.py
@@ -28,26 +33,42 @@ dndgame/
 │
 ├── controllers/              # Orchestrates models, returns plain dicts — no UI
 │   ├── __init__.py
-│   └── game_controller.py   # setup_combat, process_attack, process_skill_check,
-│                            #   process_enemy_turn, process_death_save, process_xp_award,
-│                            #   process_short_rest, process_long_rest, process_spell_cast
+│   └── game_controller.py
 │
 ├── views/
-│   ├── desktop/              # Tkinter desktop app
+│   ├── desktop/              # Tkinter desktop app (runs in parallel with web)
 │   │   ├── __init__.py
-│   │   ├── app.py            # GameApp — pure UI, calls controller
-│   │   ├── d20_roller.py     # 3D animated d20 roll window
-│   │   ├── dice_roller.py    # 3D animated roller for d4/d6/d8/d10/d12/d20
+│   │   ├── app.py
+│   │   ├── d20_roller.py
+│   │   ├── dice_roller.py
 │   │   └── character_builder/
-│   │       ├── __init__.py
 │   │       ├── character_builder_app.py
 │   │       ├── dnd_data.py
 │   │       ├── spells.py
 │   │       ├── ddb_import.py
 │   │       └── Launch Character Builder.bat
-│   └── web/                  # Future web frontend
+│   └── web/                  # Flask + browser frontend (Stage 4)
 │       ├── __init__.py
-│       └── api.py            # Flask/FastAPI stub — same controller calls, JSON responses
+│       ├── api.py            # Flask app — 24 routes, JSON API, in-memory session state
+│       ├── templates/
+│       │   └── index.html    # Single-page app shell; loads all JS/CSS
+│       └── static/
+│           ├── css/
+│           │   └── style.css # Dark theme; CSS vars match Tkinter constants
+│           └── js/
+│               ├── api.js    # API.get/post/del fetch wrappers
+│               ├── dice.js   # DiceRoller.show(value, label) animated modal
+│               ├── main.js   # SceneManager class + App boot
+│               └── scenes/
+│                   ├── MainMenuScene.js       # New / Next / Resume cards
+│                   ├── CharacterSelectScene.js
+│                   ├── PresetScene.js         # One Shot / Quest / Epic
+│                   ├── GameScene.js           # Narration + sidebar + input + events
+│                   └── LevelUpScene.js        # Multi-step modal (HP→subclass→ASI→spells)
+│
+├── electron/                 # Electron shell (Stage 4c)
+│   ├── main.js               # Spawn Flask, wait for /api/ping, open BrowserWindow
+│   └── package.json          # electron + electron-builder config
 │
 ├── tests/                    # pytest suite — 373 tests
 │   ├── conftest.py           # sys.path setup
@@ -619,6 +640,7 @@ If `[ACTION: spell=X]` arrives without a slot number and the spell requires a sl
 
 ### ✅ Stage 1 — Game Mechanics (COMPLETE)
 
+
 All core D&D 5e mechanics implemented and tested (376 tests passing):
 - Turn-based combat with conditions, crits, death saves
 - Full character progression: XP, level-up dialog (features → HP → subclass → ASI/feat → spells)
@@ -650,50 +672,47 @@ Floating panel (F4 / DEV button in header):
 
 ---
 
-### Stage 4 — Electron + Flask Migration
+### ✅ Stage 4 — Electron + Flask Migration (COMPLETE)
 
-Migrate from Tkinter to a proper game frontend: **Flask backend + HTML/JS/CSS + Electron shell**.
+Flask backend + HTML/JS/CSS browser frontend + Electron shell. Tkinter desktop app still runs in parallel.
 
-**Why this path:**
-- Tkinter has a hard ceiling on visual quality and cannot support Steam Overlay (requires OpenGL/D3D)
-- MVC is already framework-agnostic — `controllers/` return plain dicts and need no changes
-- Electron + Flask is the proven Python-backed desktop game path for Steam
-- NW.js is a viable alternative (5,700+ Steam games); evaluate at build time
-- Tauri is off the table — its Steam integration requires writing Rust
+**Design decisions locked in:**
+- Ollama: download on first run (models are 4–8 GB — not bundled)
+- Migration strategy: Tkinter kept alive until web UI reaches full parity
+- Distribution target: GitHub releases → itch.io → Steam
 
-**⚠️ Discuss with the user before starting:**
-- Bundle Ollama + model in the installer, or download on first run? (models are 4–8 GB)
-- Target distribution: GitHub releases → itch.io → Steam (in that order)
-- Scene architecture: define `MainMenuScene`, `GameScene`, `CombatScene` as explicit classes with `on_enter() / update() / render()` before writing any HTML
+#### ✅ 4a — Flask Backend (`views/web/api.py`)
+24 routes covering every game action. In-memory state dict `_state = {"session", "character", "dm"}`. Key routes:
+- `GET /` → renders `index.html`; `GET /api/ping` → health check
+- `POST /api/game/new|next|resume|save`, `GET /api/game/state`
+- `POST /api/action` — calls `dm.respond()`, returns narration + events (blocks ~5–30s)
+- `POST /api/roll`, `/api/roll/damage`, `/api/roll/initiative`, `/api/roll/hit-die`
+- `POST /api/combat/setup|attack|spell|death-save|end-turn|end`
+- `POST /api/skill-check`, `/api/rest/short|long`, `/api/adventure/beat`
+- `POST /api/award/xp|gold|item`, `POST /api/levelup`
+- `GET /api/characters`, `DELETE /api/characters/<name>`, `GET /api/sessions`
 
-#### 4a — Flask Backend
-- Create `views/web/api.py` — Flask app with routes mirroring every Tkinter callback
-- Routes: `POST /action`, `GET /state`, `POST /roll`, `POST /attack`, `POST /rest`, `POST /level-up`, `POST /save`, `GET /characters`, `POST /characters/new`, `DELETE /characters/<name>`
-- Session state lives server-side (Flask `session`) backed by the same `data/sessions/` JSON files already in use
-- All routes return JSON; errors follow `{"error": "...", "code": N}`
-- Add pytest tests for every route alongside the existing model tests
+**Dice roll flow:** client calls `/api/roll` → gets pre-rolled value → shows animation → passes value back to action endpoint (server controls randomness).
 
-#### 4b — HTML/CSS Frontend
-- One-page app — vanilla JS with fetch API (no framework required)
-- Scene classes in `static/js/scenes/`: `MainMenuScene`, `CharacterSelectScene`, `PresetScene`, `GameScene`, `CombatScene`, `LevelUpScene`
-- Each scene manages its own DOM subtree; `SceneManager` swaps active scene and calls lifecycle hooks
-- Narration panel: `<div id="narration">` append-only, auto-scrolls; player text styled distinctly in blue
-- Sidebar: sticky right panel updated by `GameScene.updateSidebar(state)` after every response
-- Dark theme CSS vars matching current constants: `--bg: #1a1a2e`, `--accent: #c8a951`, etc.
-- d20 roller: CSS 3D transform animation replacing the Tkinter Canvas — same 20 pre-computed spin angles as CSS keyframes
-- Combat tracker: `<div id="combat-tracker">` inside the sidebar, visible only during combat
+#### ✅ 4b — HTML/CSS/JS Frontend (`views/web/static/`, `views/web/templates/`)
+Vanilla JS, no framework, no build step. Scene-based architecture.
 
-#### 4c — Electron Shell
-- `main.js`: spawn Flask subprocess on app launch, wait for `/ping`, then load `http://localhost:5000`
-- Graceful shutdown: kill Flask subprocess on `app.on('before-quit')`
-- `electron-builder` config: package Python (via PyInstaller one-dir bundle) + Electron together
-- Single `.exe` installer on Windows via NSIS; `.dmg` on Mac
-- First-run wizard: detect Ollama → if absent show download link; if present check model → if absent run `ollama pull` with progress bar
+- `api.js` — `API.get/post/del` fetch wrappers; all throw `Error(d.error)` on `{ok: false}`
+- `dice.js` — `DiceRoller.show(value, label)` animated modal (1.5s spin → reveal); `DiceRoller.roll(sides)` fetches server value then animates; `DiceRoller.rollInitiative()` returns total with DEX mod
+- `main.js` — `SceneManager` (calls `enter()`/`destroy()` on scene switch), `App.scene` global
+- `MainMenuScene` — New / Next / Resume cards
+- `CharacterSelectScene` — lists characters or sessions depending on mode
+- `PresetScene` — One Shot / Quest / Epic cards; calls `/api/game/new` or `/api/game/next`
+- `GameScene` — narration panel (DM/player/system/banner/error entry types), sidebar (HP bar, XP bar, feature charges, combat tracker, inventory), input area; handles all event types: `combat_start`, `skill_check`, `action_taken`, `xp_award`, `gold_award`, `item_award`, `beat_complete`, `climax_reached`, `break_suggested`, `scene_change`
+- `LevelUpScene` — multi-step modal: HP roll (animated or average), subclass picker, ASI/feat selector, spell learning; POSTs to `/api/levelup` on finish
 
-#### 4d — Retire Tkinter
+#### ✅ 4c — Electron Shell (`electron/`)
+- `main.js` — spawns `python run_server.py` (dev) or PyInstaller bundle (packaged); polls `/api/ping` every 500ms (30 retries); opens `BrowserWindow` once Flask responds; kills subprocess on `before-quit`; checks Ollama at `localhost:11434` and shows an in-page warning banner if absent
+- `package.json` — `electron ^28`, `electron-builder ^24`; NSIS installer on Windows, DMG on Mac; `extraResources` maps PyInstaller bundle to `resources/server/`
+
+#### Pending — 4d — Retire Tkinter
 - Delete `views/desktop/` once web UI has full feature parity and all routes are test-covered
 - Update `main.py` to launch Electron instead of `tk.Tk()`
-- `take_screenshots.py` can be archived (browser DevTools replaces it)
 
 ---
 
