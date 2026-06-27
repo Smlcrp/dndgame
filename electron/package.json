@@ -1,0 +1,46 @@
+{
+  "name": "dndgame",
+  "version": "1.0.0",
+  "description": "D&D AI Dungeon Master",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.smlcrp.dndgame",
+    "productName": "D&D AI Dungeon Master",
+    "win": {
+      "target": "nsis",
+      "icon": "../views/web/static/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "../views/web/static/icon.icns"
+    },
+    "files": [
+      "main.js",
+      "../dist/**",
+      "!../dist/**/*.pyc"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/run_server",
+        "to": "server",
+        "filter": ["**/*"]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.0.0"
+  }
+}

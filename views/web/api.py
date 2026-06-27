@@ -1,19 +1,701 @@
 """
-Web API stub — future Flask/FastAPI frontend.
-All game logic lives in controllers/game_controller.py and models/*.
+Flask web API — JSON backend for the browser and Electron frontend.
+
+All game logic is delegated to the existing controller/model layer.
+This file only does HTTP plumbing: parse request JSON, call the right
+controller function, return JSON. No game logic lives here.
+
+Routes
+------
+GET  /api/ping                          health check
+GET  /api/characters                    list saved characters
+DELETE /api/characters/<name>           delete a character
+GET  /api/sessions                      list saved sessions
+
+POST /api/game/new                      start a fresh adventure (resets to Lv 1)
+POST /api/game/next                     start a next adventure (keeps progress)
+POST /api/game/resume                   resume a saved session
+POST /api/game/save                     flush state to disk
+GET  /api/game/state                    current game state snapshot
+
+POST /api/action                        player input -> DM narration + events
+
+POST /api/roll                          roll a single die (for UI animation)
+POST /api/roll/damage                   roll a damage notation string
+POST /api/roll/initiative               roll initiative for the player
+POST /api/roll/hit-die                  roll the character's hit die
+
+POST /api/combat/setup                  initialise combat after [COMBAT:] event
+POST /api/combat/attack                 resolve a player weapon attack
+POST /api/combat/spell                  resolve a player spell
+POST /api/combat/death-save             roll a death saving throw
+POST /api/combat/end-turn               advance to the next combatant
+POST /api/combat/end                    force-end combat (all enemies dead)
+
+POST /api/skill-check                   resolve a skill check
+
+POST /api/rest/short                    take a short rest
+POST /api/rest/long                     take a long rest
+
+POST /api/adventure/beat                advance the story beat
+
+POST /api/award/xp                      award XP (DEV panel / beat events)
+POST /api/award/gold                    award gold
+POST /api/award/item                    award a magic item
+
+POST /api/levelup                       apply all level-up choices
 """
 
-# from flask import Flask, jsonify, request
-# from controllers.game_controller import (
-#     setup_combat, process_attack, process_skill_check,
-#     process_enemy_turn, process_death_save,
-# )
-# import models.game_state as gs
-# import models.character as char_mod
-# import models.dm as dm_module
-#
-# app = Flask(__name__)
-#
-# @app.route("/health")
-# def health():
-#     return jsonify({"status": "ok"})
+import sys
+from pathlib import Path
+
+_root = Path(__file__).parent.parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+from flask import Flask, request, jsonify, render_template, send_from_directory
+
+from models.character import (
+    load_character, save_character, list_characters,
+    modifier, reset_to_level1,
+)
+from models import game_state as gs
+from models import dice as dice_mod
+from models import combat as cb
+from models.dm import from_config
+from controllers import game_controller as gc
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+
+_static = Path(__file__).parent / "static"
+_tmpl   = Path(__file__).parent / "templates"
+
+app = Flask(__name__, static_folder=str(_static), template_folder=str(_tmpl))
+app.secret_key = "dnd-local-dev"
+
+# Single-user in-process state — fine for a local desktop app.
+_state: dict = {"session": None, "character": None, "dm": None}
+
+_CHARS_DIR = _root / "data" / "characters"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _ok(**kw):
+    return jsonify({"ok": True, **kw})
+
+
+def _err(msg, code=400):
+    return jsonify({"ok": False, "error": msg}), code
+
+
+def _active():
+    """Return (session, char) — both None if no game is running."""
+    return _state["session"], _state["character"]
+
+
+def _snapshot():
+    """Build a JSON-serialisable snapshot of the current in-memory game state."""
+    session, char = _active()
+    if not session:
+        return {}
+    return {
+        "session": {
+            k: session.get(k)
+            for k in (
+                "session_name", "character_name", "location", "scene",
+                "in_combat", "round", "current_hp", "temp_hp",
+                "hit_dice_spent", "spell_slots_used", "conditions",
+                "death_saves", "stable", "initiative_order", "current_turn",
+                "adventure", "companions", "flags",
+            )
+        },
+        "character": char,
+    }
+
+
+def _init_game(char, preset, reset=False):
+    """Shared setup for new/next adventure. Mutates _state. Returns (session, dm)."""
+    if reset:
+        char = reset_to_level1(char)
+        save_character(char)
+    session = gs.empty_session(
+        character_name=char["name"],
+        session_name=char["name"],
+    )
+    gs.init_hp(session, char)
+    gc.start_adventure(session, char, preset=preset)
+    dm = from_config()
+    _state.update(session=session, character=char, dm=dm)
+    return session, dm
+
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/ping")
+def ping():
+    return _ok(message="D&D API running")
+
+
+# ── Characters ────────────────────────────────────────────────────────────────
+
+@app.route("/api/characters")
+def get_characters():
+    return _ok(characters=list_characters())
+
+
+@app.route("/api/characters/<name>", methods=["DELETE"])
+def delete_character(name):
+    path = _CHARS_DIR / f"{name}.json"
+    if not path.exists():
+        return _err(f"Character '{name}' not found", 404)
+    path.unlink()
+    return _ok(deleted=name)
+
+
+# ── Sessions ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/sessions")
+def get_sessions():
+    return _ok(sessions=gs.list_sessions())
+
+
+# ── Game lifecycle ────────────────────────────────────────────────────────────
+
+@app.route("/api/game/new", methods=["POST"])
+def new_game():
+    """Start a fresh adventure — resets the character to level 1.
+    Body: {"char_name": str, "preset": "Quest" | "One Shot" | "Epic"}
+    """
+    body   = request.get_json(silent=True) or {}
+    name   = body.get("char_name", "")
+    preset = body.get("preset", "Quest")
+    if not name:
+        return _err("char_name is required")
+    try:
+        char = load_character(name)
+    except FileNotFoundError:
+        return _err(f"Character '{name}' not found", 404)
+    except ValueError as e:
+        return _err(str(e))
+
+    session, dm = _init_game(char, preset, reset=True)
+    try:
+        result = dm.respond(
+            session, _state["character"],
+            "[START] Begin the adventure. Open with the hook.",
+        )
+        gs.save_session(session)
+        save_character(_state["character"])
+        return _ok(narration=result["narration"], events=result["events"],
+                   state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/game/next", methods=["POST"])
+def next_game():
+    """Start a next adventure — keeps existing character progress, fresh story.
+    Body: {"char_name": str, "preset": str}
+    """
+    body   = request.get_json(silent=True) or {}
+    name   = body.get("char_name", "")
+    preset = body.get("preset", "Quest")
+    if not name:
+        return _err("char_name is required")
+    try:
+        char = load_character(name)
+    except (FileNotFoundError, ValueError) as e:
+        return _err(str(e), 404)
+
+    session, dm = _init_game(char, preset, reset=False)
+    try:
+        result = dm.respond(
+            session, _state["character"],
+            "[START] Begin the adventure. Open with the hook.",
+        )
+        gs.save_session(session)
+        save_character(_state["character"])
+        return _ok(narration=result["narration"], events=result["events"],
+                   state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/game/resume", methods=["POST"])
+def resume_game():
+    """Resume a saved session.
+    Body: {"session_name": str}
+    """
+    body         = request.get_json(silent=True) or {}
+    session_name = body.get("session_name", "")
+    if not session_name:
+        return _err("session_name is required")
+    try:
+        session = gs.load_session(session_name)
+        char    = load_character(session.get("character_name", session_name))
+    except FileNotFoundError as e:
+        return _err(str(e), 404)
+    except ValueError as e:
+        return _err(str(e))
+
+    gs.init_hp(session, char)
+    dm = from_config()
+    _state.update(session=session, character=char, dm=dm)
+    try:
+        narration = dm.recap(session, char)
+        return _ok(narration=narration, state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/game/save", methods=["POST"])
+def save_game():
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    gs.save_session(session)
+    save_character(char)
+    return _ok(saved=True)
+
+
+@app.route("/api/game/state")
+def get_state():
+    if not _state["session"]:
+        return _ok(active=False)
+    return _ok(active=True, **_snapshot())
+
+
+# ── Player action (DM call) ───────────────────────────────────────────────────
+
+@app.route("/api/action", methods=["POST"])
+def player_action():
+    """Send player text to the DM and get narration + parsed events back.
+    Body: {"text": str}
+    This call blocks until Ollama responds (~5-30 s depending on model/hardware).
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body = request.get_json(silent=True) or {}
+    text = body.get("text", "").strip()
+    if not text:
+        return _err("text is required")
+    try:
+        result = _state["dm"].respond(session, char, text)
+        gs.save_session(session)
+        return _ok(narration=result["narration"], events=result["events"],
+                   state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+# ── Dice ──────────────────────────────────────────────────────────────────────
+
+@app.route("/api/roll", methods=["POST"])
+def roll_single():
+    """Roll a single die. Call this first, animate on the client, then pass
+    the returned value into the relevant action endpoint.
+    Body: {"sides": int}
+    """
+    body  = request.get_json(silent=True) or {}
+    sides = int(body.get("sides", 20))
+    try:
+        return _ok(value=dice_mod.roll(sides), sides=sides)
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.route("/api/roll/damage", methods=["POST"])
+def roll_damage():
+    """Roll a damage notation string (e.g. "2d6+3").
+    Body: {"notation": str, "critical": bool}
+    """
+    body     = request.get_json(silent=True) or {}
+    notation = body.get("notation", "1d6")
+    critical = bool(body.get("critical", False))
+    try:
+        result = (dice_mod.critical_damage(notation) if critical
+                  else dice_mod.damage(notation))
+        return _ok(**result)
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.route("/api/roll/initiative", methods=["POST"])
+def roll_initiative():
+    """Roll player initiative (DEX mod applied server-side)."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    dex_mod = modifier(char["abilities"].get("dexterity", 10))
+    result  = dice_mod.initiative(dex_mod)
+    return _ok(value=result["roll"], modifier=result["modifier"],
+               total=result["total"])
+
+
+@app.route("/api/roll/hit-die", methods=["POST"])
+def roll_hit_die():
+    """Roll the character's hit die for healing (CON mod applied server-side)."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    die_str = char.get("hit_dice", {}).get("type", "d8")
+    con_mod = modifier(char["abilities"].get("constitution", 10))
+    result  = dice_mod.hit_die(die_str, con_mod)
+    return _ok(**result)
+
+
+# ── Combat ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/combat/setup", methods=["POST"])
+def combat_setup():
+    """Initialise combat with a pre-rolled initiative value.
+    Body: {"enemies": [{"name": str, "count": int}], "d20_initiative": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body  = request.get_json(silent=True) or {}
+    specs = body.get("enemies", [])
+    d20   = int(body.get("d20_initiative", 10))
+    try:
+        result = gc.setup_combat(session, char, specs, d20)
+        return _ok(order=result["order"], display=result["display"],
+                   state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/combat/attack", methods=["POST"])
+def combat_attack():
+    """Resolve a player weapon attack with a pre-rolled d20.
+    The server resolves hit/miss and rolls damage in one step.
+    Body: {"weapon": str, "target": str, "d20": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body   = request.get_json(silent=True) or {}
+    weapon = body.get("weapon", "")
+    target = body.get("target", "")
+    d20    = int(body.get("d20", 10))
+    if not weapon or not target:
+        return _err("weapon and target are required")
+    try:
+        result = gc.process_attack(session, char, weapon, target, d20)
+        if "error" in result:
+            return _err(result["error"])
+        save_character(char)
+        return _ok(**result, state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/combat/spell", methods=["POST"])
+def combat_spell():
+    """Resolve a player spell. Slot is consumed here before calling the controller.
+    Body: {"spell": str, "target": str, "slot_level": int, "d20": int | null}
+    d20 is only needed for attack-roll spells (delivery == "attack").
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body       = request.get_json(silent=True) or {}
+    spell_name = body.get("spell", "")
+    target     = body.get("target", "")
+    slot_level = int(body.get("slot_level", 1))
+    d20        = body.get("d20")
+    if not spell_name or not target:
+        return _err("spell and target are required")
+
+    if slot_level > 0:
+        try:
+            from models.character import use_spell_slot
+            use_spell_slot(char, slot_level)
+        except ValueError as e:
+            return _err(str(e))
+
+    try:
+        result = gc.process_spell_cast(
+            session, char, spell_name, target, slot_level,
+            d20_override=int(d20) if d20 is not None else None,
+        )
+        if "error" in result:
+            return _err(result["error"])
+        save_character(char)
+        return _ok(**result, state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/combat/death-save", methods=["POST"])
+def death_save():
+    """Roll a death saving throw. The server always rolls independently.
+    Call /api/roll first if you want to animate a die before resolving.
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    try:
+        result = gc.process_death_save(session)
+        gs.save_session(session)
+        return _ok(**result, state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/combat/end-turn", methods=["POST"])
+def end_turn():
+    """Advance to the next combatant's turn.
+    If the next combatant is an enemy, their attack is resolved automatically.
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    next_c       = cb.end_turn(session)
+    enemy_result = None
+    if next_c and not next_c.get("is_player") and not next_c.get("is_companion"):
+        if next_c["hp"] > 0:
+            enemy_result = gc.process_enemy_turn(session)
+    return _ok(
+        current=gs.current_combatant(session),
+        enemy_result=enemy_result,
+        state=_snapshot(),
+    )
+
+
+@app.route("/api/combat/end", methods=["POST"])
+def end_combat():
+    """Force-end combat (called when all enemies reach 0 HP) and award XP."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    xp        = cb.xp_from_combat(session)
+    gs.end_combat(session)
+    xp_result = None
+    if xp > 0:
+        xp_result = gc.process_xp_award(session, char, xp)
+        save_character(char)
+    gs.save_session(session)
+    return _ok(xp_result=xp_result, state=_snapshot())
+
+
+# ── Skill check ───────────────────────────────────────────────────────────────
+
+@app.route("/api/skill-check", methods=["POST"])
+def skill_check():
+    """Resolve a skill check with a pre-rolled d20.
+    Body: {"skill": str, "dc": int, "d20": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body  = request.get_json(silent=True) or {}
+    skill = body.get("skill", "")
+    dc    = int(body.get("dc", 10))
+    d20   = int(body.get("d20", 10))
+    if not skill:
+        return _err("skill is required")
+    result = gc.process_skill_check(char, skill, dc, d20)
+    return _ok(**result, state=_snapshot())
+
+
+# ── Rest ──────────────────────────────────────────────────────────────────────
+
+@app.route("/api/rest/short", methods=["POST"])
+def short_rest():
+    """Take a short rest — spend hit dice, recharge short-rest features.
+    Body: {"dice_spent": int, "rolls": [int, ...]}
+    rolls contains one raw die result per hit die spent (from /api/roll/hit-die).
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body       = request.get_json(silent=True) or {}
+    dice_spent = int(body.get("dice_spent", 1))
+    rolls      = body.get("rolls", [])
+    try:
+        result = gc.process_short_rest(session, char, dice_spent, rolls)
+        save_character(char)
+        gs.save_session(session)
+        return _ok(**result, state=_snapshot())
+    except Exception as e:
+        return _err(str(e))
+
+
+@app.route("/api/rest/long", methods=["POST"])
+def long_rest():
+    """Take a long rest — fully restores HP, spell slots, and feature charges."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    try:
+        result = gc.process_long_rest(session, char)
+        save_character(char)
+        gs.save_session(session)
+        return _ok(**result, state=_snapshot())
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+# ── Adventure ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/adventure/beat", methods=["POST"])
+def advance_beat():
+    """Advance the story beat and award beat XP."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    xp        = gc.advance_beat(session)
+    xp_result = None
+    if xp > 0:
+        xp_result = gc.process_xp_award(session, char, xp)
+        save_character(char)
+    gs.save_session(session)
+    return _ok(xp=xp, xp_result=xp_result, state=_snapshot())
+
+
+# ── Awards ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/award/xp", methods=["POST"])
+def award_xp():
+    """Award XP directly. Used by the [XP:] DM tag handler and the DEV panel.
+    Body: {"amount": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body   = request.get_json(silent=True) or {}
+    amount = int(body.get("amount", 0))
+    if amount <= 0:
+        return _err("amount must be a positive integer")
+    result = gc.process_xp_award(session, char, amount)
+    save_character(char)
+    return _ok(**result, state=_snapshot())
+
+
+@app.route("/api/award/gold", methods=["POST"])
+def award_gold():
+    """Award gold pieces from a [GOLD:] DM tag.
+    Body: {"amount": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body      = request.get_json(silent=True) or {}
+    amount    = int(body.get("amount", 0))
+    new_total = gc.process_gold_award(char, amount)
+    save_character(char)
+    return _ok(new_total=new_total, state=_snapshot())
+
+
+@app.route("/api/award/item", methods=["POST"])
+def award_item():
+    """Award a magic item from an [ITEM:] DM tag.
+    Body: {"name": str, "slot": "weapon"|"armor"|"misc", "bonus": int}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body  = request.get_json(silent=True) or {}
+    name  = body.get("name", "")
+    slot  = body.get("slot", "misc")
+    bonus = int(body.get("bonus", 0))
+    if not name:
+        return _err("name is required")
+    item = gc.process_item_award(char, name, slot, bonus)
+    save_character(char)
+    return _ok(item=item, state=_snapshot())
+
+
+# ── Level-up ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/levelup", methods=["POST"])
+def apply_levelup():
+    """Apply all level-up choices after the client detects leveled_up == True.
+    Body: {
+        "hp_roll":  int,               raw die result (CON mod applied here)
+        "subclass": str | null,        only sent at the subclass trigger level
+        "asi": {                       only sent at ASI levels
+            "type":  "+2" | "+1+1" | "feat",
+            "a1":    ability_key,
+            "a2":    ability_key | null,
+            "feat":  feat_name | null,
+        },
+        "spells": [str, ...]           newly learned spell names (casters only)
+    }
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+
+    body    = request.get_json(silent=True) or {}
+    level   = char.get("level", 1)
+    con_mod = modifier(char["abilities"].get("constitution", 10))
+
+    # HP
+    hp_roll = int(body.get("hp_roll", 1))
+    hp_gain = max(1, hp_roll + con_mod)
+    char["hp"]["max"]     += hp_gain
+    char["hp"]["current"] += hp_gain
+    char["hit_dice"]["total"] = level
+    char["hit_dice"]["used"]  = 0
+
+    # Subclass
+    subclass = body.get("subclass")
+    if subclass:
+        char["subclass"] = subclass
+
+    # ASI / Feat
+    asi = body.get("asi") or {}
+    if asi:
+        t = asi.get("type", "")
+        if t == "+2":
+            ab = asi.get("a1", "strength")
+            char["abilities"][ab] = char["abilities"].get(ab, 10) + 2
+        elif t == "+1+1":
+            for key in ("a1", "a2"):
+                ab = asi.get(key)
+                if ab:
+                    char["abilities"][ab] = char["abilities"].get(ab, 10) + 1
+        elif t == "feat":
+            feat = asi.get("feat")
+            if feat:
+                char.setdefault("feats", [])
+                if feat not in char["feats"]:
+                    char["feats"].append(feat)
+                    if feat == "Tough":
+                        char["hp"]["max"]     += 2 * level
+                        char["hp"]["current"] += 2 * level
+
+    # Spell learning
+    spells = body.get("spells") or []
+    if spells:
+        sc    = char.get("spellcasting", {})
+        known = sc.setdefault("spells_known", [])
+        for s in spells:
+            if s not in known:
+                known.append(s)
+
+    save_character(char)
+    return _ok(state=_snapshot())
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def create_app():
+    """App factory used by tests and run_server.py."""
+    return app
+
+
+if __name__ == "__main__":
+    print("D&D API -> http://localhost:5000")
+    app.run(debug=True, port=5000, use_reloader=False)
