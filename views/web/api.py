@@ -169,7 +169,7 @@ def _snapshot():
                 "in_combat", "round", "current_hp", "temp_hp",
                 "hit_dice_spent", "spell_slots_used", "conditions",
                 "death_saves", "stable", "initiative_order", "current_turn",
-                "adventure", "companions", "flags",
+                "adventure", "companions", "flags", "story_mode",
             )
         },
         "character": char,
@@ -832,6 +832,80 @@ def apply_levelup():
 
     save_character(char)
     return _ok(state=_snapshot())
+
+
+# ── Story Mode ────────────────────────────────────────────────────────────────
+
+@app.route("/api/story-mode", methods=["POST"])
+def story_mode():
+    """Enter or exit Story Mode. Body: {"enter": bool}"""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body  = request.get_json(silent=True) or {}
+    enter = body.get("enter", True)
+    session["story_mode"] = bool(enter)
+    gs.save_session(session)
+    return _ok(story_mode=session["story_mode"], state=_snapshot())
+
+
+# ── DEV panel ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/dev/set-hp", methods=["POST"])
+def dev_set_hp():
+    """Set current HP directly. Body: {"hp": int}"""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body = request.get_json(silent=True) or {}
+    hp   = int(body.get("hp", 1))
+    max_hp = char.get("hp", {}).get("max", 1)
+    session["current_hp"] = max(0, min(max_hp, hp))
+    gs.save_session(session)
+    return _ok(state=_snapshot())
+
+
+@app.route("/api/dev/add-condition", methods=["POST"])
+def dev_add_condition():
+    """Add a condition. Body: {"condition": str}"""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body = request.get_json(silent=True) or {}
+    cond = body.get("condition", "").strip()
+    if not cond:
+        return _err("condition is required")
+    gs.add_condition(session, cond)
+    gs.save_session(session)
+    return _ok(state=_snapshot())
+
+
+@app.route("/api/dev/remove-condition", methods=["POST"])
+def dev_remove_condition():
+    """Remove a condition. Body: {"condition": str}"""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body = request.get_json(silent=True) or {}
+    cond = body.get("condition", "").strip()
+    gs.remove_condition(session, cond)
+    gs.save_session(session)
+    return _ok(state=_snapshot())
+
+
+@app.route("/api/dev/spawn-combat", methods=["POST"])
+def dev_spawn_combat():
+    """Spawn a test combat with a single Goblin for testing."""
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    level  = char.get("level", 1)
+    from models.enemies import ENEMIES
+    enemy  = ENEMIES.get("Goblin") or list(ENEMIES.values())[0]
+    result = gc.start_combat(session, char, [{"name": enemy["name"], "count": 1}], level,
+                             dice_mod.roll(20))
+    gs.save_session(session)
+    return _ok(**result, state=_snapshot())
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

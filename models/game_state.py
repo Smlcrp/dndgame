@@ -55,6 +55,7 @@ def empty_session(character_name="", session_name=""):
 
         "adventure":      None,
         "companions":     [],
+        "story_mode":     False,
     }
 
 

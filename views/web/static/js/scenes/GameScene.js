@@ -3,10 +3,11 @@ class GameScene {
     this.root = root;
     this.data = data;
     this._state = data.state || {};
-    this._busy = false;           // true while awaiting DM or dice
-    this._combatTarget = null;    // current combat target name
-    this._pendingAction = null;   // {attack?, spell?, feature?, etc} from [ACTION:] event
-    this._rollBtn = null;         // active roll button in narration (disabled after use)
+    this._busy = false;
+    this._combatTarget = null;
+    this._pendingAction = null;
+    this._rollBtn = null;
+    this._devUnlocked = false;
   }
 
   async enter() {
@@ -39,6 +40,7 @@ class GameScene {
           <div class="game-header-title" id="hdr-char">${char.name || 'Adventure'}</div>
           <div class="game-header-loc" id="hdr-loc"></div>
           <div id="hdr-badges"></div>
+          <button class="menu-btn dev-btn" id="btn-dev" style="font-size:11px;padding:4px 10px">DEV</button>
           <button class="menu-btn" id="btn-save" style="font-size:11px;padding:4px 10px">Save</button>
           <button class="menu-btn" id="btn-menu" style="font-size:11px;padding:4px 10px">Menu</button>
         </div>
@@ -59,6 +61,7 @@ class GameScene {
     this.root.querySelector('#player-input').addEventListener('keydown', e => {
       if (e.key === 'Enter') this._send();
     });
+    this.root.querySelector('#btn-dev').onclick  = () => this._openDev();
     this.root.querySelector('#btn-save').onclick = async () => {
       try { await API.post('/api/game/save'); this._flash('Saved.'); } catch (e) { this._flash(e.message, true); }
     };
@@ -365,6 +368,11 @@ class GameScene {
           const loc = document.getElementById('hdr-loc');
           if (loc) loc.textContent = ev.location;
         }
+        break;
+
+      case 'companion_join':
+        this._appendNarration(`${ev.name} has joined the party!`, 'banner');
+        this._updateSidebar();
         break;
     }
   }
@@ -690,56 +698,133 @@ class GameScene {
 
   // ── Sidebar ─────────────────────────────────────────────────────────────
 
+  _mod(score) {
+    return Math.floor(((score || 10) - 10) / 2);
+  }
+  _modStr(score) {
+    const m = this._mod(score);
+    return (m >= 0 ? '+' : '') + m;
+  }
+
   _updateSidebar() {
     const sidebar = document.getElementById('sidebar');
     if (!sidebar) return;
     const s = this._state.session   || {};
     const c = this._state.character || {};
 
-    const maxHp  = c.hp?.max     || 1;
-    const curHp  = s.current_hp  ?? c.hp?.current ?? maxHp;
-    const tempHp = s.temp_hp     || 0;
-    const pct    = Math.max(0, Math.min(100, (curHp / maxHp) * 100));
+    // ── Vitals ──
+    const maxHp   = c.hp?.max  || 1;
+    const curHp   = s.current_hp  ?? c.hp?.current ?? maxHp;
+    const tempHp  = s.temp_hp || 0;
+    const pct     = Math.max(0, Math.min(100, (curHp / maxHp) * 100));
     const hpClass = pct <= 25 ? 'low' : pct <= 50 ? 'mid' : '';
+    const xp      = c.experience || 0;
+    const level   = c.level || 1;
+    const XP_TABLE = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
+                      100000,120000,140000,165000,195000,225000,265000,305000,355000];
+    const nextXp  = XP_TABLE[level] || 355000;
+    const curXp   = XP_TABLE[level-1] || 0;
+    const xpPct   = nextXp > curXp ? Math.min(100, ((xp - curXp) / (nextXp - curXp)) * 100) : 100;
+    const ac      = (c.armor_class || 10) + (c.magic_armor_bonus || 0);
+    const speed   = c.speed || 30;
+    const conds   = s.conditions || [];
+    const insp    = c.inspiration ? `<span style="color:var(--accent);font-size:11px">★ Inspired</span>` : '';
+    const pb      = level < 5 ? 2 : level < 9 ? 3 : level < 13 ? 4 : level < 17 ? 5 : 6;
 
-    const xp       = c.experience || 0;
-    const level    = c.level      || 1;
-    const nextXp   = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
-                       100000,120000,140000,165000,195000,225000,265000,305000,355000][level] || 355000;
-    const curXp    = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
-                       100000,120000,140000,165000,195000,225000,265000,305000,355000][level-1] || 0;
-    const xpPct    = nextXp > curXp ? Math.min(100, ((xp - curXp) / (nextXp - curXp)) * 100) : 100;
+    // ── Abilities ──
+    const ABILITY_KEYS = ['STR','DEX','CON','INT','WIS','CHA'];
+    const ABILITY_LABELS = {STR:'STR',DEX:'DEX',CON:'CON',INT:'INT',WIS:'WIS',CHA:'CHA'};
+    const abs = c.abilities || {};
+    const abilitiesHtml = ABILITY_KEYS.map(k => {
+      const score = abs[k] || 10;
+      return `<div class="ability-box">
+        <div class="ability-label">${ABILITY_LABELS[k]}</div>
+        <div class="ability-mod">${this._modStr(score)}</div>
+        <div class="ability-score">${score}</div>
+      </div>`;
+    }).join('');
 
-    const ac       = (c.armor_class || 10) + (c.magic_armor_bonus || 0);
-    const speed    = c.speed   || 30;
-    const conds    = s.conditions || [];
+    // ── Saving throws ──
+    const SAVE_KEYS = {STR:'Strength',DEX:'Dexterity',CON:'Constitution',INT:'Intelligence',WIS:'Wisdom',CHA:'Charisma'};
+    const saveProfs = c.saving_throw_proficiencies || [];
+    const savesHtml = ABILITY_KEYS.map(k => {
+      const prof   = saveProfs.includes(SAVE_KEYS[k]);
+      const total  = this._mod(abs[k] || 10) + (prof ? pb : 0);
+      const sign   = total >= 0 ? '+' : '';
+      return `<div class="save-row">
+        <span class="save-pip ${prof ? 'prof' : ''}"></span>
+        <span class="save-name">${k}</span>
+        <span class="save-val">${sign}${total}</span>
+      </div>`;
+    }).join('');
 
-    // Feature charges
-    const features  = c.feature_uses || {};
+    // ── Skills ──
+    const SKILLS = [
+      ['Acrobatics','DEX'],['Animal Handling','WIS'],['Arcana','INT'],
+      ['Athletics','STR'],['Deception','CHA'],['History','INT'],
+      ['Insight','WIS'],['Intimidation','CHA'],['Investigation','INT'],
+      ['Medicine','WIS'],['Nature','INT'],['Perception','WIS'],
+      ['Performance','CHA'],['Persuasion','CHA'],['Religion','INT'],
+      ['Sleight of Hand','DEX'],['Stealth','DEX'],['Survival','WIS'],
+    ];
+    const skillProfs = c.skill_proficiencies || [];
+    const skillsHtml = SKILLS.map(([name, abil]) => {
+      const prof  = skillProfs.includes(name);
+      const total = this._mod(abs[abil] || 10) + (prof ? pb : 0);
+      const sign  = total >= 0 ? '+' : '';
+      return `<div class="save-row">
+        <span class="save-pip ${prof ? 'prof' : ''}"></span>
+        <span class="save-name" style="font-size:10px">${name}</span>
+        <span class="save-val">${sign}${total}</span>
+      </div>`;
+    }).join('');
+
+    // ── Spellcasting ──
+    let spellHtml = '';
+    const sc = c.spellcasting || {};
+    if (sc.enabled) {
+      const slots  = sc.slots_per_level || {};
+      const used   = s.spell_slots_used || {};
+      const slotRows = Object.entries(slots).filter(([, max]) => max > 0).map(([lvl, max]) => {
+        const rem = Math.max(0, max - (used[lvl] || 0));
+        const pips = Array.from({length: max}, (_, i) =>
+          `<div class="pip ${i < rem ? 'filled' : ''}"></div>`).join('');
+        return `<div class="feature-row"><span class="feature-name">Lv${lvl}</span><div class="feature-pips">${pips}</div></div>`;
+      }).join('');
+      spellHtml = `
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Spellcasting</div>
+          <div class="sidebar-stat-row"><span>Spell DC</span><span>${sc.spell_dc || '—'}</span></div>
+          <div class="sidebar-stat-row"><span>Attack</span><span>${sc.spell_attack_bonus >= 0 ? '+' : ''}${sc.spell_attack_bonus ?? '—'}</span></div>
+          ${slotRows || '<div style="color:var(--dim);font-size:11px">No slots</div>'}
+        </div>`;
+    }
+
+    // ── Feature charges ──
+    const features = c.feature_uses || {};
     const featureHtml = Object.entries(features).map(([name, data]) => {
-      const pips = Array.from({ length: data.max || 0 }, (_, i) =>
+      const pips = Array.from({length: data.max || 0}, (_, i) =>
         `<div class="pip ${i < (data.current || 0) ? 'filled' : ''}"></div>`).join('');
-      return `<div class="feature-row"><span class="feature-name">${name}</span>
-        <div class="feature-pips">${pips}</div></div>`;
-    }).join('') || '<div style="color:var(--dim);font-size:12px">—</div>';
+      return `<div class="feature-row"><span class="feature-name">${name}</span><div class="feature-pips">${pips}</div></div>`;
+    }).join('') || '<div style="color:var(--dim);font-size:11px">—</div>';
 
-    // Attacks
-    const attacks = (c.attacks || []).map(a =>
-      `<div class="attack-row">${a.name}
-        <span class="attack-bonus"> +${a.attack_bonus || 0}</span>
-        <span class="attack-damage"> ${a.damage || '—'}</span>
-      </div>`).join('') || '<div style="color:var(--dim);font-size:12px">—</div>';
+    // ── Attacks ──
+    const attacksHtml = (c.attacks || []).map(a =>
+      `<div class="attack-row">${a.name}<span class="attack-bonus"> +${a.attack_bonus || 0}</span><span class="attack-damage"> ${a.damage || '—'}</span></div>`
+    ).join('') || '<div style="color:var(--dim);font-size:11px">—</div>';
 
-    // Combat tracker
+    // ── Combat tracker ──
     let combatHtml = '';
     if (s.in_combat) {
       const order = s.initiative_order || [];
       combatHtml = `
         <div class="sidebar-section">
-          <div class="sidebar-section-title">⚔ Combat — Round ${s.round || 1}</div>
+          <div class="sidebar-section-title">⚔ Combat — Round ${s.round || 1}
+            <button class="actions-btn" id="btn-actions">⚔ Actions</button>
+          </div>
           <div class="combat-tracker">
             ${order.map((c2, i) => `
-              <div class="combatant-row ${i === (s.current_turn || 0) ? 'active' : ''} ${c2.hp <= 0 ? 'dead' : ''} ${c2.is_player ? 'player' : ''}">
+              <div class="combatant-row ${i === (s.current_turn||0) ? 'active' : ''} ${c2.hp <= 0 ? 'dead' : ''} ${c2.is_player ? 'player' : ''}">
                 <span class="combatant-name">${c2.name}</span>
                 <span class="combatant-hp">${c2.hp}/${c2.max_hp}</span>
               </div>`).join('')}
@@ -747,68 +832,350 @@ class GameScene {
         </div>`;
     }
 
-    // Inventory
+    // ── Inventory ──
     const currency = c.currency || {};
     const gp = currency.gp || 0;
-    const sp = currency.sp || 0;
     const items = c.magic_items || [];
     const invHtml = `
-      <div class="inventory-row">Gold <span class="val">${gp} gp${sp ? ` / ${sp} sp` : ''}</span></div>
-      ${items.map(i => `<div class="magic-item">${i.name}${i.bonus ? ` +${i.bonus}` : ''}</div>`).join('')}
-    `;
+      <div class="inventory-row">Gold <span class="val">${gp} gp</span></div>
+      ${items.map(it => `<div class="magic-item">${it.name}${it.bonus ? ` +${it.bonus}` : ''}</div>`).join('')}`;
 
-    // Death save display
-    const ds = s.death_saves || { successes: 0, failures: 0 };
+    // ── Death saves ──
+    const ds = s.death_saves || {successes:0,failures:0};
     const deathHtml = curHp <= 0 && !s.stable
       ? `<div class="sidebar-section" style="border-color:var(--red)">
            <div class="sidebar-section-title" style="color:var(--red)">DEATH SAVES</div>
-           <div style="font-size:12px">Successes: ${'●'.repeat(ds.successes)}${'○'.repeat(3 - ds.successes)}</div>
-           <div style="font-size:12px">Failures: ${'●'.repeat(ds.failures)}${'○'.repeat(3 - ds.failures)}</div>
+           <div style="font-size:12px">Successes: ${'●'.repeat(ds.successes)}${'○'.repeat(3-ds.successes)}</div>
+           <div style="font-size:12px">Failures:  ${'●'.repeat(ds.failures)}${'○'.repeat(3-ds.failures)}</div>
          </div>` : '';
 
-    // Inspiration
-    const insp = c.inspiration ? `<span class="game-header-badge" style="color:var(--accent)">★ Inspired</span>` : '';
+    // ── Party (companions) ──
+    const companions = (s.companions || []).filter(cp => cp.status !== 'dead');
+    const partyHtml = companions.length ? `
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Party</div>
+        ${companions.map(cp => `
+          <div class="sidebar-stat-row">
+            <span>${cp.name} (${cp.class || '?'})</span>
+            <span>${cp.current_hp ?? cp.hp ?? '?'}/${cp.max_hp ?? '?'}</span>
+          </div>`).join('')}
+      </div>` : '';
 
     sidebar.innerHTML = `
-      <!-- VITALS -->
       <div class="sidebar-section">
-        <div class="sidebar-section-title">Vitals — ${c.name || ''} Lv ${level} ${c.class || ''}</div>
+        <div class="sidebar-section-title">${c.name || ''} · Lv ${level} ${c.class || ''}</div>
         <div class="hp-numbers">
-          <span class="current ${hpClass}">${curHp}</span>
-          <span class="sep">/</span>
-          <span class="max">${maxHp}</span>
+          <span class="current ${hpClass}">${curHp}</span><span class="sep">/</span><span class="max">${maxHp}</span>
+          ${tempHp > 0 ? `<span style="color:var(--blue);margin-left:6px">+${tempHp} tmp</span>` : ''}
         </div>
-        ${tempHp > 0 ? `<div class="hp-temp">+${tempHp} temp HP</div>` : ''}
         <div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>
         <div class="xp-bar-wrap"><div class="xp-bar-fill" style="width:${xpPct}%"></div></div>
         <div class="xp-label">XP ${xp.toLocaleString()} / ${nextXp.toLocaleString()}</div>
         <div class="sidebar-stat-row"><span>AC</span><span>${ac}</span></div>
         <div class="sidebar-stat-row"><span>Speed</span><span>${speed} ft</span></div>
+        <div class="sidebar-stat-row"><span>Prof. Bonus</span><span>+${pb}</span></div>
         ${insp}
-        ${conds.length ? `<div class="conditions-row">${conds.map(c2 => `<div class="condition-chip">${c2}</div>`).join('')}</div>` : ''}
+        ${conds.length ? `<div class="conditions-row">${conds.map(cn => `<div class="condition-chip">${cn}</div>`).join('')}</div>` : ''}
       </div>
       ${deathHtml}
       ${combatHtml}
-      <!-- FEATURES -->
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Abilities</div>
+        <div class="ability-grid">${abilitiesHtml}</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Saving Throws</div>
+        ${savesHtml}
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Skills</div>
+        ${skillsHtml}
+      </div>
+      ${spellHtml}
       <div class="sidebar-section">
         <div class="sidebar-section-title">Features</div>
         ${featureHtml}
       </div>
-      <!-- ATTACKS -->
       <div class="sidebar-section">
         <div class="sidebar-section-title">Attacks</div>
-        ${attacks}
+        ${attacksHtml}
       </div>
-      <!-- INVENTORY -->
       <div class="sidebar-section">
         <div class="sidebar-section-title">Inventory</div>
         ${invHtml}
       </div>
+      ${partyHtml}
     `;
 
-    // Update header
+    // Update header location + story mode badge
     const loc = document.getElementById('hdr-loc');
     if (loc && s.location) loc.textContent = s.location;
+    const badges = document.getElementById('hdr-badges');
+    if (badges) {
+      const existing = badges.querySelector('.story-mode-badge');
+      if (s.story_mode && !existing) {
+        const b = document.createElement('span');
+        b.className = 'game-header-badge story-mode-badge';
+        b.textContent = '◆ STORY MODE';
+        badges.appendChild(b);
+      } else if (!s.story_mode && existing) {
+        existing.remove();
+      }
+    }
+
+    // Wire up actions button if present
+    const actBtn = document.getElementById('btn-actions');
+    if (actBtn) actBtn.onclick = () => this._openActions();
+  }
+
+  // ── DEV panel ───────────────────────────────────────────────────────────
+
+  _openDev() {
+    if (!this._devUnlocked) {
+      this._devPasswordPrompt();
+    } else {
+      this._showDevPanel();
+    }
+  }
+
+  _devPasswordPrompt() {
+    const overlay = document.createElement('div');
+    overlay.className = 'dev-overlay';
+    overlay.innerHTML = `
+      <div class="dev-panel">
+        <div class="dev-title">DEV Access</div>
+        <input class="dev-input" id="dev-pw" type="password" placeholder="Password" autocomplete="off">
+        <div class="dev-error" id="dev-pw-err" style="color:var(--red);font-size:11px;min-height:16px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="dev-action-btn" id="dev-pw-ok">Unlock</button>
+          <button class="dev-action-btn" id="dev-pw-cancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const pw  = overlay.querySelector('#dev-pw');
+    const err = overlay.querySelector('#dev-pw-err');
+    pw.focus();
+    overlay.querySelector('#dev-pw-ok').onclick = () => {
+      if (pw.value === '0922') {
+        this._devUnlocked = true;
+        overlay.remove();
+        this._showDevPanel();
+      } else {
+        err.textContent = 'Incorrect password.';
+        pw.value = '';
+        pw.focus();
+      }
+    };
+    overlay.querySelector('#dev-pw-cancel').onclick = () => overlay.remove();
+    pw.addEventListener('keydown', e => { if (e.key === 'Enter') overlay.querySelector('#dev-pw-ok').click(); });
+  }
+
+  _showDevPanel() {
+    if (document.getElementById('dev-floating-panel')) return;
+    const s = this._state.session || {};
+    const c = this._state.character || {};
+    const XP_TABLE = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
+                      100000,120000,140000,165000,195000,225000,265000,305000,355000];
+    const CONDITIONS = ['Blinded','Charmed','Deafened','Frightened','Grappled',
+      'Incapacitated','Invisible','Paralyzed','Petrified','Poisoned','Prone',
+      'Restrained','Stunned','Unconscious','Exhaustion'];
+
+    const panel = document.createElement('div');
+    panel.id = 'dev-floating-panel';
+    panel.className = 'dev-floating-panel';
+    panel.innerHTML = `
+      <div class="dev-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>⚙ DEV Panel</span>
+        <button class="dev-close-btn" id="dev-close">✕</button>
+      </div>
+
+      <div class="dev-row">
+        <label>Award XP</label>
+        <input class="dev-input" id="dev-xp" type="number" value="300" min="0" style="width:70px">
+        <button class="dev-action-btn" id="dev-xp-btn">+XP</button>
+      </div>
+
+      <div class="dev-row" style="flex-wrap:wrap;gap:4px">
+        <label style="width:100%">Jump to level</label>
+        ${[2,3,4,5,6,7,8,9,10].map(lv =>
+          `<button class="dev-action-btn" data-lv="${lv}">Lv${lv}</button>`
+        ).join('')}
+      </div>
+
+      <div class="dev-row">
+        <label>Set HP</label>
+        <input class="dev-input" id="dev-hp" type="number" value="${s.current_hp ?? c.hp?.max ?? 10}" min="0" style="width:70px">
+        <button class="dev-action-btn" id="dev-hp-btn">Set</button>
+      </div>
+
+      <div class="dev-row">
+        <label>Add condition</label>
+        <select class="dev-input" id="dev-cond" style="flex:1">
+          ${CONDITIONS.map(cd => `<option>${cd}</option>`).join('')}
+        </select>
+        <button class="dev-action-btn" id="dev-cond-btn">Add</button>
+      </div>
+
+      <div class="dev-row" style="gap:6px">
+        <button class="dev-action-btn" id="dev-short-rest">Short Rest</button>
+        <button class="dev-action-btn" id="dev-long-rest">Long Rest</button>
+        <button class="dev-action-btn" id="dev-spawn">Spawn Combat</button>
+      </div>
+
+      <div class="dev-row">
+        <button class="dev-action-btn" id="dev-story-toggle" style="flex:1">
+          ${s.story_mode ? 'Exit Story Mode' : 'Enter Story Mode'}
+        </button>
+      </div>
+
+      <div class="dev-status" id="dev-status"></div>
+    `;
+    document.body.appendChild(panel);
+
+    const status = panel.querySelector('#dev-status');
+    const flash  = msg => { status.textContent = msg; setTimeout(() => status.textContent = '', 2500); };
+
+    panel.querySelector('#dev-close').onclick = () => panel.remove();
+
+    panel.querySelector('#dev-xp-btn').onclick = async () => {
+      const amt = parseInt(panel.querySelector('#dev-xp').value) || 0;
+      try {
+        const r = await API.post('/api/award/xp', { amount: amt });
+        this._state = r.state;
+        this._updateSidebar();
+        flash(`+${amt} XP`);
+        if (r.leveled_up) {
+          flash(`Leveled up to ${r.new_level}!`);
+          const fr = await API.get('/api/game/state');
+          this._state = fr; this._updateSidebar();
+          await LevelUpScene.show(this._state);
+        }
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelectorAll('[data-lv]').forEach(btn => {
+      btn.onclick = async () => {
+        const targetLv = parseInt(btn.dataset.lv);
+        const xpNeeded = XP_TABLE[targetLv - 1] || 0;
+        const cur = (this._state.character || {}).experience || 0;
+        if (xpNeeded <= cur) { flash(`Already at Lv${targetLv}+`); return; }
+        try {
+          const r = await API.post('/api/award/xp', { amount: xpNeeded - cur });
+          this._state = r.state; this._updateSidebar();
+          if (r.leveled_up) {
+            const fr = await API.get('/api/game/state');
+            this._state = fr; this._updateSidebar();
+            await LevelUpScene.show(this._state);
+          }
+        } catch(e) { flash(`Error: ${e.message}`); }
+      };
+    });
+
+    panel.querySelector('#dev-hp-btn').onclick = async () => {
+      const hp = parseInt(panel.querySelector('#dev-hp').value) || 0;
+      try {
+        const r = await API.post('/api/dev/set-hp', { hp });
+        this._state = r.state; this._updateSidebar(); flash(`HP set to ${hp}`);
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelector('#dev-cond-btn').onclick = async () => {
+      const cond = panel.querySelector('#dev-cond').value;
+      try {
+        const r = await API.post('/api/dev/add-condition', { condition: cond });
+        this._state = r.state; this._updateSidebar(); flash(`Added: ${cond}`);
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelector('#dev-short-rest').onclick = async () => {
+      try {
+        const r = await API.post('/api/rest/short', { dice: 1 });
+        this._state = r.state; this._updateSidebar(); flash('Short rest taken');
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelector('#dev-long-rest').onclick = async () => {
+      try {
+        const r = await API.post('/api/rest/long');
+        this._state = r.state; this._updateSidebar(); flash('Long rest taken');
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelector('#dev-spawn').onclick = async () => {
+      try {
+        const r = await API.post('/api/dev/spawn-combat');
+        this._state = r.state;
+        this._appendNarration('⚔ Test combat spawned — 1 Goblin!', 'banner');
+        this._updateSidebar();
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+
+    panel.querySelector('#dev-story-toggle').onclick = async () => {
+      const cur = (this._state.session || {}).story_mode;
+      try {
+        const r = await API.post('/api/story-mode', { enter: !cur });
+        this._state = r.state;
+        this._updateSidebar();
+        const btn = panel.querySelector('#dev-story-toggle');
+        btn.textContent = r.story_mode ? 'Exit Story Mode' : 'Enter Story Mode';
+        flash(r.story_mode ? 'Story Mode ON' : 'Story Mode OFF');
+        if (r.story_mode) {
+          this._appendNarration('◆ Story Mode active — game mechanics suspended.', 'banner');
+          await this._sendStreaming('[STORY_MODE_START] Begin a vivid narrative scene for this character in the current setting.', false);
+        }
+      } catch(e) { flash(`Error: ${e.message}`); }
+    };
+  }
+
+  // ── Actions reference panel ──────────────────────────────────────────────
+
+  _openActions() {
+    if (document.getElementById('actions-panel')) return;
+    const c   = this._state.character || {};
+    const s   = this._state.session   || {};
+    const sc  = c.spellcasting || {};
+    const features = c.feature_uses || {};
+    const pb  = (c.level||1) < 5 ? 2 : (c.level||1) < 9 ? 3 : (c.level||1) < 13 ? 4 : (c.level||1) < 17 ? 5 : 6;
+    const condSet = new Set(s.conditions || []);
+    const incap   = condSet.has('Incapacitated') || condSet.has('Paralyzed') ||
+                    condSet.has('Stunned') || condSet.has('Unconscious');
+
+    const weaponRows = (c.attacks || []).map(a => {
+      const label = `${a.name} +${a.attack_bonus||0} / ${a.damage||'—'}`;
+      return `<div class="action-row ${incap ? 'unavail' : ''}">${label}${incap ? '<span class="action-reason">Incapacitated</span>' : ''}</div>`;
+    }).join('') || '<div class="action-row unavail">No weapons</div>';
+
+    const spellRow = sc.enabled
+      ? `<div class="action-row">✦ Cast a Spell (use slots below)</div>`
+      : '';
+
+    const featureRows = Object.entries(features).map(([name, data]) => {
+      const avail = (data.current || 0) > 0;
+      return `<div class="action-row ${avail ? '' : 'unavail'}">${name} ${avail ? `(${data.current}/${data.max})` : '(0 remaining)'}</div>`;
+    }).join('');
+
+    const panel = document.createElement('div');
+    panel.id = 'actions-panel';
+    panel.className = 'actions-panel';
+    panel.innerHTML = `
+      <div class="dev-title" style="display:flex;justify-content:space-between">
+        <span>⚔ Actions Reference</span>
+        <button class="dev-close-btn" id="actions-close">✕</button>
+      </div>
+      <div class="actions-section-title">ACTIONS</div>
+      ${weaponRows}
+      ${spellRow}
+      <div class="action-row">Dodge</div>
+      <div class="action-row">Dash</div>
+      <div class="action-row">Disengage</div>
+      <div class="action-row">Hide</div>
+      ${featureRows ? `<div class="actions-section-title">FEATURES</div>${featureRows}` : ''}
+      <div class="actions-section-title">BONUS ACTIONS</div>
+      <div class="action-row" style="color:var(--dim);font-size:11px">Described in narration via DM tags</div>
+      <div style="color:var(--dim);font-size:10px;margin-top:8px">Type what you want to do — the DM resolves the action.</div>
+    `;
+    document.body.appendChild(panel);
+    panel.querySelector('#actions-close').onclick = () => panel.remove();
   }
 
   destroy() {}
