@@ -304,6 +304,7 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
 7. When combat should begin, emit this tag on its own line then STOP — the engine takes over:
    [COMBAT: EnemyName×count, EnemyName×count]
    Example: [COMBAT: Goblin×2, Hobgoblin×1]
+   CRITICAL: ANY physical attack against a person or creature (striking, stabbing, shooting, throwing a weapon, casting an offensive spell) MUST trigger [COMBAT:], NOT [CHECK:]. Do not call for Intimidation, Athletics, or any other skill check when the player is attacking someone. [CHECK:] is ONLY for non-combat challenges: social skills, knowledge, perception, stealth, locks, traps, etc.
 8. When the scene location changes, emit on its own line:
    [SCENE: Location Name]
 9. When the player earns XP, emit on its own line:
