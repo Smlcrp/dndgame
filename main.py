@@ -105,6 +105,8 @@ def main():
             print("ERROR: Electron binary failed to download.", file=sys.stderr)
             sys.exit(1)
 
+    import os
+    os.environ["PYTHON_EXE"] = sys.executable  # tell Electron exactly which Python to use
     print("Starting D&D AI Dungeon Master...")
     subprocess.run([npm, "start"], cwd=_ELECTRON_DIR)
 

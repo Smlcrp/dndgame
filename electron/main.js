@@ -23,7 +23,8 @@ function launchFlask() {
     flaskProcess = execFile(path.join(serverDir, exe), { cwd: serverDir });
   } else {
     const projectRoot = path.join(__dirname, '..');
-    flaskProcess = spawn('python', ['run_server.py'], {
+    const pythonExe = process.env.PYTHON_EXE || 'python';
+    flaskProcess = spawn(pythonExe, ['run_server.py'], {
       cwd: projectRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -43,7 +44,7 @@ function launchFlask() {
 
 // ── Poll until Flask responds ─────────────────────────────────────────────────
 
-function waitForFlask(retries = 30, delayMs = 500) {
+function waitForFlask(retries = 60, delayMs = 500) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const check = () => {
