@@ -1,3 +1,24 @@
+"""
+Adventure model — story templates, presets, and the DM system-prompt adventure block.
+
+An adventure is a structured mini-campaign generated from a random template.
+It has a hook (inciting incident), 1–5 story beats (acts), a climax, and a
+resolution. The template is chosen at random from _TEMPLATES when the player
+starts a new adventure.
+
+Three session presets control the pacing:
+  One Shot — 1 beat + climax (~1–2 hours of play)
+  Quest    — 3 beats + climax (~3–4 hours)
+  Epic     — 5 beats + climax (~5–8 hours)
+
+The adventure dict is stored in session["adventure"] and referenced by the DM
+model to keep the Ollama LLM on track with the current story stage.
+
+The DM uses [BEAT], [CLIMAX], and [BREAK] tags in its responses to signal
+when the player has completed a stage, so the controller can advance the story
+and award XP automatically.
+"""
+
 import random
 import sys
 from pathlib import Path
@@ -176,8 +197,10 @@ _TEMPLATES = [
     },
 ]
 
+# XP awarded when the player defeats the antagonist in the climax encounter
 _CLIMAX_XP = 800
 
+# The three play-length presets. beats = number of story acts before the climax.
 PRESETS = {
     "One Shot": {"beats": 1, "estimate": "~1–2h"},
     "Quest":    {"beats": 3, "estimate": "~3–4h"},
@@ -185,6 +208,11 @@ PRESETS = {
 }
 
 def _build_beats(template, beat_count):
+    """Select and possibly expand a template's story beats to match the preset's beat count.
+
+    Every template has exactly 3 beats. One-shot uses only the climax; Quest uses all 3;
+    Epic expands to 5 by inserting two generated bridging beats around the core three.
+    """
     base = list(template["beats"])   # always 3 entries per template
     ant  = template["antagonist"]["name"]
     if beat_count == 1:
@@ -202,6 +230,9 @@ def _build_beats(template, beat_count):
     return base[:beat_count]
 
 def _beat_xp_for_preset(preset):
+    """Return a list of XP values for each story beat in the given preset.
+    The list length matches the number of beats in that preset.
+    """
     n = PRESETS.get(preset, PRESETS["Quest"])["beats"]
     if n == 1:
         return [600]
@@ -212,6 +243,10 @@ def _beat_xp_for_preset(preset):
     return [150, 300, 500]
 
 def _stage_labels(n_story_beats):
+    """Build a list of descriptive stage labels (HOOK, ACT 1 … ACT N, CLIMAX, RESOLUTION)
+    that are injected into the DM system prompt to guide the story pacing.
+    The current_beat index is used to select which label the DM sees as 'now'.
+    """
     labels = ["HOOK — establish the situation, introduce the threat, draw the player in"]
     for i in range(n_story_beats):
         idx = i + 1
@@ -252,7 +287,10 @@ def generate_adventure(char, preset="Quest"):
 
 
 def advance_beat(adventure):
-    """Advance to the next beat. Returns the XP award for this beat (0 if capped)."""
+    """Advance the adventure to the next story beat and return the XP award for completing it.
+    Returns 0 if all beats are already complete (i.e., past the climax).
+    Called by the game controller when the DM emits a [BEAT] or [CLIMAX] tag.
+    """
     beat         = adventure.get("current_beat", 0)
     n_story_beats = len(adventure.get("beats", []))
     if beat > n_story_beats:

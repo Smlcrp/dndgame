@@ -1,3 +1,19 @@
+"""
+Character progression model — XP thresholds, level-ups, class features, and ability charges.
+
+This module is the reference for everything related to a character growing in power:
+  - XP needed to reach each level (XP_THRESHOLDS)
+  - Which levels grant Ability Score Improvements or Feats (ASI_LEVELS)
+  - Which level each class first picks a subclass (SUBCLASS_TRIGGER_LEVELS)
+  - Limited-use class features (Rage, Bardic Inspiration, Ki Points, etc.) including
+    how many uses you get at each level and whether they recharge on short or long rest
+
+Helper functions below convert raw XP into levels, check whether a level is an ASI
+level, and build the feature_uses dict entries that appear on the character sheet.
+"""
+
+# XP thresholds for each level 1–20.
+# Index 0 = level 1 (starts at 0 XP), index 19 = level 20 (starts at 355,000 XP).
 XP_THRESHOLDS = [
     0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
     85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
@@ -187,6 +203,7 @@ def _class_features():
 # ── Helper functions ───────────────────────────────────────────────────────────
 
 def level_from_xp(xp):
+    """Return the level that corresponds to the given XP total (1–20)."""
     level = 1
     for i, threshold in enumerate(XP_THRESHOLDS):
         if xp >= threshold:
@@ -195,24 +212,33 @@ def level_from_xp(xp):
 
 
 def xp_for_level(level):
+    """Return the minimum XP needed to reach the given level."""
     return XP_THRESHOLDS[max(1, min(level, 20)) - 1]
 
 
 def xp_to_next_level(xp, current_level):
+    """Return how many more XP are needed to reach the next level.
+    Returns 0 if the character is already at level 20.
+    """
     if current_level >= 20:
         return 0
     return XP_THRESHOLDS[current_level] - xp
 
 
 def is_asi_level(cls, level):
+    """Return True if reaching this level grants an Ability Score Improvement or Feat choice."""
     return level in ASI_LEVELS.get(cls, [])
 
 
 def get_subclass_trigger(cls):
+    """Return the level at which this class first chooses its subclass."""
     return SUBCLASS_TRIGGER_LEVELS.get(cls, 3)
 
 
 def features_gained_at(cls, level):
+    """Return the list of class feature names gained at a specific level.
+    Pulls from dnd_data.CLASS_FEATURES, loaded lazily to avoid import cycles.
+    """
     cf = _class_features()
     return cf.get(cls, {}).get(level, [])
 

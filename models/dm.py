@@ -1,3 +1,23 @@
+"""
+Dungeon Master model — communicates with the Ollama local LLM to generate story narration.
+
+The DungeonMaster class is the bridge between the game and the AI. It:
+  1. Builds a detailed system prompt describing the player character, active adventure,
+     combat situation, party members, and all game rules the LLM must follow.
+  2. Assembles the conversation history into the message list Ollama expects.
+  3. Calls the Ollama API (POST to localhost:11434/api/chat) with the model configured
+     in dm_config.json (default: HammerAI/mistral-nemo-uncensored).
+  4. Parses the LLM's raw response to extract game-engine tags like [COMBAT:], [CHECK:],
+     [XP:], [BEAT], [ITEM:], etc. that drive the engine's state machine.
+  5. Returns the cleaned narration text plus a list of structured event dicts for the
+     game controller to process.
+
+The system prompt is rebuilt fresh on every call so that it always reflects the
+current game state — HP, spell slots, which enemies are nearby, where the story is.
+
+This module does NOT use any external API — everything runs locally through Ollama.
+"""
+
 import json
 import os
 import re
@@ -21,11 +41,29 @@ import requests
 
 
 class DungeonMaster:
+    """Manages all communication with the local Ollama LLM that acts as the Dungeon Master.
+
+    Instantiate with a model name (or let it read from dm_config.json via from_config()).
+    The primary entry point for the game is respond(), which takes the current session,
+    character, and player input and returns {"narration": str, "events": list}.
+    """
 
     def __init__(self, model=None):
+        """Set the Ollama model to use. Falls back to DEFAULT_OLLAMA_MODEL if not specified."""
         self.model = model or DEFAULT_OLLAMA_MODEL
 
     def _build_combat_prompt_block(self, character):
+        """Build the combat section of the system prompt.
+
+        This explains the two-phase narration system to the LLM:
+        Phase 1 — the DM narrates the physical initiation of the action (ONE sentence)
+                   and emits the appropriate [ACTION:] tag so the engine can resolve it.
+        Phase 2 — after dice resolve, the DM is called again with the result to
+                   narrate the dramatic outcome.
+
+        Lists the character's available attacks, spells (with slot counts), and
+        feature charges so the DM can emit the exact right action tag.
+        """
         lines = [
             "\n\nCOMBAT ACTION TAGS — TWO-PHASE NARRATION SYSTEM:",
             "",
@@ -129,6 +167,12 @@ class DungeonMaster:
         return "\n".join(lines)
 
     def _build_knowledge_checks_block(self, character):
+        """Build the skill-check guidance section of the system prompt.
+
+        Tells the LLM when to call for a roll vs. narrate automatically, how to
+        calibrate DC to the character's level, which skill covers which topic,
+        and how to match narration quality to the margin of success or failure.
+        """
         level  = character.get("level", 1)
 
         if level <= 3:
@@ -187,6 +231,18 @@ RESULT QUALITY TIERS — the engine sends you the exact roll, DC, and margin. Ma
   Critical failure (natural 1)      → confidently wrong; plausible but false — do NOT signal the error"""
 
     def _build_system_prompt(self, character, session=None):
+        """Assemble the full system prompt sent to Ollama on every LLM call.
+
+        This is the most important function in the DM — the system prompt defines
+        everything the AI knows and every rule it must follow. It includes:
+        - Player character stats, personality, items, passive scores
+        - All narration rules (second-person, no stat mentions, player agency)
+        - All game tags the DM can emit ([CHECK:], [COMBAT:], [XP:], etc.)
+        - Current adventure stage, party members, enemy list, knowledge-check DCs
+        - A 'scene anchor' with the last DM narration to prevent the model from
+          restarting the story from scratch on each response
+        - Story Mode section if story_mode=True (all mechanical tags suspended)
+        """
         name  = character.get("name") or "the adventurer"
         race  = character.get("race", "Human")
         cls   = character.get("class", "Fighter")
@@ -394,6 +450,12 @@ NARRATION RULES — READ CAREFULLY:
         return "\n".join(lines)
 
     def _messages_for_ollama(self, session, character, player_input):
+        """Build the full message list to send to the Ollama /api/chat endpoint.
+
+        Format: [system prompt] + [last 20 history entries] + [current player input].
+        History is capped at 20 entries (~10 exchanges) to stay within the 8192-token
+        context window — the system prompt alone is ~3000 tokens.
+        """
         messages = [{"role": "system", "content": self._build_system_prompt(character, session)}]
         history = session.get("history", [])
         # Keep only the most recent 20 entries (10 exchanges) to stay within context
@@ -404,6 +466,16 @@ NARRATION RULES — READ CAREFULLY:
         return messages
 
     def _call_ollama(self, messages):
+        """POST the message list to Ollama and return the assistant's reply as a string.
+
+        Key settings:
+          stream=False   — wait for the full response before returning
+          num_ctx=8192   — expand Ollama's context window beyond the default 2048 tokens
+                           (the system prompt alone is ~3000 tokens without this)
+
+        Raises RuntimeError with a human-readable message on connection failure,
+        timeout, HTTP error, or unexpected response shape.
+        """
         try:
             resp = requests.post(OLLAMA_URL, json={
                 "model":    self.model,
@@ -411,7 +483,13 @@ NARRATION RULES — READ CAREFULLY:
                 "stream":   False,
                 "options":  {"num_ctx": 8192},
             }, timeout=120)
-            resp.raise_for_status()
+            if not resp.ok:
+                body = ""
+                try:
+                    body = resp.json().get("error", resp.text)
+                except Exception:
+                    body = resp.text
+                raise RuntimeError(f"Ollama {resp.status_code}: {body}")
             return resp.json()["message"]["content"]
         except requests.exceptions.ConnectionError:
             raise RuntimeError(
@@ -425,6 +503,26 @@ NARRATION RULES — READ CAREFULLY:
             raise RuntimeError(f"Unexpected Ollama response: {e}")
 
     def _parse_events(self, raw_text):
+        """Extract all game-engine event tags from the LLM's raw response text.
+
+        Scans the raw text for bracket-enclosed tags the DM is instructed to emit:
+          [CHECK: SkillName DC##]  — calls for a skill check at a given DC
+          [COMBAT: Name×N, ...]   — starts combat with the listed enemies
+          [SCENE: Location]        — scene/location change
+          [XP: N]                  — XP award for an accomplishment
+          [BEAT]                   — current story beat is complete
+          [CLIMAX]                 — story has reached the final confrontation
+          [BREAK]                  — suggested session pause point
+          [COMPANION: Full Name]   — a companion joins the party
+          [GOLD: N]                — player acquires N gold pieces
+          [ITEM: Name, slot=X, bonus=N] — player gains a magic item
+          [ACTION: ...]            — combat action (attack, spell, feature, dodge, etc.)
+          [BONUS: ...]             — bonus action during combat
+
+        Returns (cleaned_narration, events_list) where cleaned_narration has all
+        tags stripped out (so they never appear in the displayed story text) and
+        events_list is a list of typed dicts the game controller processes.
+        """
         events = []
 
         for m in re.finditer(r"\[CHECK:\s*([\w\s]+?)\s+DC\s*(\d+)\]", raw_text, re.IGNORECASE):
@@ -532,6 +630,18 @@ NARRATION RULES — READ CAREFULLY:
         return clean, events
 
     def respond(self, session, character, player_input):
+        """Generate the DM's response to a player action. This is the main game loop call.
+
+        Steps:
+        1. Build the full Ollama message list (system prompt + history + player input)
+        2. Call Ollama and get the raw text response
+        3. Parse out game-engine events (combat, checks, XP, etc.) and clean the narration
+        4. Append both the player's input and the DM's narration to session history
+        5. Update session location if a [SCENE:] tag was present
+
+        Returns {"narration": str, "events": [list of event dicts]}.
+        The caller (app.py) processes the events list to drive the game engine.
+        """
         messages  = self._messages_for_ollama(session, character, player_input)
         raw       = self._call_ollama(messages)
 

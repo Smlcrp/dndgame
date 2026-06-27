@@ -1,3 +1,29 @@
+"""
+Spell combat data — mechanical stats for every combat-relevant spell in the game.
+
+This module defines SPELLS, a dictionary mapping spell names to their combat data,
+and provides helper functions for computing damage notation at a given spell level
+or character level (cantrip scaling, upcasting).
+
+Only spells that have a mechanical combat effect are listed here. Utility spells
+with no damage or save mechanics (e.g. Detect Magic, Identify) are not included
+because the DM narrates those effects instead.
+
+Schema for each SPELLS entry:
+  level             — int: spell slot level (0 = cantrip, no slot required)
+  delivery          — how the spell resolves:
+                        "attack" — spell attack roll vs AC
+                        "save"   — target makes a saving throw
+                        "auto"   — automatically hits (e.g. Magic Missile)
+  save_ability      — which ability the target saves with (or None)
+  damage            — base damage notation string (e.g. "8d6"), "0" if no damage
+  damage_type       — damage type string (e.g. "fire", "necrotic")
+  upcast_per_level  — extra dice added per slot level above the spell's base level
+  cantrip_scale     — True if the damage dice double/triple/quadruple at levels 5/11/17
+  on_hit_effect     — str describing secondary effect on hit/fail, or None
+  concentration     — True if the spell requires concentration to maintain
+"""
+
 import re as _re
 
 # Spell combat data. Schema per entry:
@@ -94,6 +120,12 @@ SPELLS = {
 
 
 def cantrip_damage_notation(base: str, player_level: int) -> str:
+    """Return the damage notation for a cantrip scaled to the character's level.
+
+    D&D 5e cantrips deal more damage as the caster grows: the die count multiplies
+    by 2× at level 5, 3× at level 11, and 4× at level 17.
+    Example: Fire Bolt at level 11 goes from 1d10 → 3d10.
+    """
     m = _re.match(r'^(\d*)d(\d+)([+-]\d+)?$', base)
     if not m:
         return base
@@ -105,6 +137,12 @@ def cantrip_damage_notation(base: str, player_level: int) -> str:
 
 
 def upcast_damage_notation(base: str, upcast_per_level: str, extra_levels: int) -> str:
+    """Return the damage notation for a spell cast at a higher slot level than its base.
+
+    Adds extra_levels × upcast_per_level dice to the base damage.
+    Returns base unchanged if the die types don't match or no upcast bonus exists.
+    Example: Fireball at slot 4 → 9d6 (base 8d6 + 1d6 upcast).
+    """
     if not upcast_per_level or extra_levels <= 0:
         return base
     b = _re.match(r'^(\d*)d(\d+)([+-]\d+)?$', base)
@@ -120,6 +158,14 @@ def upcast_damage_notation(base: str, upcast_per_level: str, extra_levels: int) 
 
 def spell_damage_notation(spell_name: str, spell_data: dict, slot_level: int,
                           player_level: int) -> str:
+    """Return the final damage notation for a spell given slot level and player level.
+
+    Handles three cases:
+    - Cantrip with cantrip_scale=True → scale by player level
+    - Leveled spell cast above its base level and has upcast_per_level → add extra dice
+    - Everything else → return the base damage string unchanged
+    Returns "0" if the spell has no damage.
+    """
     base = spell_data.get("damage", "0")
     if base in ("0", "", "—"):
         return "0"
@@ -135,6 +181,20 @@ def spell_damage_notation(spell_name: str, spell_data: dict, slot_level: int,
 
 
 def get_combat_spells(char: dict) -> list:
+    """Return a list of spells the character can use in combat right now.
+
+    Filters the character's known/prepared spell list down to spells that:
+    - Exist in the SPELLS combat table
+    - Are either cantrips (always available) or have at least one slot available at or above
+      the spell's minimum level
+
+    Each entry in the returned list is a dict:
+      name            — spell name string
+      level           — spell's base level (0 = cantrip)
+      spell           — the raw SPELLS entry dict
+      available_slots — total available slots that can cast this spell (None for cantrips)
+      slot_options    — sorted list of slot levels the player can choose from
+    """
     sc = char.get("spellcasting", {})
     if not sc.get("enabled", False):
         return []

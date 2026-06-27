@@ -1,3 +1,15 @@
+"""
+Character model — the core data structure for a player character.
+
+This module is the Model layer for everything that defines WHO a character is:
+their stats, equipment, spells, skills, and how they change over time (damage,
+healing, rest, level-up). It does NOT drive the UI or make DM decisions.
+
+Every character is stored as a plain Python dict and saved to disk as JSON.
+Use empty_character() to get a fresh blank dict, save_character() / load_character()
+to persist it, and the helper functions below to read or modify specific fields.
+"""
+
 import json
 import os
 from pathlib import Path
@@ -9,10 +21,14 @@ CHARACTERS_DIR = Path(__file__).parent.parent / "data" / "characters"
 # ── Ability score modifier ────────────────────────────────────────────────────
 
 def modifier(score: int) -> int:
+    """Return the D&D ability modifier for a given ability score.
+    Formula: (score - 10) // 2.  A score of 10 gives +0, 16 gives +3, etc.
+    """
     return (score - 10) // 2
 
 
 def modifier_str(score: int) -> str:
+    """Return the modifier as a display string like '+3' or '-1'."""
     m = modifier(score)
     return f"+{m}" if m >= 0 else str(m)
 
@@ -20,12 +36,21 @@ def modifier_str(score: int) -> str:
 # ── Proficiency bonus by level ────────────────────────────────────────────────
 
 def proficiency_bonus(level: int) -> int:
+    """Return the proficiency bonus for a given character level (1–20).
+    Starts at +2 at level 1 and increases by 1 every 4 levels.
+    """
     return (level - 1) // 4 + 2
 
 
 # ── Default empty character ───────────────────────────────────────────────────
 
 def empty_character() -> dict:
+    """Return a blank character dict with all required fields set to safe defaults.
+
+    Every field that the rest of the codebase might read is guaranteed to exist here.
+    Use this as the starting point when building a new character from scratch or
+    as the merge target when importing a character from D&D Beyond.
+    """
     return {
         "name": "",
         "race": "",
@@ -131,6 +156,8 @@ def empty_character() -> dict:
 
 # ── Derived stats ─────────────────────────────────────────────────────────────
 
+# Maps each skill name (snake_case) to the ability score it is based on.
+# This is the standard D&D 5e skill-to-ability mapping.
 SKILLS = {
     "acrobatics":      "dexterity",
     "animal_handling": "wisdom",
@@ -154,6 +181,13 @@ SKILLS = {
 
 
 def skill_bonus(char: dict, skill: str) -> int:
+    """Return the total modifier for a skill check.
+
+    Checks skill_overrides first (manually set values), then computes:
+    - base ability modifier
+    - + proficiency bonus if proficient in this skill
+    - + proficiency bonus again (double) if the character has Expertise in it
+    """
     if skill in char.get("skill_overrides", {}):
         return char["skill_overrides"][skill]
     ability = SKILLS.get(skill)
@@ -162,13 +196,16 @@ def skill_bonus(char: dict, skill: str) -> int:
     base = modifier(char["abilities"][ability])
     pb = proficiency_bonus(char["level"])
     if skill in char.get("skill_expertises", []):
-        return base + pb * 2
+        return base + pb * 2   # Expertise = double proficiency
     if skill in char.get("skill_proficiencies", []):
         return base + pb
     return base
 
 
 def saving_throw_bonus(char: dict, ability: str) -> int:
+    """Return the total modifier for a saving throw against the given ability.
+    Adds proficiency bonus if the character is proficient in that save.
+    """
     base = modifier(char["abilities"][ability])
     pb = proficiency_bonus(char["level"])
     if ability in char.get("saving_throw_proficiencies", []):
@@ -177,10 +214,17 @@ def saving_throw_bonus(char: dict, ability: str) -> int:
 
 
 def passive_perception(char: dict) -> int:
+    """Return the character's passive Perception score (10 + perception bonus)."""
     return 10 + skill_bonus(char, "perception")
 
 
 def computed_spell_stats(char: dict) -> tuple:
+    """Return (spell_save_dc, spell_attack_bonus) for this character.
+
+    If these are already stored on the character (e.g. from a D&D Beyond import),
+    use those directly. Otherwise calculate them from the spellcasting ability.
+    Returns (0, 0) if the character has no spellcasting ability configured.
+    """
     sc = char["spellcasting"]
     if sc.get("spell_save_dc") or sc.get("attack_bonus"):
         return sc["spell_save_dc"], sc["attack_bonus"]
@@ -195,11 +239,13 @@ def computed_spell_stats(char: dict) -> tuple:
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def list_characters() -> list:
+    """Return a list of all saved character names (file stems, no extension)."""
     CHARACTERS_DIR.mkdir(parents=True, exist_ok=True)
     return [f.stem for f in CHARACTERS_DIR.glob("*.json")]
 
 
 def save_character(char: dict) -> Path:
+    """Write the character dict to disk as JSON. Returns the file path."""
     CHARACTERS_DIR.mkdir(parents=True, exist_ok=True)
     path = CHARACTERS_DIR / f"{char['name']}.json"
     with open(path, "w") as f:
@@ -208,6 +254,12 @@ def save_character(char: dict) -> Path:
 
 
 def migrate_character(char: dict) -> dict:
+    """Forward-migrate an older saved character to the current schema.
+
+    Any fields that exist in empty_character() but are missing from the loaded
+    dict are added with their default value. This lets old saves work seamlessly
+    after new fields are added to the schema.
+    """
     defaults = empty_character()
     for key, default in defaults.items():
         if key not in char:
@@ -223,6 +275,12 @@ def migrate_character(char: dict) -> dict:
 
 
 def validate_character(char: dict) -> None:
+    """Raise ValueError if the character dict is missing required fields or has bad values.
+
+    Called automatically by load_character() after migration. Catches common
+    problems early so they surface as clear error messages rather than cryptic
+    crashes later in the game loop.
+    """
     name = char.get("name", "?")
 
     def _err(msg):
@@ -268,6 +326,9 @@ def validate_character(char: dict) -> None:
 
 
 def load_character(name: str) -> dict:
+    """Load a character from disk by name, migrate it forward, and validate it.
+    Raises FileNotFoundError if no save file exists, or ValueError if the data is invalid.
+    """
     path = CHARACTERS_DIR / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"No character named '{name}' found.")
@@ -281,10 +342,18 @@ def load_character(name: str) -> dict:
 # ── HP helpers ────────────────────────────────────────────────────────────────
 
 def apply_damage(char: dict, amount: int) -> dict:
+    """Apply damage to the character, absorbing temp HP first.
+
+    Temp HP acts as a buffer — damage hits temp HP before reducing current HP.
+    Temp HP cannot go below 0; remaining damage after temp HP is exhausted
+    reduces current HP, which also cannot go below 0.
+    """
     temp = char["hp"]["temp"]
     if temp >= amount:
+        # All damage absorbed by temp HP
         char["hp"]["temp"] -= amount
         return char
+    # Temp HP only covers part of the damage
     amount -= temp
     char["hp"]["temp"] = 0
     char["hp"]["current"] = max(0, char["hp"]["current"] - amount)
@@ -292,22 +361,28 @@ def apply_damage(char: dict, amount: int) -> dict:
 
 
 def apply_healing(char: dict, amount: int) -> dict:
+    """Heal the character, capped at their maximum HP. Cannot exceed max."""
     char["hp"]["current"] = min(char["hp"]["max"], char["hp"]["current"] + amount)
     return char
 
 
 def add_temp_hp(char: dict, amount: int) -> dict:
+    """Grant temporary HP. Per D&D 5e rules, temp HP don't stack — take the higher value."""
     char["hp"]["temp"] = max(char["hp"]["temp"], amount)
     return char
 
 
 def is_unconscious(char: dict) -> bool:
+    """Return True if the character is at 0 HP (unconscious or dead)."""
     return char["hp"]["current"] == 0
 
 
 # ── Spell slot helpers ────────────────────────────────────────────────────────
 
 def use_spell_slot(char: dict, level: int) -> dict:
+    """Mark one spell slot of the given level as used.
+    Raises ValueError if no slots of that level are available.
+    """
     slots = char["spellcasting"]["slots"][str(level)]
     available = slots["total"] - slots["used"]
     if available <= 0:
@@ -317,6 +392,7 @@ def use_spell_slot(char: dict, level: int) -> dict:
 
 
 def restore_spell_slots(char: dict) -> dict:
+    """Reset all spell slot usage to 0 (typically called on long rest)."""
     for slot in char["spellcasting"]["slots"].values():
         slot["used"] = 0
     return char
@@ -325,6 +401,13 @@ def restore_spell_slots(char: dict) -> dict:
 # ── Rest ──────────────────────────────────────────────────────────────────────
 
 def short_rest(char: dict, hit_dice_spent: int, rolls: list) -> dict:
+    """Resolve a short rest: spend hit dice to regain HP.
+
+    rolls — list of raw die results (e.g. [5, 3] for two d8s rolled by the player).
+    Constitution modifier is added to each roll, minimum 1 HP regained per die.
+    Warlocks also recover their Pact Magic spell slots on a short rest.
+    Raises ValueError if the character doesn't have enough hit dice remaining.
+    """
     con_mod = modifier(char["abilities"]["constitution"])
     available = char["hit_dice"]["total"] - char["hit_dice"]["used"]
     if hit_dice_spent > available:
@@ -337,9 +420,15 @@ def short_rest(char: dict, hit_dice_spent: int, rolls: list) -> dict:
 
 
 def long_rest(char: dict) -> dict:
+    """Resolve a long rest: fully restore HP, spell slots, half of spent hit dice, and features.
+
+    Per D&D 5e rules, a long rest restores at most half the character's total hit dice
+    (minimum 1). All spell slots and all feature uses are also reset.
+    """
     char["hp"]["current"] = char["hp"]["max"]
     char["hp"]["temp"] = 0
     total = char["hit_dice"]["total"]
+    # Recover up to half the character's total hit dice (round up), minimum 1
     char["hit_dice"]["used"] = max(0, char["hit_dice"]["used"] - max(1, (total + 1) // 2))
     char["death_saves"] = {"successes": 0, "failures": 0}
     char["conditions"] = []
@@ -398,6 +487,7 @@ def reset_to_level1(char: dict) -> dict:
 # ── Display ───────────────────────────────────────────────────────────────────
 
 def summary(char: dict) -> str:
+    """Return a plain-text character sheet summary for debugging or the console."""
     pb = proficiency_bonus(char["level"])
     ab = char["abilities"]
     lines = [

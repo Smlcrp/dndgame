@@ -1,3 +1,15 @@
+"""
+Combat model — resolves all attack, damage, and death save mechanics.
+
+This module handles the mathematical rules of combat: rolling attacks,
+checking hit/miss against AC, rolling damage, handling conditions, spell attacks,
+and death saves. It works directly on session and character dicts.
+
+The game controller (controllers/game_controller.py) calls these functions when
+a player or enemy acts. The app (views/desktop/app.py) calls the controller,
+never this module directly.
+"""
+
 import sys
 from pathlib import Path
 _root = Path(__file__).parent.parent
@@ -8,13 +20,20 @@ from models import dice
 from models import game_state as gs
 from models.character import modifier, proficiency_bonus
 
+# Conditions that grant advantage to attackers against the afflicted combatant
 CONDITIONS_WITH_ADVANTAGE_VS = {"Prone", "Paralyzed", "Stunned", "Unconscious", "Blinded"}
+# Conditions that impose disadvantage on the afflicted combatant's own attack rolls
 CONDITIONS_WITH_DISADVANTAGE  = {"Prone", "Blinded", "Poisoned", "Frightened", "Restrained", "Exhaustion"}
 
 
 # ── Setup ──────────────────────────────────────────────────────────────────────
 
 def build_enemy(name, hp, ac, attacks, initiative_mod=0, xp=0):
+    """Create an enemy combatant dict from basic stats.
+
+    Returns a dict ready to be added to the initiative order. attacks is a list
+    of dicts with 'name', 'bonus' (to-hit), and 'damage' (notation like '1d6+2').
+    """
     return {
         "name":           name,
         "hp":             hp,
@@ -29,6 +48,12 @@ def build_enemy(name, hp, ac, attacks, initiative_mod=0, xp=0):
 
 
 def setup_combat(session, character, enemies, player_initiative=None):
+    """Build the initiative order and store it in the session, then return it.
+
+    If player_initiative is provided (a pre-rolled d20+DEX result), it is used
+    directly; otherwise a fresh initiative roll is made. Enemy initiatives are
+    always rolled fresh. Returns the ordered list of combatant dicts.
+    """
     dex_mod = modifier(character["abilities"].get("dexterity", 10))
     player_init = player_initiative if player_initiative is not None else dice.initiative(dex_mod)["total"]
 
@@ -63,6 +88,7 @@ def setup_combat(session, character, enemies, player_initiative=None):
 # ── Core attack resolution ─────────────────────────────────────────────────────
 
 def _has_condition(session, combatant_name, condition):
+    """Check whether a combatant currently has a specific status condition."""
     for c in session["initiative_order"]:
         if c["name"] == combatant_name:
             return condition in c.get("conditions", [])
@@ -70,6 +96,7 @@ def _has_condition(session, combatant_name, condition):
 
 
 def _get_combatant(session, name):
+    """Look up a combatant dict by name in the initiative order. Returns None if not found."""
     for c in session["initiative_order"]:
         if c["name"] == name:
             return c
@@ -79,6 +106,19 @@ def _get_combatant(session, name):
 def resolve_attack(session, attacker_name, target_name, attack_bonus,
                    damage_notation, advantage=False, disadvantage=False,
                    d20_override=None, pre_damage=None):
+    """Resolve a single attack roll against a target and return the full result dict.
+
+    Steps:
+    1. Check target conditions (Prone, Paralyzed, etc.) to grant the attacker advantage.
+    2. Check attacker conditions (Blinded, Poisoned, etc.) to impose disadvantage.
+    3. Roll a d20 (or use d20_override if the player already rolled via the UI).
+    4. A natural 20 is always a hit (critical); a natural 1 always misses.
+    5. On a hit, roll damage (double dice on a crit) unless pre_damage is provided.
+    6. Apply the damage to the target in the session and return whether they were killed.
+
+    pre_damage allows the caller to supply a pre-computed damage result (used when
+    the UI rolls damage separately before calling this function).
+    """
     target = _get_combatant(session, target_name)
     if not target:
         return {"error": f"Target '{target_name}' not found in combat."}
@@ -135,6 +175,12 @@ def resolve_attack(session, attacker_name, target_name, attack_bonus,
 def player_attack(session, character, weapon_name, target_name,
                   advantage=False, disadvantage=False, d20_override=None,
                   damage_override=None, pre_damage=None):
+    """Resolve a player's weapon attack.
+
+    Looks up the weapon by name on the character sheet, applies any magic weapon
+    bonus to both to-hit and damage, then delegates to resolve_attack().
+    Returns an error dict if the weapon isn't found.
+    """
     attacks = character.get("attacks", [])
     weapon  = next((a for a in attacks if a["name"].lower() == weapon_name.lower()), None)
     if not weapon:
@@ -157,6 +203,12 @@ def player_attack(session, character, weapon_name, target_name,
 # ── Enemy attack ───────────────────────────────────────────────────────────────
 
 def enemy_attack(session, enemy_name, attack_index=0):
+    """Resolve an enemy's attack against the player.
+
+    attack_index selects which of the enemy's attacks to use (wraps around if
+    the index exceeds the number of attacks). Always targets the first player
+    combatant found in the initiative order.
+    """
     enemy = _get_combatant(session, enemy_name)
     if not enemy:
         return {"error": f"Enemy '{enemy_name}' not in combat."}
@@ -183,6 +235,17 @@ def enemy_attack(session, enemy_name, attack_index=0):
 # ── Death saves ────────────────────────────────────────────────────────────────
 
 def handle_death_save(session, pre_roll=None):
+    """Roll (or accept) a death saving throw and update the session's death save counters.
+
+    D&D 5e death save rules:
+    - Natural 20 → immediately revive at 1 HP
+    - 10 or higher → success; 3 successes = stable
+    - 1 → two failures counted (not just one)
+    - 3 failures → dead
+
+    pre_roll lets the caller supply an already-computed roll dict (from dice.death_save())
+    if the UI handled the roll display separately.
+    """
     roll = pre_roll if pre_roll is not None else dice.death_save()
     ds   = session["death_saves"]
 
@@ -207,6 +270,12 @@ def handle_death_save(session, pre_roll=None):
 # ── Turn management ────────────────────────────────────────────────────────────
 
 def end_turn(session):
+    """Advance to the next living combatant and return them.
+
+    Skips dead combatants (HP ≤ 0) automatically. Iterates at most len(order)
+    times to prevent an infinite loop if somehow every combatant is dead.
+    Returns None if there are no combatants or all are dead.
+    """
     order = session["initiative_order"]
     if not order:
         return None
@@ -225,6 +294,12 @@ def end_turn(session):
 def player_cast_attack_spell(session, character, spell_name, spell_data,
                               target_name, slot_level,
                               d20_override=None, pre_damage=None):
+    """Resolve a spell that requires a spell attack roll (e.g. Fire Bolt, Guiding Bolt).
+
+    Uses the character's spell attack bonus. Damage scales with slot_level if the
+    spell has upcast_per_level defined. Returns the resolve_attack result dict
+    plus 'spell' and 'slot_level' fields.
+    """
     from models.spells import spell_damage_notation
     sc           = character.get("spellcasting", {})
     atk_bonus    = sc.get("attack_bonus", 0)
@@ -241,6 +316,12 @@ def player_cast_attack_spell(session, character, spell_name, spell_data,
 
 def player_cast_save_spell(session, character, spell_name, spell_data,
                             target_name, slot_level):
+    """Resolve a spell that forces the target to make a saving throw (e.g. Fireball).
+
+    The target rolls against the character's spell save DC. On a successful save,
+    the target takes half damage (rounded down). On a failure, full damage applies.
+    Returns a result dict with save roll, whether they saved, damage dealt, and HP remaining.
+    """
     from models.spells import spell_damage_notation
     sc           = character.get("spellcasting", {})
     save_dc      = sc.get("spell_save_dc", 8)
@@ -279,6 +360,11 @@ def player_cast_save_spell(session, character, spell_name, spell_data,
 
 def player_cast_auto_spell(session, character, spell_name, spell_data,
                             target_name, slot_level):
+    """Resolve a spell that automatically hits with no attack roll or save (e.g. Magic Missile).
+
+    Magic Missile is handled as a special case: it fires 3 + (slot_level - 1) missiles,
+    each dealing 1d4+1. Other auto-hit spells simply roll their damage notation.
+    """
     from models.spells import spell_damage_notation
     player_level = character.get("level", 1)
     dmg_note     = spell_damage_notation(spell_name, spell_data, slot_level, player_level)
@@ -313,6 +399,12 @@ def player_cast_auto_spell(session, character, spell_name, spell_data,
 # ── Summary ────────────────────────────────────────────────────────────────────
 
 def combat_summary(session):
+    """Return a structured snapshot of the current combat state.
+
+    Includes the round number, whose turn it is, the full combatant list with
+    HP/conditions, and boolean flags for whether enemies and the player are still alive.
+    Used by the UI to update the combat tracker panel.
+    """
     order   = session["initiative_order"]
     current = gs.current_combatant(session)
     return {
@@ -335,6 +427,9 @@ def combat_summary(session):
 
 
 def xp_from_combat(session):
+    """Return the total XP earned from all enemies defeated in this combat.
+    Only counts enemies (not players or companions) with HP ≤ 0.
+    """
     return sum(
         c.get("xp", 0)
         for c in session["initiative_order"]
