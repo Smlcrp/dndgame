@@ -21,4 +21,4 @@ if __name__ == "__main__":
     print("  API health: http://localhost:5000/api/ping")
     print("  (Frontend not built yet — that's Stage 4b)")
     print()
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=True, port=5000, use_reloader=False, threaded=True)

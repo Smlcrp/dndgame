@@ -229,9 +229,7 @@ Main game interface. `GameApp` class.
 
 ## Known Issues
 
-- **Ollama CUDA crash on startup** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` means Ollama's bundled CUDA runtime is conflicting with the installed NVIDIA driver. This is an Ollama/driver issue, not a game bug.
-  - **Workaround:** `set CUDA_VISIBLE_DEVICES=-1` before starting Ollama (forces CPU-only inference — slower but stable).
-  - **Permanent fix:** `winget upgrade Ollama.Ollama` or update NVIDIA drivers from nvidia.com.
+- **Ollama CUDA crash on startup** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` — Ollama's bundled CUDA runtime conflicting with the installed NVIDIA driver. **Resolved as of Ollama 0.30.11 + NVIDIA driver 596.49 (May 2026).** If it recurs on a future driver update: `set CUDA_VISIBLE_DEVICES=-1` before starting Ollama forces CPU-only mode as a stopgap, or `winget upgrade Ollama.Ollama` to pull updated runtime DLLs.
 
 ---
 
@@ -715,7 +713,8 @@ Vanilla JS, no framework, no build step. Scene-based architecture.
 - `LevelUpScene` — multi-step modal: HP roll (animated or average), subclass picker, ASI/feat selector, spell learning; POSTs to `/api/levelup` on finish
 
 #### ✅ 4c — Electron Shell (`electron/`)
-- `main.js` — spawns `python run_server.py` (dev) or PyInstaller bundle (packaged); polls `/api/ping` every 500ms (30 retries); opens `BrowserWindow` once Flask responds; kills subprocess on `before-quit`; checks Ollama at `localhost:11434` and shows an in-page warning banner if absent
+- `main.js` — spawns `python run_server.py` (dev) or PyInstaller bundle (packaged); polls `/api/ping` every 500ms (30 retries); opens `BrowserWindow` once Flask responds; kills subprocess on `before-quit`; calls `ollama.initOllama()` on `ready-to-show` and injects a mode banner into the renderer
+- `ollama.js` — Ollama process lifecycle manager. On startup: if port healthy, assume GPU and stay out of the way. If process exists but port is dead (CUDA crash), kills all ollama processes and restarts via `ollama serve` with `CUDA_VISIBLE_DEVICES=-1` + `OLLAMA_NUM_GPU=0`. Every 30 s polls `/api/ps`; when models list is empty (model fully unloaded = zero disruption), attempts GPU restart. On GPU success, notifies renderer with a 5 s green toast. On GPU failure, returns to CPU with a 5-minute cooldown before next attempt. Banner colours: gold for CPU mode, red for down, green toast for GPU restore.
 - `package.json` — `electron ^28`, `electron-builder ^24`; NSIS installer on Windows, DMG on Mac; `extraResources` maps PyInstaller bundle to `resources/server/`
 
 #### Pending — 4d — Retire Tkinter

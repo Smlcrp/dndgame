@@ -37,7 +37,13 @@ OLLAMA_URL           = "http://localhost:11434/api/chat"
 DEFAULT_OLLAMA_MODEL = "HammerAI/mistral-nemo-uncensored"
 _DEFAULT_CONFIG      = Path(__file__).parent.parent / "data" / "dm_config.json"
 
+import threading
+
 import requests
+
+# Global lock — only one Ollama request runs at a time.
+# Prevents concurrent warmup + DM call from crashing llama-server.
+_ollama_lock = threading.Lock()
 
 
 class DungeonMaster:
@@ -356,6 +362,16 @@ CONTINUITY RULE: Continue from EXACTLY this moment. The player is already presen
 
         return f"""You are the Dungeon Master for a solo D&D 5e adventure. Your job is to narrate an immersive story — you are a storyteller, not a game host.
 
+━━━ ABSOLUTE RULE — OVERRIDES EVERYTHING ELSE ━━━
+You NEVER write dialogue, words, thoughts, or additional actions for the player character.
+The player's input is their COMPLETE contribution. You respond to it — you do NOT extend it.
+  FORBIDDEN: "But I was just here yesterday—" you blurt out.
+  FORBIDDEN: "I'll help you," you promise.
+  FORBIDDEN: You decide to follow him.
+  CORRECT:   The priest's grip tightens on your arm, his eyes wide with urgency.
+If you feel the urge to write a quote that the player character says — DELETE IT and write what the NPC or world does instead.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 PLAYER CHARACTER:
   Name: {name}
   Race: {race}  |  Class: {cls}{subclass_str}  |  Level: {level}
@@ -390,7 +406,10 @@ NARRATION RULES — READ CAREFULLY:
     d) NEVER extend the player's stated action into further decisions they haven't made. Player says "I enter the room" → describe the room and what they see. Do NOT then have them sit down, speak, make promises, or do anything else.
     e) End every response at a natural pause where the player must choose what to do or say next. Leave them in the moment — do not resolve it for them.
 
-{enemy_block}{adventure_block}{party_block}{knowledge_block}{story_mode_block}{combat_block}{scene_anchor}"""
+{enemy_block}{adventure_block}{party_block}{knowledge_block}{story_mode_block}{combat_block}{scene_anchor}
+━━━ FINAL REMINDER BEFORE YOU WRITE ━━━
+Do NOT write any spoken words, thoughts, or actions for the player character. Respond to what they did — describe the world's reaction only.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
     def _build_party_block(self, character, companions):
         """System prompt section describing party members and companion introduction rules."""
@@ -476,31 +495,32 @@ NARRATION RULES — READ CAREFULLY:
         Raises RuntimeError with a human-readable message on connection failure,
         timeout, HTTP error, or unexpected response shape.
         """
-        try:
-            resp = requests.post(OLLAMA_URL, json={
-                "model":    self.model,
-                "messages": messages,
-                "stream":   False,
-                "options":  {"num_ctx": 8192},
-            }, timeout=120)
-            if not resp.ok:
-                body = ""
-                try:
-                    body = resp.json().get("error", resp.text)
-                except Exception:
-                    body = resp.text
-                raise RuntimeError(f"Ollama {resp.status_code}: {body}")
-            return resp.json()["message"]["content"]
-        except requests.exceptions.ConnectionError:
-            raise RuntimeError(
-                "Cannot connect to Ollama. Make sure it is running.\n"
-                "Start it with:  ollama serve\n"
-                f"Then pull a model:  ollama pull {self.model}"
-            )
-        except requests.exceptions.Timeout:
-            raise RuntimeError("Ollama timed out. The model may still be loading — try again.")
-        except (KeyError, ValueError) as e:
-            raise RuntimeError(f"Unexpected Ollama response: {e}")
+        with _ollama_lock:
+            try:
+                resp = requests.post(OLLAMA_URL, json={
+                    "model":    self.model,
+                    "messages": messages,
+                    "stream":   False,
+                    "options":  {"num_ctx": 8192},
+                }, timeout=120)
+                if not resp.ok:
+                    body = ""
+                    try:
+                        body = resp.json().get("error", resp.text)
+                    except Exception:
+                        body = resp.text
+                    raise RuntimeError(f"Ollama {resp.status_code}: {body}")
+                return resp.json()["message"]["content"]
+            except requests.exceptions.ConnectionError:
+                raise RuntimeError(
+                    "Cannot connect to Ollama. Make sure it is running.\n"
+                    "Start it with:  ollama serve\n"
+                    f"Then pull a model:  ollama pull {self.model}"
+                )
+            except requests.exceptions.Timeout:
+                raise RuntimeError("Ollama timed out. The model may still be loading — try again.")
+            except (KeyError, ValueError) as e:
+                raise RuntimeError(f"Unexpected Ollama response: {e}")
 
     def _parse_events(self, raw_text):
         """Extract all game-engine event tags from the LLM's raw response text.
@@ -628,6 +648,74 @@ NARRATION RULES — READ CAREFULLY:
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
 
         return clean, events
+
+    def warmup(self):
+        """Load the model into VRAM via a 1-token dummy request.
+        Holds _ollama_lock so a concurrent DM call waits rather than racing.
+        Failure is silently swallowed — warmup is best-effort.
+        """
+        with _ollama_lock:
+            try:
+                requests.post(OLLAMA_URL, json={
+                    "model":    self.model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream":   False,
+                    "options":  {"num_predict": 1},
+                }, timeout=60)
+            except Exception:
+                pass
+
+    def respond_stream(self, session, character, player_input):
+        """Like respond() but yields word chunks so the frontend can animate the text.
+
+        Uses stream=False internally — stream=True races with the warmup request and
+        crashes llama-server on GPU. The _ollama_lock serialises all Ollama calls so
+        warmup and respond can never run at the same time.
+
+        Yields {"token": str} for each word, then {"done": True, "narration": str,
+        "events": list} when complete.
+        """
+        messages = self._messages_for_ollama(session, character, player_input)
+
+        with _ollama_lock:
+            try:
+                resp = requests.post(OLLAMA_URL, json={
+                    "model":    self.model,
+                    "messages": messages,
+                    "stream":   False,
+                    "options":  {"num_ctx": 8192},
+                }, timeout=120)
+
+                if not resp.ok:
+                    raise RuntimeError(f"Ollama {resp.status_code}: {resp.text}")
+
+                full_text = resp.json().get("message", {}).get("content", "")
+
+            except requests.exceptions.ConnectionError:
+                raise RuntimeError(
+                    "Cannot connect to Ollama. Make sure it is running.\n"
+                    f"Then pull a model:  ollama pull {self.model}"
+                )
+            except requests.exceptions.Timeout:
+                raise RuntimeError("Ollama timed out. The model may still be loading — try again.")
+
+        # Yield word-by-word so the frontend streaming display animates the text.
+        # Because the full response is already in memory this is nearly instantaneous.
+        words = full_text.split(" ")
+        for i, word in enumerate(words):
+            yield {"token": word + ("" if i == len(words) - 1 else " ")}
+
+        narration, events = self._parse_events(full_text)
+
+        gs.add_history(session, "player", player_input)
+        gs.add_history(session, "dm",     narration)
+
+        for ev in events:
+            if ev["type"] == "scene_change":
+                session["location"] = ev["location"]
+                session["scene"]    = narration
+
+        yield {"done": True, "narration": narration, "events": events}
 
     def respond(self, session, character, player_input):
         """Generate the DM's response to a player action. This is the main game loop call.

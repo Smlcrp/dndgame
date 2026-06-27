@@ -2,6 +2,7 @@ const { app, BrowserWindow, shell, dialog } = require('electron');
 const path  = require('path');
 const http  = require('http');
 const { spawn, execFile } = require('child_process');
+const ollama = require('./ollama');
 
 const FLASK_PORT = 5000;
 const PING_URL   = `http://localhost:${FLASK_PORT}/api/ping`;
@@ -59,24 +60,48 @@ function waitForFlask(retries = 30, delayMs = 500) {
   });
 }
 
-// ── Ollama check (dev only) ───────────────────────────────────────────────────
+// ── Ollama banner ─────────────────────────────────────────────────────────────
+// Injected into the renderer. Keeps a single persistent banner element for
+// 'cpu' and 'down' states; shows a brief toast on GPU restore; clears on 'gpu'.
 
-function checkOllamaAsync(win) {
-  http.get('http://localhost:11434/api/tags', res => {
-    // Ollama is running
-  }).on('error', () => {
-    // Ollama not detected — show a gentle notice in the game window
-    if (win && !win.isDestroyed()) {
-      win.webContents.executeJavaScript(`
-        if (typeof App !== 'undefined') {
-          const notice = document.createElement('div');
-          notice.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#2a1a1a;color:#e05050;text-align:center;padding:8px;font-size:13px;z-index:9999;font-family:Segoe UI,sans-serif';
-          notice.innerHTML = '⚠ Ollama not detected at localhost:11434. <a href="#" onclick="require(\\'electron\\').shell.openExternal(\\'https://ollama.com\\');return false" style="color:#c8a951">Download Ollama</a> to enable the AI Dungeon Master.';
-          document.body.prepend(notice);
+function setOllamaBanner(win, mode, message) {
+  if (!win || win.isDestroyed()) return;
+
+  const safeMsg = JSON.stringify(message || '');
+
+  const js = `
+    (() => {
+      const BANNER_ID = '__ollama_banner__';
+      let el = document.getElementById(BANNER_ID);
+
+      if (${JSON.stringify(mode)} === 'gpu') {
+        if (el) el.remove();
+        if (${safeMsg}) {
+          // Brief success toast — auto-dismisses after 5 s
+          const toast = document.createElement('div');
+          toast.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#0d2a0d;color:#4caf50;border-bottom:1px solid #4caf50;text-align:center;padding:8px 16px;font-size:13px;z-index:9999;font-family:Segoe UI,sans-serif';
+          toast.textContent = '✓ ' + ${safeMsg};
+          document.body.prepend(toast);
+          setTimeout(() => toast.remove(), 5000);
         }
-      `).catch(() => {});
-    }
-  });
+        return;
+      }
+
+      if (!el) {
+        el = document.createElement('div');
+        el.id = BANNER_ID;
+        document.body.prepend(el);
+      }
+
+      const isCpu = ${JSON.stringify(mode)} === 'cpu';
+      el.style.cssText = isCpu
+        ? 'position:fixed;top:0;left:0;right:0;background:#1e1800;color:#c8a951;border-bottom:1px solid #c8a951;text-align:center;padding:8px 16px;font-size:13px;z-index:9999;font-family:Segoe UI,sans-serif'
+        : 'position:fixed;top:0;left:0;right:0;background:#2a1a1a;color:#e05050;border-bottom:1px solid #e05050;text-align:center;padding:8px 16px;font-size:13px;z-index:9999;font-family:Segoe UI,sans-serif';
+      el.textContent = (isCpu ? '⚡ ' : '⚠ ') + ${safeMsg};
+    })();
+  `;
+
+  win.webContents.executeJavaScript(js).catch(() => {});
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────
@@ -100,7 +125,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    checkOllamaAsync(mainWindow);
+    ollama.initOllama((mode, message) => setOllamaBanner(mainWindow, mode, message));
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -139,6 +164,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  ollama.cleanup();
   if (flaskProcess && !flaskProcess.killed) {
     flaskProcess.kill();
   }

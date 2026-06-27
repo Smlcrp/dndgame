@@ -53,7 +53,10 @@ _root = Path(__file__).parent.parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from flask import Flask, request, jsonify, render_template, send_from_directory
+import json
+import threading
+
+from flask import Flask, request, jsonify, render_template, send_from_directory, Response, stream_with_context
 
 from models.character import (
     load_character, save_character, list_characters,
@@ -77,6 +80,20 @@ app.secret_key = "dnd-local-dev"
 _state: dict = {"session": None, "character": None, "dm": None}
 
 _CHARS_DIR = _root / "data" / "characters"
+
+# ── Startup pre-loading ───────────────────────────────────────────────────────
+# Load the Kokoro narrator model in the background the moment Flask starts so
+# the first Play click is instant instead of waiting 1-2 s for model init.
+
+def _preload_narrator():
+    try:
+        from models.narrator import _get_kokoro
+        _get_kokoro()
+        print("[narrator] Model ready.")
+    except Exception as e:
+        print(f"[narrator] Pre-load skipped: {e}")
+
+threading.Thread(target=_preload_narrator, daemon=True).start()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -172,6 +189,7 @@ def get_sessions():
 @app.route("/api/game/new", methods=["POST"])
 def new_game():
     """Start a fresh adventure — resets the character to level 1.
+    Returns state immediately; the opening DM narration streams via /api/action/stream.
     Body: {"char_name": str, "preset": "Quest" | "One Shot" | "Epic"}
     """
     body   = request.get_json(silent=True) or {}
@@ -185,17 +203,11 @@ def new_game():
         return _err(f"Character '{name}' not found", 404)
     except ValueError as e:
         return _err(str(e))
-
-    session, dm = _init_game(char, preset, reset=True)
     try:
-        result = dm.respond(
-            session, _state["character"],
-            "[START] Begin the adventure. Open with the hook.",
-        )
+        session, _dm = _init_game(char, preset, reset=True)
         gs.save_session(session)
         save_character(_state["character"])
-        return _ok(narration=result["narration"], events=result["events"],
-                   state=_snapshot())
+        return _ok(state=_snapshot())
     except Exception as e:
         return _err(str(e), 500)
 
@@ -203,6 +215,7 @@ def new_game():
 @app.route("/api/game/next", methods=["POST"])
 def next_game():
     """Start a next adventure — keeps existing character progress, fresh story.
+    Returns state immediately; the opening DM narration streams via /api/action/stream.
     Body: {"char_name": str, "preset": str}
     """
     body   = request.get_json(silent=True) or {}
@@ -214,17 +227,11 @@ def next_game():
         char = load_character(name)
     except (FileNotFoundError, ValueError) as e:
         return _err(str(e), 404)
-
-    session, dm = _init_game(char, preset, reset=False)
     try:
-        result = dm.respond(
-            session, _state["character"],
-            "[START] Begin the adventure. Open with the hook.",
-        )
+        session, _dm = _init_game(char, preset, reset=False)
         gs.save_session(session)
         save_character(_state["character"])
-        return _ok(narration=result["narration"], events=result["events"],
-                   state=_snapshot())
+        return _ok(state=_snapshot())
     except Exception as e:
         return _err(str(e), 500)
 
@@ -295,6 +302,76 @@ def player_action():
                    state=_snapshot())
     except Exception as e:
         return _err(str(e), 500)
+
+
+# ── Streaming player action (SSE) ────────────────────────────────────────────
+
+@app.route("/api/action/stream", methods=["POST"])
+def player_action_stream():
+    """Streaming version of /api/action using Server-Sent Events.
+    Tokens arrive immediately as the model generates them.
+    Final event contains the parsed game events and updated state.
+    Body: {"text": str}
+    """
+    session, char = _active()
+    if not session:
+        return _err("No active game")
+    body = request.get_json(silent=True) or {}
+    text = body.get("text", "").strip()
+    if not text:
+        return _err("text is required")
+
+    def generate():
+        try:
+            for chunk in _state["dm"].respond_stream(session, char, text):
+                if "token" in chunk:
+                    yield f"data: {json.dumps({'token': chunk['token']})}\n\n"
+                elif chunk.get("done"):
+                    gs.save_session(session)
+                    yield f"data: {json.dumps({'done': True, 'narration': chunk['narration'], 'events': chunk['events'], 'state': _snapshot()})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/narrate", methods=["POST"])
+def narrate():
+    """Convert DM narration text to speech and return WAV audio.
+    Body: {"text": str}
+    First call may take a few seconds while Kokoro loads.
+    """
+    body = request.get_json(silent=True) or {}
+    text = body.get("text", "").strip()
+    if not text:
+        return _err("text is required")
+    try:
+        from models.narrator import speak
+        wav_bytes = speak(text)
+        return Response(wav_bytes, mimetype="audio/wav")
+    except ImportError:
+        return _err("Narrator not available — run: pip install kokoro-onnx soundfile", 503)
+    except Exception as e:
+        return _err(str(e), 500)
+
+
+@app.route("/api/warmup", methods=["POST"])
+def warmup():
+    """Load the AI model into VRAM in the background.
+    Call this early (e.g. on the main menu) so the first adventure starts fast.
+    Returns immediately — the actual load happens on a background thread.
+    """
+    def _do():
+        try:
+            from_config().warmup()
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
+    return _ok(warming=True)
 
 
 # ── Dice ──────────────────────────────────────────────────────────────────────

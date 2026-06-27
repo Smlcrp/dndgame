@@ -10,7 +10,7 @@ class GameScene {
   }
 
   async enter() {
-    // Resume mode: fetch session from server
+    // Resume mode: fetch session from server (blocking recap call is fine here)
     if (this.data.mode === 'resume') {
       try {
         const d = await API.post('/api/game/resume', { session_name: this.data.sessionName });
@@ -26,13 +26,9 @@ class GameScene {
     }
 
     this._build();
-    if (this.data.narration) {
-      this._appendNarration(this.data.narration, 'dm');
-    }
     this._updateSidebar();
-    if (this.data.events && this.data.events.length) {
-      await this._handleEvents(this.data.events);
-    }
+    // New / next: stream the opening DM narration immediately
+    await this._autoStart();
   }
 
   _build() {
@@ -133,24 +129,174 @@ class GameScene {
     const text  = input.value.trim();
     if (!text) return;
     input.value = '';
+    await this._sendStreaming(text, true);
+  }
 
-    this._appendNarration(text, 'player');
+  // Called automatically after new/next game to stream the opening narration.
+  async _autoStart() {
+    await this._sendStreaming('[START] Begin the adventure. Open with the hook.', false);
+  }
+
+  // Core streaming method used by _send() and _autoStart().
+  // showPlayerText: whether to display `text` in the narration panel as a player message.
+  async _sendStreaming(text, showPlayerText = true) {
     this._setBusy(true);
-    const thinking = this._appendThinking();
+    if (showPlayerText) this._appendNarration(text, 'player');
 
+    // Create the DM entry upfront with an animated thinking indicator
+    const narr    = document.getElementById('narration');
+    const dmEntry = document.createElement('div');
+    dmEntry.className = 'narration-entry dm';
+    const dmText = document.createElement('div');
+    dmText.className = 'narration-text';
+    dmText.innerHTML = '<span class="thinking-dot">.</span><span class="thinking-dot">.</span><span class="thinking-dot">.</span>';
+    dmEntry.appendChild(dmText);
+    narr.appendChild(dmEntry);
+    narr.scrollTop = narr.scrollHeight;
+
+    // Live tag filter — suppresses [TAG: ...] sequences from the visible stream
+    let inTag       = false;
+    let tagBuf      = '';
+    let visibleText = '';
+    let firstToken  = true;
+
+    function filterToken(token) {
+      let visible = '';
+      for (const ch of token) {
+        if (inTag) {
+          tagBuf += ch;
+          if (ch === ']') { inTag = false; tagBuf = ''; }
+        } else if (ch === '[') {
+          inTag = true;
+          tagBuf = '[';
+          // Drop the newline that typically precedes a tag
+          if (visible.endsWith('\n'))      visible      = visible.slice(0, -1);
+          if (visibleText.endsWith('\n'))  visibleText  = visibleText.slice(0, -1);
+        } else {
+          visible += ch;
+        }
+      }
+      return visible;
+    }
+
+    let events = [];
     try {
-      const result = await API.post('/api/action', { text });
-      if (thinking) thinking.remove();
-      this._state = result.state;
-      this._appendNarration(result.narration, 'dm');
+      const response = await fetch('/api/action/stream', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text }),
+      });
+      if (!response.ok) throw new Error(`Server error ${response.status}`);
+
+      const reader  = response.body.getReader();
+      const decoder = new TextDecoder();
+      let   buf     = '';
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const parts = buf.split('\n\n');
+        buf = parts.pop(); // keep the last incomplete chunk
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          const data = JSON.parse(part.slice(6));
+
+          if (data.error) throw new Error(data.error);
+
+          if (data.token) {
+            const visible = filterToken(data.token);
+            if (visible) {
+              if (firstToken) {
+                dmText.textContent = '';
+                firstToken = false;
+              }
+              visibleText += visible;
+              dmText.textContent = visibleText;
+              narr.scrollTop = narr.scrollHeight;
+            }
+          }
+
+          if (data.done) {
+            // Replace live-filtered text with the server's clean narration
+            dmText.textContent = data.narration;
+            this._state = data.state;
+            events = data.events || [];
+            this._appendPlayButton(dmEntry, data.narration);
+            narr.scrollTop = narr.scrollHeight;
+            break outer;
+          }
+        }
+      }
+
       this._updateSidebar();
-      await this._handleEvents(result.events || []);
+      await this._handleEvents(events);
     } catch (e) {
-      if (thinking) thinking.remove();
+      dmEntry.remove();
       this._appendNarration(`Error: ${e.message}`, 'error');
     } finally {
       this._setBusy(false);
     }
+  }
+
+  // ── Narrator ────────────────────────────────────────────────────────────
+
+  _appendPlayButton(entry, text) {
+    const btn = document.createElement('button');
+    btn.className = 'narration-play-btn';
+    btn.textContent = '⏳ Preparing…';
+    btn.disabled = true;
+
+    let audioBlob = null;
+    let audio     = null;
+
+    // Pre-generate TTS immediately while the player reads the text.
+    // By the time they click Play the audio is already in memory.
+    fetch('/api/narrate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text }),
+    })
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+      .then(blob => {
+        audioBlob = blob;
+        btn.textContent = '▶ Play';
+        btn.disabled    = false;
+      })
+      .catch(e => {
+        console.error('[narrator] pre-generate failed:', e.message);
+        btn.remove();
+      });
+
+    btn.onclick = () => {
+      if (!audioBlob) return;
+
+      if (audio && !audio.paused) {
+        audio.pause();
+        audio.currentTime = 0;
+        URL.revokeObjectURL(audio.src);
+        audio = null;
+        btn.textContent = '▶ Play';
+        btn.classList.remove('playing');
+        return;
+      }
+
+      const url = URL.createObjectURL(audioBlob);
+      audio = new Audio(url);
+      audio.onended = () => {
+        btn.textContent = '▶ Play';
+        btn.classList.remove('playing');
+        URL.revokeObjectURL(url);
+        audio = null;
+      };
+      audio.play();
+      btn.textContent = '⏹ Stop';
+      btn.classList.add('playing');
+    };
+
+    entry.appendChild(btn);
   }
 
   // ── Event handler ───────────────────────────────────────────────────────
@@ -457,16 +603,9 @@ class GameScene {
       this._appendNarration(
         `${label} ${skill} check: ${result.total} vs DC ${dc} — ${tier}`, 'system'
       );
-      // Send result back to DM so it can narrate accordingly
-      this._setBusy(true);
-      const thinking = this._appendThinking();
+      // Send result back to DM so it can narrate accordingly (streaming)
       const outcomeText = `[SKILL_RESULT] ${skill} check: d20=${d20}, total=${result.total}, DC=${dc}, margin=${result.total - dc}, tier=${tier}`;
-      const dm = await API.post('/api/action', { text: outcomeText });
-      if (thinking) thinking.remove();
-      this._state = dm.state;
-      this._appendNarration(dm.narration, 'dm');
-      this._updateSidebar();
-      await this._handleEvents(dm.events || []);
+      await this._sendStreaming(outcomeText, false);
     } catch (e) {
       this._appendNarration(`Skill check error: ${e.message}`, 'error');
     } finally {

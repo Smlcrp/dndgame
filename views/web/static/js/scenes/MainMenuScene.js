@@ -27,6 +27,9 @@ class MainMenuScene {
       </div>
     `;
 
+    // Fire-and-forget warmup so the model is in VRAM before the adventure starts
+    API.post('/api/warmup').catch(() => {});
+
     this.root.querySelector('#btn-new').onclick    = () => App.scene.switchTo(CharacterSelectScene, { mode: 'new' });
     this.root.querySelector('#btn-next').onclick   = () => App.scene.switchTo(CharacterSelectScene, { mode: 'next' });
     this.root.querySelector('#btn-resume').onclick = () => App.scene.switchTo(CharacterSelectScene, { mode: 'resume' });

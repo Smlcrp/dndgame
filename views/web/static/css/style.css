@@ -225,6 +225,24 @@ a { color: var(--accent); }
 .narration-roll-btn:hover { background: #3a3a6a; }
 .narration-roll-btn:disabled { opacity: 0.4; cursor: default; }
 
+.narration-play-btn {
+  display: inline-block;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Segoe UI', sans-serif;
+  letter-spacing: 0.4px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.narration-play-btn:hover { color: var(--fg); border-color: var(--dim); }
+.narration-play-btn:disabled { opacity: 0.4; cursor: default; }
+.narration-play-btn.playing { color: var(--accent); border-color: var(--accent); }
+
 .thinking-indicator {
   color: var(--dim);
   font-style: italic;

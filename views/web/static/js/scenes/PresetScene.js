@@ -56,7 +56,7 @@ class PresetScene {
     try {
       const endpoint = this.mode === 'next' ? '/api/game/next' : '/api/game/new';
       const data = await API.post(endpoint, { char_name: this.charName, preset: this.preset });
-      await App.scene.switchTo(GameScene, { narration: data.narration, events: data.events, state: data.state });
+      await App.scene.switchTo(GameScene, { state: data.state, mode: this.mode });
     } catch (e) {
       this.root.querySelector('#menu-error').textContent = e.message;
       btn.disabled = false;
