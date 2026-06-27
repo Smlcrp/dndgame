@@ -12,8 +12,21 @@ _ROOT = Path(__file__).parent
 _ELECTRON_DIR = _ROOT / "electron"
 
 
+_NODE_COMMON_PATHS = [
+    r"C:\Program Files\nodejs\npm.cmd",
+    r"C:\Program Files (x86)\nodejs\npm.cmd",
+]
+
+
 def _find_npm():
-    return shutil.which("npm") or shutil.which("npm.cmd")
+    # Check PATH first, then common Windows install locations
+    found = shutil.which("npm") or shutil.which("npm.cmd")
+    if found:
+        return found
+    for p in _NODE_COMMON_PATHS:
+        if Path(p).exists():
+            return p
+    return None
 
 
 def _install_node():
@@ -66,12 +79,18 @@ def main():
             )
             sys.exit(1)
 
-    node_modules = _ELECTRON_DIR / "node_modules"
-    if not node_modules.exists():
+    electron_bin = _ELECTRON_DIR / "node_modules" / "electron" / "dist" / "electron.exe"
+    if not electron_bin.exists():
         print("Installing Electron dependencies (first run — ~30 s)...")
         r = subprocess.run([npm, "install"], cwd=_ELECTRON_DIR)
         if r.returncode != 0:
             print("ERROR: npm install failed.", file=sys.stderr)
+            sys.exit(1)
+        # Approve electron's postinstall script (blocked by default in newer npm)
+        subprocess.run([npm, "approve-scripts", "electron"], cwd=_ELECTRON_DIR)
+        r2 = subprocess.run([npm, "install"], cwd=_ELECTRON_DIR)
+        if r2.returncode != 0 or not electron_bin.exists():
+            print("ERROR: Electron binary failed to download.", file=sys.stderr)
             sys.exit(1)
 
     print("Starting D&D AI Dungeon Master...")
