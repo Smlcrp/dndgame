@@ -166,7 +166,9 @@ class GameScene {
     let tagBuf      = '';
     let visibleText = '';
     let firstToken  = true;
-    let ttsPromise  = null;   // pre-fetched audio, resolved well before streaming ends
+    // Pre-fetch TTS for the first sentence mid-stream so it's ready before
+    // the DM finishes. Remaining sentences are fired on done.
+    let ttsFirstSent = null;
 
     function filterToken(token) {
       let visible = '';
@@ -225,19 +227,12 @@ class GameScene {
               dmText.textContent = visibleText;
               narr.scrollTop = narr.scrollHeight;
 
-              // Fire TTS as soon as 2 complete sentences arrive — gives it a
-              // head start of 30-60 s while Ollama is still generating the rest.
-              if (!ttsPromise) {
-                const ends = [...visibleText.matchAll(/[.!?]['"»]?\s/g)];
-                if (ends.length >= 2) {
-                  const cut = ends[1].index + ends[1][0].length;
-                  const earlyText = visibleText.slice(0, cut).trim();
-                  ttsPromise = fetch('/api/narrate', {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ text: earlyText }),
-                  }).then(r => r.ok ? r.blob() : null).catch(() => null);
-                }
+              // As soon as the first complete sentence arrives, kick off TTS for
+              // it. This gives sentence 0 a 30-60 s head start so it's ready the
+              // moment the DM finishes streaming.
+              if (!ttsFirstSent) {
+                const m = visibleText.match(/^(.*?[.!?])\s/s);
+                if (m) ttsFirstSent = this._fetchTTS(m[1].trim());
               }
             }
           }
@@ -247,9 +242,20 @@ class GameScene {
             dmText.textContent = data.narration;
             this._state = data.state;
             events = data.events || [];
-            // ttsPromise has had the full streaming duration to resolve —
-            // the Play button appears immediately enabled in the common case.
-            if (ttsPromise) this._appendPlayButton(dmEntry, ttsPromise);
+
+            // Split full narration into sentences. Sentence 0 is already being
+            // fetched (ttsFirstSent); fire the rest immediately so they're ready
+            // before their turn to play — each sentence takes ~5-10 s to speak
+            // out loud, giving TTS plenty of time to generate the next one.
+            const sents = data.narration
+              .split(/(?<=[.!?])\s+/)
+              .map(s => s.trim())
+              .filter(Boolean);
+            const ttsQueue = sents.map((s, i) =>
+              i === 0 && ttsFirstSent ? ttsFirstSent : this._fetchTTS(s)
+            );
+            this._appendPlayButton(dmEntry, ttsQueue);
+
             narr.scrollTop = narr.scrollHeight;
             if (data.ollama_mode === 'cpu') this._showCpuBanner();
             break outer;
@@ -279,36 +285,63 @@ class GameScene {
   }
 
   // ── Narrator ─────────────────────────────────────────────────────────────
-  //
-  // ttsPromise: a Promise<Blob|null> that was fired mid-stream (when the first
-  // 2 sentences of the DM response were ready). By the time streaming ends and
-  // this method is called, the audio is almost always already resolved.
 
-  _appendPlayButton(entry, ttsPromise) {
+  // Fire a single TTS request and return a Promise<Blob|null>.
+  _fetchTTS(text) {
+    return fetch('/api/narrate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ text }),
+    }).then(r => r.ok ? r.blob() : null).catch(() => null);
+  }
+
+  // queue: array of Promise<Blob|null>, one per sentence, in order.
+  // Sentence 0 is almost always already resolved (pre-fetched mid-stream).
+  // Remaining sentences are fetched in parallel after done fires and are
+  // ready before their turn to play.
+  _appendPlayButton(entry, queue) {
     const btn = document.createElement('button');
     btn.className = 'narration-play-btn';
     btn.textContent = '▶';
-    btn.disabled = true;
-    let audio = null;
+    let controller = null;
 
-    ttsPromise.then(blob => {
-      if (!blob) { btn.remove(); return; }
-      const url = URL.createObjectURL(blob);
-      btn.disabled = false;
-      btn.onclick = () => {
-        if (audio && !audio.paused) {
-          audio.pause(); audio.currentTime = 0;
-          btn.textContent = '▶'; btn.classList.remove('playing');
-          return;
-        }
-        audio = new Audio(url);
-        audio.onended = () => {
-          btn.textContent = '▶'; btn.classList.remove('playing'); audio = null;
-        };
-        audio.play();
-        btn.textContent = '⏹'; btn.classList.add('playing');
-      };
-    }).catch(() => btn.remove());
+    btn.onclick = async () => {
+      // Stop if already playing
+      if (controller) {
+        controller.abort();
+        controller = null;
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+        return;
+      }
+
+      controller = new AbortController();
+      const { signal } = controller;
+      btn.textContent = '⏹';
+      btn.classList.add('playing');
+
+      for (const promise of queue) {
+        if (signal.aborted) break;
+        const blob = await promise;
+        if (!blob || signal.aborted) break;
+
+        const url = URL.createObjectURL(blob);
+        await new Promise(resolve => {
+          const audio = new Audio(url);
+          const done = () => { URL.revokeObjectURL(url); resolve(); };
+          audio.onended = done;
+          audio.onerror = done;
+          signal.addEventListener('abort', () => { audio.pause(); done(); }, { once: true });
+          audio.play().catch(done);
+        });
+      }
+
+      if (!signal.aborted) {
+        btn.textContent = '▶';
+        btn.classList.remove('playing');
+      }
+      controller = null;
+    };
 
     entry.appendChild(btn);
   }
