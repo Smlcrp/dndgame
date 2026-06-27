@@ -227,6 +227,14 @@ Main game interface. `GameApp` class.
 
 ---
 
+## Known Issues
+
+- **Ollama CUDA crash on startup** — `exit status 0xc0000409` + `CUDA error: shared object initialization failed` means Ollama's bundled CUDA runtime is conflicting with the installed NVIDIA driver. This is an Ollama/driver issue, not a game bug.
+  - **Workaround:** `set CUDA_VISIBLE_DEVICES=-1` before starting Ollama (forces CPU-only inference — slower but stable).
+  - **Permanent fix:** `winget upgrade Ollama.Ollama` or update NVIDIA drivers from nvidia.com.
+
+---
+
 ## Known Quirks & Pitfalls
 
 - **Listbox `exportselection`** — Both `char_lb` (character select) and `ses_lb` (session select) in `views/desktop/app.py` must have `exportselection=False`. Without it, clicking any button causes the Listbox to clear its selection, making `curselection()` return an empty tuple. The failure is silent because the error label (`_dlg_err`) is positioned at the very bottom of the dialog and gets obscured.
