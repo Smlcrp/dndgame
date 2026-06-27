@@ -484,14 +484,13 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
     def _messages_for_ollama(self, session, character, player_input):
         """Build the full message list to send to the Ollama /api/chat endpoint.
 
-        Format: [system prompt] + [last 20 history entries] + [current player input].
-        History is capped at 20 entries (~10 exchanges) to stay within the 8192-token
-        context window — the system prompt alone is ~3000 tokens.
+        Format: [system prompt] + [last 12 history entries] + [current player input].
+        History is capped at 12 entries (~6 exchanges) to reduce token count per call
+        and keep response times low — the system prompt alone is ~3000 tokens.
         """
         messages = [{"role": "system", "content": self._build_system_prompt(character, session)}]
         history = session.get("history", [])
-        # Keep only the most recent 20 entries (10 exchanges) to stay within context
-        for entry in history[-20:]:
+        for entry in history[-12:]:
             role = "user" if entry["role"] == "player" else "assistant"
             messages.append({"role": role, "content": entry["text"]})
         messages.append({"role": "user", "content": player_input})
@@ -680,30 +679,40 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
                 pass
 
     def respond_stream(self, session, character, player_input):
-        """Like respond() but yields word chunks so the frontend can animate the text.
+        """Stream tokens from Ollama as they are generated so the first words
+        appear in the UI within a second or two rather than after the full response.
 
-        Uses stream=False internally — stream=True races with the warmup request and
-        crashes llama-server on GPU. The _ollama_lock serialises all Ollama calls so
-        warmup and respond can never run at the same time.
-
-        Yields {"token": str} for each word, then {"done": True, "narration": str,
-        "events": list} when complete.
+        Holds _ollama_lock for the entire duration to serialise all Ollama calls.
+        Yields {"token": str} for each token chunk, then {"done": True, ...} at the end.
         """
-        messages = self._messages_for_ollama(session, character, player_input)
+        messages  = self._messages_for_ollama(session, character, player_input)
+        full_text = ""
 
         with _ollama_lock:
             try:
                 resp = requests.post(OLLAMA_URL, json={
                     "model":    self.model,
                     "messages": messages,
-                    "stream":   False,
+                    "stream":   True,
                     "options":  {"num_ctx": 4096},
-                }, timeout=120)
+                }, timeout=120, stream=True)
 
                 if not resp.ok:
                     raise RuntimeError(f"Ollama {resp.status_code}: {resp.text}")
 
-                full_text = resp.json().get("message", {}).get("content", "")
+                for raw_line in resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    try:
+                        data = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    token = data.get("message", {}).get("content", "")
+                    if token:
+                        full_text += token
+                        yield {"token": token}
+                    if data.get("done"):
+                        break
 
             except requests.exceptions.ConnectionError:
                 raise RuntimeError(
@@ -712,12 +721,6 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
                 )
             except requests.exceptions.Timeout:
                 raise RuntimeError("Ollama timed out. The model may still be loading — try again.")
-
-        # Yield word-by-word so the frontend streaming display animates the text.
-        # Because the full response is already in memory this is nearly instantaneous.
-        words = full_text.split(" ")
-        for i, word in enumerate(words):
-            yield {"token": word + ("" if i == len(words) - 1 else " ")}
 
         narration, events = self._parse_events(full_text)
 
