@@ -657,7 +657,7 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
 
         clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP|COMPANION|GOLD|ITEM):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
         clean = re.sub(r"\[(ACTION|BONUS|BEGIN|END|START):[^\]]*\]", "", clean, flags=re.IGNORECASE)
-        clean = re.sub(r"\[(BEAT|CLIMAX|BREAK)\]", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\[(BEAT|CLIMAX|BREAK|BEGIN|END|START)\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
 
         return clean, events
