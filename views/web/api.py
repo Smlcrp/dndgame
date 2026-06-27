@@ -224,7 +224,7 @@ def import_ddb():
     if not url:
         return _err("url is required")
     try:
-        sys.path.insert(0, str(_root / "views" / "desktop" / "character_builder"))
+        sys.path.insert(0, str(_root / "character_builder"))
         from ddb_import import import_from_ddb
         from models.character import migrate_character, validate_character
         char = import_from_ddb(url, cobalt_token=token)
@@ -525,11 +525,10 @@ def roll_hit_die():
 
 def _get_attack_options(char):
     """Return expanded weapon attack options including versatile, thrown, and off-hand variants.
-    Ported from views/desktop/app.py:_get_attack_options().
     Each option dict: {label, weapon, bonus, damage, dmg_type, mode, note?}
     mode values: melee | ranged | melee_2h | thrown | offhand
     """
-    _cb_path = str(_root / "views" / "desktop" / "character_builder")
+    _cb_path = str(_root / "character_builder")
     if _cb_path not in sys.path:
         sys.path.insert(0, _cb_path)
     try:

@@ -30,3 +30,9 @@ $RECYCLE.BIN/
 .vscode/
 .idea/
 *.swp
+
+# Large binary model/asset files
+data/kokoro/*.onnx
+data/kokoro/*.bin
+*.onnx
+*.bin

@@ -188,7 +188,7 @@ def _class_features():
     try:
         import sys
         from pathlib import Path
-        _cb = Path(__file__).parent.parent / "views" / "desktop" / "character_builder"
+        _cb = Path(__file__).parent.parent / "character_builder"
         if str(_cb) not in sys.path:
             sys.path.insert(0, str(_cb))
         from dnd_data import CLASS_FEATURES
