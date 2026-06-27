@@ -166,6 +166,7 @@ class GameScene {
     let tagBuf      = '';
     let visibleText = '';
     let firstToken  = true;
+    let ttsPromise  = null;   // pre-fetched audio, resolved well before streaming ends
 
     function filterToken(token) {
       let visible = '';
@@ -223,6 +224,21 @@ class GameScene {
               visibleText += visible;
               dmText.textContent = visibleText;
               narr.scrollTop = narr.scrollHeight;
+
+              // Fire TTS as soon as 2 complete sentences arrive — gives it a
+              // head start of 30-60 s while Ollama is still generating the rest.
+              if (!ttsPromise) {
+                const ends = [...visibleText.matchAll(/[.!?]['"»]?\s/g)];
+                if (ends.length >= 2) {
+                  const cut = ends[1].index + ends[1][0].length;
+                  const earlyText = visibleText.slice(0, cut).trim();
+                  ttsPromise = fetch('/api/narrate', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ text: earlyText }),
+                  }).then(r => r.ok ? r.blob() : null).catch(() => null);
+                }
+              }
             }
           }
 
@@ -231,7 +247,9 @@ class GameScene {
             dmText.textContent = data.narration;
             this._state = data.state;
             events = data.events || [];
-            // NARRATOR DISABLED: this._appendPlayButton(dmEntry, data.narration);
+            // ttsPromise has had the full streaming duration to resolve —
+            // the Play button appears immediately enabled in the common case.
+            if (ttsPromise) this._appendPlayButton(dmEntry, ttsPromise);
             narr.scrollTop = narr.scrollHeight;
             if (data.ollama_mode === 'cpu') this._showCpuBanner();
             break outer;
@@ -260,36 +278,40 @@ class GameScene {
     document.body.appendChild(banner);
   }
 
-  // ── Narrator (DISABLED — revisit in a later stage) ──────────────────────
+  // ── Narrator ─────────────────────────────────────────────────────────────
   //
-  // _appendPlayButton(entry, text) {
-  //   const btn = document.createElement('button');
-  //   btn.className = 'narration-play-btn';
-  //   btn.textContent = '⏳ Preparing…';
-  //   btn.disabled = true;
-  //   let audioBlob = null;
-  //   let audio     = null;
-  //   fetch('/api/narrate', {
-  //     method:  'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body:    JSON.stringify({ text }),
-  //   })
-  //     .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-  //     .then(blob => { audioBlob = blob; btn.textContent = '▶ Play'; btn.disabled = false; })
-  //     .catch(e => { console.error('[narrator] pre-generate failed:', e.message); btn.remove(); });
-  //   btn.onclick = () => {
-  //     if (!audioBlob) return;
-  //     if (audio && !audio.paused) {
-  //       audio.pause(); audio.currentTime = 0; URL.revokeObjectURL(audio.src);
-  //       audio = null; btn.textContent = '▶ Play'; btn.classList.remove('playing'); return;
-  //     }
-  //     const url = URL.createObjectURL(audioBlob);
-  //     audio = new Audio(url);
-  //     audio.onended = () => { btn.textContent = '▶ Play'; btn.classList.remove('playing'); URL.revokeObjectURL(url); audio = null; };
-  //     audio.play(); btn.textContent = '⏹ Stop'; btn.classList.add('playing');
-  //   };
-  //   entry.appendChild(btn);
-  // }
+  // ttsPromise: a Promise<Blob|null> that was fired mid-stream (when the first
+  // 2 sentences of the DM response were ready). By the time streaming ends and
+  // this method is called, the audio is almost always already resolved.
+
+  _appendPlayButton(entry, ttsPromise) {
+    const btn = document.createElement('button');
+    btn.className = 'narration-play-btn';
+    btn.textContent = '▶ Play';
+    btn.disabled = true;
+    let audio = null;
+
+    ttsPromise.then(blob => {
+      if (!blob) { btn.remove(); return; }
+      const url = URL.createObjectURL(blob);
+      btn.disabled = false;
+      btn.onclick = () => {
+        if (audio && !audio.paused) {
+          audio.pause(); audio.currentTime = 0;
+          btn.textContent = '▶ Play'; btn.classList.remove('playing');
+          return;
+        }
+        audio = new Audio(url);
+        audio.onended = () => {
+          btn.textContent = '▶ Play'; btn.classList.remove('playing'); audio = null;
+        };
+        audio.play();
+        btn.textContent = '⏹ Stop'; btn.classList.add('playing');
+      };
+    }).catch(() => btn.remove());
+
+    entry.appendChild(btn);
+  }
 
   // ── Event handler ───────────────────────────────────────────────────────
 
