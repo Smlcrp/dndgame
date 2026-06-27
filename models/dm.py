@@ -208,7 +208,7 @@ CALL FOR A ROLL when:
   - Noticing something non-obvious or partially concealed
   - Deciphering writing, symbols, or magical auras
   - Gathering information from an UNWILLING or actively deceptive NPC (use Persuasion, Deception, or Intimidation — NEVER Investigation for social situations)
-  - The PLAYER is lying, bluffing, or deceiving an NPC — fake names, false identities, fabricated stories, misdirection — call [CHECK: Deception DC##]. The DC reflects how suspicious the NPC is: a distracted commoner is DC 10, an alert guard is DC 14, someone who has reason to doubt is DC 16+.
+  - The PLAYER is deceiving an NPC in ANY way — this is the broadest and most commonly missed case. It includes: fake names, false identities, fabricated backstories, faking injury or illness or disability, pretending to be a different profession or allegiance, bluffing about intentions, misdirection, any performance meant to make an NPC believe something untrue. ALL of these require [CHECK: Deception DC##]. Do not let deception succeed automatically. The DC reflects NPC suspicion: distracted commoner DC 10, alert stranger DC 12, guard or skeptic DC 14, someone with reason to doubt DC 16+, someone who knows the truth DC 18+.
 
 INVESTIGATION vs SOCIAL — critical distinction:
   Investigation = ONLY physical examination: searching a room, studying an object, finding clues at a crime scene, spotting hidden mechanisms.
@@ -657,7 +657,7 @@ Do NOT write any spoken words, thoughts, or actions for the player character. Re
             events.append(ev)
 
         clean = re.sub(r"\[(CHECK|COMBAT|SCENE|XP|COMPANION|GOLD|ITEM):[^\]]*\]", "", raw_text, flags=re.IGNORECASE)
-        clean = re.sub(r"\[(ACTION|BONUS):[^\]]*\]", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\[(ACTION|BONUS|BEGIN|END|START):[^\]]*\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\[(BEAT|CLIMAX|BREAK)\]", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
 
