@@ -47,6 +47,7 @@ class GameScene {
         </div>
         <div class="game-body">
           <div class="game-main">
+            <div class="dm-thinking-banner hidden" id="dm-thinking-banner">⏳ Please wait while the DM is thinking…</div>
             <div class="narration" id="narration"></div>
             <div class="input-area">
               <input id="player-input" type="text" placeholder="What do you do? You can also ask questions." autocomplete="off">
@@ -119,10 +120,12 @@ class GameScene {
 
   _setBusy(busy) {
     this._busy = busy;
-    const input = document.getElementById('player-input');
-    const btn   = document.getElementById('send-btn');
-    if (input) input.disabled = busy;
-    if (btn)   btn.disabled   = busy;
+    const input  = document.getElementById('player-input');
+    const btn    = document.getElementById('send-btn');
+    const banner = document.getElementById('dm-thinking-banner');
+    if (input)  input.disabled = busy;
+    if (btn)    btn.disabled   = busy;
+    if (banner) banner.classList.toggle('hidden', !busy);
   }
 
   // ── Send player action ──────────────────────────────────────────────────

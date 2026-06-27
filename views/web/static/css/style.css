@@ -243,6 +243,18 @@ a { color: var(--accent); }
 .narration-play-btn:disabled { opacity: 0.4; cursor: default; }
 .narration-play-btn.playing { color: var(--accent); border-color: var(--accent); }
 
+.dm-thinking-banner {
+  background: var(--panel);
+  color: var(--accent);
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-family: 'Segoe UI', sans-serif;
+  border-bottom: 1px solid var(--accent);
+  letter-spacing: 0.4px;
+}
+.dm-thinking-banner.hidden { display: none; }
+
 .ollama-cpu-banner {
   position: fixed;
   bottom: 0; left: 0; right: 0;

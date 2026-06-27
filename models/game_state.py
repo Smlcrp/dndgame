@@ -35,7 +35,7 @@ def empty_session(character_name="", session_name=""):
         "character_name": character_name,
         "session_name":   session_name,
 
-        "location":       "Unknown",
+        "location":       "",
         "scene":          "",
         "history":        [],
         "flags":          {},
