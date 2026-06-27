@@ -5,8 +5,8 @@ const { spawn, execFile } = require('child_process');
 const ollama = require('./ollama');
 
 const FLASK_PORT = 5000;
-const PING_URL   = `http://localhost:${FLASK_PORT}/api/ping`;
-const GAME_URL   = `http://localhost:${FLASK_PORT}/`;
+const PING_URL   = `http://127.0.0.1:${FLASK_PORT}/api/ping`;
+const GAME_URL   = `http://127.0.0.1:${FLASK_PORT}/`;
 
 let flaskProcess = null;
 let mainWindow   = null;
@@ -29,11 +29,9 @@ function launchFlask() {
 // ── Poll until Flask responds ─────────────────────────────────────────────────
 
 function waitForFlask() {
-  // When launched from main.py, Flask is already confirmed running — do a fast
-  // sanity check (3 s) instead of the full 30 s wait.
   const preConfirmed = process.env.FLASK_READY === '1';
-  const retries  = preConfirmed ? 6  : 60;
-  const delayMs  = preConfirmed ? 500 : 500;
+  const retries  = preConfirmed ? 20 : 60;
+  const delayMs  = 500;
 
   return new Promise((resolve, reject) => {
     let attempts = 0;
